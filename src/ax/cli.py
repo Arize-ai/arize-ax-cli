@@ -66,9 +66,11 @@ def register_commands() -> None:
     from ax.commands.cache import app as cache_app
     from ax.commands.config import app as config_app
     from ax.commands.datasets import app as datasets_app
+    from ax.commands.experiments import app as experiments_app
     from ax.commands.projects import app as projects_app
 
     app.add_typer(datasets_app, name="datasets", help="Manage datasets")
+    app.add_typer(experiments_app, name="experiments", help="Manage experiments")
     app.add_typer(projects_app, name="projects", help="Manage projects")
     app.add_typer(config_app, name="config", help="Manage configuration")
     app.add_typer(cache_app, name="cache", help="Manage cache")
