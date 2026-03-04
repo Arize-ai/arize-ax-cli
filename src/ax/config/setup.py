@@ -2,6 +2,7 @@ import os
 from enum import Enum
 
 import questionary
+import typer
 from rich.console import Console
 
 from ax.config.input_readers import (
@@ -60,7 +61,7 @@ def create_config_interactively(
 ) -> Config:
     """Create a configuration interactively by prompting the user."""
     mode = SetupMode.SIMPLE
-    mode = questionary.select(
+    mode_choice = questionary.select(
         "Choose configuration mode:",
         choices=[
             "Simple (recommended)",
@@ -68,7 +69,9 @@ def create_config_interactively(
         ],
         default="Simple (recommended)",
     ).ask()
-    mode = SetupMode.SIMPLE if "Simple" in mode else SetupMode.ADVANCED
+    if mode_choice is None:
+        raise typer.Abort()
+    mode = SetupMode.SIMPLE if "Simple" in mode_choice else SetupMode.ADVANCED
 
     if mode == SetupMode.SIMPLE:
         return simple_setup(profile)

@@ -7,6 +7,13 @@ from arize import Region, SDKConfiguration
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+def _str_to_bool(value: bool | str) -> bool:
+    """Convert bool or string to bool, parsing "true"/"false" strings correctly."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 class ProfileConfig(BaseModel):
     """Profile metadata."""
 
@@ -142,6 +149,20 @@ class RoutingConfig(BaseModel):
     #     return self
 
 
+def _validate_int_or_env_var(v: int | str) -> int | str:
+    """Validate that a value is an int or an environment variable reference."""
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str) and v.startswith("${") and v.endswith("}"):
+        return v
+    try:
+        return int(v)
+    except (ValueError, TypeError) as e:
+        raise ValueError(
+            f"Expected an integer or an environment variable reference (e.g., ${{MY_VAR}}), got: {v!r}"
+        ) from e
+
+
 class TransportConfig(BaseModel):
     """Transport and performance settings."""
 
@@ -149,6 +170,18 @@ class TransportConfig(BaseModel):
     stream_max_queue_bound: int | str = Field(default=5_000)
     pyarrow_max_chunksize: int | str = Field(default=10_000)
     max_http_payload_size_mb: int | str = Field(default=8)
+
+    @field_validator(
+        "stream_max_workers",
+        "stream_max_queue_bound",
+        "pyarrow_max_chunksize",
+        "max_http_payload_size_mb",
+        mode="before",
+    )
+    @classmethod
+    def validate_int_fields(cls, v: int | str) -> int | str:
+        """Validate that transport int fields are integers or env var references."""
+        return _validate_int_or_env_var(v)
 
 
 class SecurityConfig(BaseModel):
@@ -236,5 +269,5 @@ class Config(BaseModel):
             max_http_payload_size_mb=int(
                 self.transport.max_http_payload_size_mb
             ),
-            request_verify=bool(self.security.request_verify),
+            request_verify=_str_to_bool(self.security.request_verify),
         )

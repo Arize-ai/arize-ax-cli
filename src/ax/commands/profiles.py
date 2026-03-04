@@ -19,22 +19,24 @@ from ax.config.setup import (
     detect_env_vars,
 )
 from ax.core.decorators import handle_errors
+from ax.core.exceptions import ConfigError
 from ax.utils.console import (
     confirm,
     emphasis,
     info,
     mask,
     new_line,
+    setup_logging,
     success,
     text,
     text_bold,
     text_dimmed,
 )
 
-# Create config subcommand app
+# Create profile subcommand app
 app = typer.Typer(
-    name="config",
-    help="Manage Arize CLI configuration",
+    name="profiles",
+    help="Manage Arize CLI configuration profiles",
     no_args_is_help=True,
     context_settings={"help_option_names": ["--help", "-h"]},
 )
@@ -42,9 +44,9 @@ app = typer.Typer(
 console = Console()
 
 
-@app.command("init")
+@app.command("create")
 @handle_errors
-def init(
+def create(
     verbose: Annotated[
         bool,
         typer.Option(
@@ -54,12 +56,13 @@ def init(
         ),
     ] = False,
 ) -> None:
-    """Initialize Arize CLI configuration interactively.
+    """Create Arize CLI configuration interactively.
 
     Creates a new configuration profile with API key, defaults, and
     preferences. Detects existing ARIZE_* environment variables and offers
-    to create config from them.
+    to create profiles from them.
     """
+    setup_logging(verbose)
     existing_profiles = ConfigManager.list_profiles()
 
     # Profile Selection
@@ -69,6 +72,11 @@ def init(
         emphasis("Create a new configuration profile")
         text(f"existing profiles: {', '.join(existing_profiles)}\n")
         profile = typer.prompt("profile name")
+        if not profile.replace("-", "").replace("_", "").isalnum():
+            raise ConfigError(
+                f"Invalid profile name: {profile!r}. "
+                "Profile names may only contain letters, numbers, hyphens, and underscores."
+            )
         new_line()
     else:
         # Display ASCII art welcome banner
@@ -141,10 +149,11 @@ def list_profiles(
 
     Shows all profiles with the active profile marked.
     """
+    setup_logging(verbose)
     profiles = ConfigManager.list_profiles()
 
     if not profiles:
-        info("No profiles found. Run 'ax config init' to create one.")
+        info("No profiles found. Run 'ax profiles create' to create one.")
         raise typer.Exit()
 
     active = ConfigManager.get_active_profile()
@@ -201,7 +210,10 @@ def show_profile(
     Use --expand to show expanded values.
     Use --all to show all sections including defaults.
     """
+    setup_logging(verbose)
     # Use profile from context if not specified
+    if not profile:
+        profile = ConfigManager.get_active_profile()
     config = ConfigManager.load(profile, expand_vars)
 
     # Display configuration
@@ -273,8 +285,8 @@ def show_profile(
     if all_sections or is_customized("security"):
         emphasis("\nSecurity:")
         val = config.security.request_verify
-        if _is_bool(str(config.security.request_verify)):
-            val = bool(config.security.request_verify)
+        if isinstance(val, str) and _is_bool(val):
+            val = val.lower() == "true"
         text(f"  Request Verify: {val}")
 
     # Storage section
@@ -310,6 +322,7 @@ def use_profile(
 
     Makes the specified profile active for all future commands.
     """
+    setup_logging(verbose)
     ConfigManager.set_active_profile(profile)
     success(f"Switched to profile '{profile}'")
 
@@ -342,6 +355,7 @@ def delete_profile(
 
     Cannot delete the default profile or currently active profile.
     """
+    setup_logging(verbose)
     if not force and not confirm(
         f"Delete profile '{profile}'?",
         default=False,

@@ -4,7 +4,7 @@ import typer
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
-from ax.utils.console import confirm, info, success
+from ax.utils.console import confirm, info, setup_logging, success
 
 # Create config subcommand app
 app = typer.Typer(
@@ -39,6 +39,7 @@ def clear_cache(
 
     Removes all cached data to free up space or force refresh.
     """
+    setup_logging(verbose)
     if not confirm("Clear the Arize SDK cache?", default=False):
         info("Cache not cleared")
         raise typer.Exit()

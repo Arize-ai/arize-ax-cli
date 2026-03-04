@@ -184,7 +184,7 @@ def get_error_suggestion(status: int) -> str:
     """
     suggestions = {
         400: "Check your input parameters and try again.",
-        401: "Authentication failed. Run 'ax config init' to configure credentials.",
+        401: "Authentication failed. Run 'ax profiles create' to configure credentials.",
         403: "You don't have permission. Check your API key or space access.",
         404: "Resource not found. Verify the ID exists using the list command.",
         409: "Resource already exists. Choose a different name or use the list command.",

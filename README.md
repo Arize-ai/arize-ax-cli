@@ -48,6 +48,8 @@
 - [Commands](#commands)
   - [Datasets](#datasets)
   - [Projects](#projects)
+  - [Spans](#spans)
+  - [Traces](#traces)
   - [Cache](#cache)
   - [Global Options](#global-options)
 - [Usage Examples](#usage-examples)
@@ -55,8 +57,12 @@
   - [Exporting Dataset List to JSON](#exporting-dataset-list-to-json)
   - [Exporting Dataset Examples to Parquet](#exporting-dataset-examples-to-parquet)
   - [Using a Different Profile for a Command](#using-a-different-profile-for-a-command)
+  - [Listing Spans and Exporting to CSV](#listing-spans-and-exporting-to-csv)
+  - [Listing Traces and Exporting to Parquet](#listing-traces-and-exporting-to-parquet)
   - [Pagination](#pagination)
   - [Working with Multiple Environments](#working-with-multiple-environments)
+  - [Filtering Spans by Status](#filtering-spans-by-status)
+  - [Listing Traces in a Time Window](#listing-traces-in-a-time-window)
 - [Advanced Topics](#advanced-topics)
   - [Output Formats](#output-formats)
   - [Programmatic Usage](#programmatic-usage)
@@ -83,6 +89,7 @@ Official command-line interface for [Arize AI](https://arize.com) - streamline y
 
 - **Dataset Management**: Create, list, update, and delete datasets
 - **Project Management**: Organize your ML projects
+- **Spans & Traces**: Query and filter LLM spans and traces
 - **Multiple Profiles**: Switch between different Arize environments
 - **Flexible Output**: Export to JSON, CSV, Parquet, or display as tables
 - **Shell Completion**: Tab completion for bash, zsh, and fish
@@ -100,7 +107,7 @@ pip install arize-ax-cli
 
 ```bash
 git clone https://github.com/Arize-ai/arize-ax-cli.git
-cd ax-cli
+cd arize-ax-cli
 pip install -e .
 ```
 
@@ -117,7 +124,7 @@ ax --version
 The first time you use the CLI, you'll need to create a _configuration profile_:
 
 ```bash
-ax config init
+ax profiles create
 ```
 
 This interactive setup will:
@@ -142,11 +149,13 @@ No configuration found. Let's set it up!
 
 Environment Variable Detection
 
-  ✓ Detected ARIZE_API_KEY = ak_***************xyz
+  ✓ Detected ARIZE_API_KEY = ak-2a...FCf
 
 Create config from detected environment variables? [Y/n]: y
 
-Configuration saved to profile 'default'
+? Default output format: table
+
+✓ Configuration saved to profile 'default1'
 
 You're ready to go! Try: ax datasets list
 ```
@@ -156,7 +165,7 @@ You're ready to go! Try: ax datasets list
 Check your configuration:
 
 ```bash
-ax config show
+ax profiles show
 ```
 
 ### 3. Start Using the CLI
@@ -173,23 +182,35 @@ List your projects:
 ax projects list
 ```
 
+List spans in a project:
+
+```bash
+ax spans list <project-id>
+```
+
+List traces in a project:
+
+```bash
+ax traces list <project-id>
+```
+
 ## Configuration
 
 The Arize CLI uses a flexible configuration system that supports multiple profiles, environment variables, and two setup modes.
 
 ### Configuration Commands
 
-| Command                      | Description                                      |
-| ---------------------------- | ------------------------------------------------ |
-| `ax config init`             | Create a new configuration profile interactively |
-| `ax config list`             | List all available profiles                      |
-| `ax config show`             | Display the current profile's configuration      |
-| `ax config use <profile>`    | Switch to a different profile                    |
-| `ax config delete <profile>` | Delete a configuration profile                   |
+| Command                        | Description                                      |
+| ------------------------------ | ------------------------------------------------ |
+| `ax profiles create`           | Create a new configuration profile interactively |
+| `ax profiles list`             | List all available profiles                      |
+| `ax profiles show`             | Display the current profile's configuration      |
+| `ax profiles use <profile>`    | Switch to a different profile                    |
+| `ax profiles delete <profile>` | Delete a configuration profile                   |
 
 ### Configuration Modes
 
-When you run `ax config init`, you'll be prompted to choose between two configuration modes:
+When you run `ax profiles create`, you'll be prompted to choose between two configuration modes:
 
 #### Simple Configuration (Recommended)
 
@@ -305,8 +326,8 @@ format = "json"
 
 Configuration files are stored at:
 
-- **Linux/macOS**: `~/.arize/config/<profile>.toml`
-- **Windows**: `%USERPROFILE%\.arize\config\<profile>.toml`
+- **Linux/macOS**: `~/.arize/profiles/<profile>.toml`
+- **Windows**: `%USERPROFILE%\.arize\profiles\<profile>.toml`
 
 ### Configuration Reference
 
@@ -383,10 +404,10 @@ The CLI can detect and use environment variables in two ways:
 
 #### 1. Auto-Detection During Setup
 
-When you run `ax config init`, the CLI automatically detects existing `ARIZE_*` environment variables and offers to use them:
+When you run `ax profiles create`, the CLI automatically detects existing `ARIZE_*` environment variables and offers to use them:
 
 ```bash
-ax config init
+ax profiles create
 ```
 
 ```
@@ -395,7 +416,7 @@ Environment Variable Detection
   ✓ Detected ARIZE_API_KEY = ak_***************xyz
   ✓ Detected ARIZE_REGION = US
 
-Create config from detected environment variables? [Y/n]: y
+Create profiles from detected environment variables? [Y/n]: y
 ```
 
 This will create a configuration that references the environment variables:
@@ -425,7 +446,7 @@ Environment variable name for API Key: ARIZE_API_KEY
 To see the actual values (with environment variables expanded):
 
 ```bash
-ax config show --expand
+ax profiles show --expand
 ```
 
 Without `--expand`, you'll see the variable references like `${ARIZE_API_KEY}`.
@@ -436,22 +457,25 @@ Create different profiles for different environments:
 
 ```bash
 # Create a production profile
-ax config init
+ax profiles create
 # Enter profile name: production
 
 # Create a staging profile
-ax config init
+ax profiles create
 # Enter profile name: staging
 
 # List all profiles
-ax config list
+ax profiles list
 
 # Switch profiles
-ax config use production
-ax config use staging
+ax profiles use production
+ax profiles use staging
 
 # Use a specific profile for a single command
 ax datasets list --profile production
+
+# Delete a profile
+ax profiles delete production
 ```
 
 ## Shell Autocompletion
@@ -479,7 +503,7 @@ After running the command, restart your shell or open a new terminal window for 
 Once installed, test tab completion:
 
 ```bash
-ax <TAB>         # Shows available commands (datasets, projects, config, cache)
+ax <TAB>         # Shows available commands (cache, datasets, profiles, projects, spans, traces)
 ax datasets <TAB> # Shows dataset subcommands (list, get, create, delete)
 ax datasets list --<TAB>  # Shows available options
 ```
@@ -552,9 +576,78 @@ ax projects create --name "My Project" --space-id <space-id>
 ax projects delete <project-id> [--force]
 ```
 
+### Spans
+
+Query and filter LLM spans in a project. Spans are individual units of work (e.g., an LLM call, a tool call) within a trace.
+
+```bash
+# List spans
+ax spans list <project-id> [--start-time <iso8601>] [--end-time <iso8601>] \
+  [--filter "<expr>"] [--limit 15] [--cursor <cursor>] [--output <format>]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--start-time` | Start of time window, inclusive (ISO 8601, e.g. `2024-01-01T00:00:00Z`) |
+| `--end-time` | End of time window, exclusive (ISO 8601). Defaults to now |
+| `--filter` | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`) |
+| `--limit`, `-n` | Maximum number of spans to return (default: 15) |
+| `--cursor` | Pagination cursor for the next page |
+| `--output`, `-o` | Output format (`table`, `json`, `csv`, `parquet`) or file path |
+| `--profile`, `-p` | Configuration profile to use |
+| `--verbose`, `-v` | Enable verbose logs |
+
+**Filter examples:**
+
+```bash
+ax spans list <project-id> --filter "status_code = 'ERROR'"
+ax spans list <project-id> --filter "latency_ms > 1000"
+ax spans list <project-id> --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z
+```
+
+### Traces
+
+Query root-level traces in a project. Traces are spans with no parent (`parent_id = null`), typically representing a full request or conversation. The CLI automatically applies `parent_id = null`; any `--filter` you provide is ANDed with it.
+
+```bash
+# List traces
+ax traces list <project-id> [--start-time <iso8601>] [--end-time <iso8601>] \
+  [--filter "<expr>"] [--limit 15] [--cursor <cursor>] [--output <format>]
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--start-time` | Start of time window, inclusive (ISO 8601, e.g. `2024-01-01T00:00:00Z`) |
+| `--end-time` | End of time window, exclusive (ISO 8601). Defaults to now |
+| `--filter` | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`) |
+| `--limit`, `-n` | Maximum number of traces to return (default: 15) |
+| `--cursor` | Pagination cursor for the next page |
+| `--output`, `-o` | Output format (`table`, `json`, `csv`, `parquet`) or file path |
+| `--profile`, `-p` | Configuration profile to use |
+| `--verbose`, `-v` | Enable verbose logs |
+
+**Filter examples:**
+
+```bash
+ax traces list <project-id> --filter "status_code = 'ERROR'"
+ax traces list <project-id> --start-time 2024-01-01T00:00:00Z
+ax traces list <project-id> --filter "latency_ms > 5000" --limit 50
+```
+
 ### Cache
 
-Manage the local cache:
+Manage the local cache. The CLI caches downloaded resource data (e.g., dataset examples) locally as Parquet files to avoid redundant API calls. When you fetch a dataset's examples, the results are stored on disk so subsequent requests for the same version load instantly. The cache is automatically invalidated when a resource's `updated_at` timestamp changes, so you always get fresh data when something changes on the server.
+
+Caching is enabled by default and can be toggled in your profile configuration:
+
+```toml
+[storage]
+cache_enabled = true
+```
 
 ```bash
 # Clear the cache
@@ -567,8 +660,9 @@ Available for all commands:
 
 - `--profile, -p <name>`: Use a specific configuration profile
 - `--output, -o <format>`: Set output format (`table`, `json`, `csv`, `parquet`, or a file path)
-- `--verbose, -v`: Enable verbose logging
 - `--help, -h`: Show help message
+
+> **Note:** `--verbose, -v` is available on each individual subcommand (e.g., `ax datasets list --verbose`) rather than as a top-level flag.
 
 ## Usage Examples
 
@@ -599,6 +693,32 @@ ax datasets list_examples ds_xyz789 --output examples.parquet
 ax datasets list --space-id sp_abc123 --profile production
 ```
 
+### Listing Spans and Exporting to CSV
+
+```bash
+# List spans in a project (default: last 15)
+ax spans list proj_abc123
+
+# Export error spans to a CSV file
+ax spans list proj_abc123 --filter "status_code = 'ERROR'" --limit 100 --output spans_errors.csv
+
+# List spans in a time window
+ax spans list proj_abc123 --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z --output json
+```
+
+### Listing Traces and Exporting to Parquet
+
+```bash
+# List root traces in a project
+ax traces list proj_abc123
+
+# Export slow traces to Parquet for analysis
+ax traces list proj_abc123 --filter "latency_ms > 2000" --limit 500 --output traces_slow.parquet
+
+# List traces in JSON format
+ax traces list proj_abc123 --output json
+```
+
 ### Pagination
 
 List more datasets using pagination:
@@ -615,15 +735,29 @@ ax datasets list --space-id sp_abc123 --limit 20 --cursor <cursor-value>
 
 ```bash
 # Setup profiles for different environments
-ax config init  # Create "production" profile
-ax config init  # Create "staging" profile
+ax profiles create  # Create "production" profile
+ax profiles create  # Create "staging" profile
 
 # Switch contexts
-ax config use production
+ax profiles use production
 ax datasets list --space-id sp_prod123
 
-ax config use staging
+ax profiles use staging
 ax datasets list --space-id sp_stage456
+```
+
+### Filtering Spans by Status
+
+```bash
+ax spans list <project-id> --filter "status_code = 'ERROR'" --output json
+```
+
+### Listing Traces in a Time Window
+
+```bash
+ax traces list <project-id> \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-02T00:00:00Z
 ```
 
 ## Advanced Topics
@@ -637,10 +771,10 @@ The CLI supports multiple output formats:
 3. **CSV**: Comma-separated values
 4. **Parquet**: Apache Parquet columnar format
 
-Set default format in config:
+Set default format in profiles:
 
 ```bash
-ax config init  # Select output format during setup
+ax profiles create  # Select output format during setup
 ```
 
 Or override per command:
@@ -674,7 +808,7 @@ The CLI respects these environment variables:
 
 - `ARIZE_API_KEY`: Your Arize API key
 - `ARIZE_REGION`: Region (US, EU, etc.)
-- Any other `ARIZE_*` variables will be detected during `ax config init`
+- Any other `ARIZE_*` variables will be detected during `ax profiles create`
 
 ### Debugging
 
@@ -688,9 +822,9 @@ ax datasets list --space-id sp_abc123 --verbose
 
 ### Configuration Issues
 
-**Problem**: `Config file not found`
+**Problem**: `profiles file not found`
 
-**Solution**: Run `ax config init` to create a configuration profile.
+**Solution**: Run `ax profiles create` to create a configuration profile.
 
 ---
 
@@ -698,9 +832,9 @@ ax datasets list --space-id sp_abc123 --verbose
 
 **Solution**: Verify your API key:
 
-1. Check your configuration: `ax config show`
+1. Check your configuration: `ax profiles show`
 2. Regenerate your API key from the Arize UI
-3. Update your config: `ax config init` (overwrite existing)
+3. Update your profiles: `ax profiles create` (overwrite existing)
 
 ---
 
@@ -710,7 +844,7 @@ ax datasets list --space-id sp_abc123 --verbose
 
 **Solution**:
 
-1. Check your routing configuration: `ax config show`
+1. Check your routing configuration: `ax profiles show`
 2. Verify network connectivity
 3. For on-premise installations, ensure `single_host` is configured correctly
 4. For SSL issues, check `security.request_verify` setting (use with caution)
@@ -739,13 +873,13 @@ Every command has detailed help:
 ax --help
 ax datasets --help
 ax datasets create --help
-ax config --help
+ax profiles --help
 ```
 
 ### Support
 
 - **Documentation**: [https://docs.arize.com/cli](https://docs.arize.com/cli)
-- **Bug Reports**: [GitHub Issues](https://github.com/Arize-ai/ax-cli/issues)
+- **Bug Reports**: [GitHub Issues](https://github.com/Arize-ai/arize-ax-cli/issues)
 - **Community**: [Arize Community Slack](https://arize-ai.slack.com)
 - **Email**: [support@arize.com](mailto:support@arize.com)
 

@@ -1,10 +1,12 @@
 """Progress indicators and interactive features."""
 
+import logging
 import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 
 import typer
+from arize.logging import configure_logging
 from rich.console import Console
 from rich.progress import (
     BarColumn,
@@ -16,6 +18,13 @@ from rich.progress import (
 )
 
 console = Console()
+
+
+def setup_logging(verbose: bool) -> None:
+    """Configure SDK logging based on verbose flag."""
+    if verbose:
+        configure_logging(level=logging.DEBUG, structured=False)
+    configure_logging(level=logging.CRITICAL, structured=False)
 
 
 def confirm(message: str, default: bool = False, abort: bool = False) -> bool:

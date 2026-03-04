@@ -153,16 +153,38 @@ class TestTransportConfig:
         assert transport.pyarrow_max_chunksize == 20_000
         assert transport.max_http_payload_size_mb == 16
 
-    def test_string_values_allowed(self) -> None:
-        """Test that string values are allowed for transport fields."""
+    def test_numeric_strings_coerced_to_int(self) -> None:
+        """Test that numeric strings are coerced to int."""
         transport = TransportConfig(
             stream_max_workers="16",
             stream_max_queue_bound="10000",
             pyarrow_max_chunksize="20000",
             max_http_payload_size_mb="16",
         )
-        assert transport.stream_max_workers == "16"
-        assert transport.stream_max_queue_bound == "10000"
+        assert transport.stream_max_workers == 16
+        assert transport.stream_max_queue_bound == 10000
+
+    def test_env_var_refs_allowed(self) -> None:
+        """Test that environment variable references are stored as strings."""
+        transport = TransportConfig(
+            stream_max_workers="${ARIZE_STREAM_MAX_WORKERS}",
+            stream_max_queue_bound="${ARIZE_STREAM_MAX_QUEUE_BOUND}",
+            pyarrow_max_chunksize="${ARIZE_MAX_CHUNKSIZE}",
+            max_http_payload_size_mb="${ARIZE_MAX_HTTP_PAYLOAD_SIZE_MB}",
+        )
+        assert transport.stream_max_workers == "${ARIZE_STREAM_MAX_WORKERS}"
+        assert (
+            transport.stream_max_queue_bound
+            == "${ARIZE_STREAM_MAX_QUEUE_BOUND}"
+        )
+
+    def test_invalid_string_raises(self) -> None:
+        """Test that non-numeric, non-env-var strings raise a validation error."""
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            TransportConfig(stream_max_workers="not-a-number")
 
 
 class TestSecurityConfig:

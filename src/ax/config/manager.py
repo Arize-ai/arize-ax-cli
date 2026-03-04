@@ -92,8 +92,14 @@ class ConfigManager:
             profile: Profile name to delete
 
         Raises:
-            ConfigError: If trying to delete default or active profile
+            ConfigError: If profile does not exist or trying to delete default or active profile
         """
+        if profile not in cls.list_profiles():
+            raise ConfigError(
+                f"Profile '{profile}' does not exist.\n"
+                f"Available profiles: {', '.join(cls.list_profiles())}"
+            )
+
         if profile == "default":
             raise ConfigError("Cannot delete the default profile")
 
@@ -103,9 +109,7 @@ class ConfigManager:
                 "Switch to another profile first."
             )
 
-        config_path = cls._get_config_path(profile)
-        if config_path.exists():
-            config_path.unlink()
+        cls._get_config_path(profile).unlink()
 
     @classmethod
     def load(cls, profile: str, expand_env_vars: bool = True) -> Config:
@@ -131,7 +135,7 @@ class ConfigManager:
         if not config_path.exists():
             raise ConfigError(
                 f"Profile '{profile}' not found.\n\n"
-                "Run 'ax config init' to create a configuration.\n"
+                "Run 'ax profiles create' to create a configuration.\n"
                 "Or specify a different profile with --profile"
             )
 

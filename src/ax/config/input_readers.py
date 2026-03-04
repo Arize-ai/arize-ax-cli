@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Literal
 
 import questionary
+import typer
 from arize import Region
 from rich.console import Console
 
@@ -23,7 +24,7 @@ console = Console()
 
 INSERT_VALUE = "Insert value"
 USE_ENV_VAR = "Use environment variable"
-UNSET_REGION_MSG = "(leave empty for unset)"
+UNSET_REGION_MSG = "(default - no region needed for US)"
 
 
 class AdvancedRoutingOpts(Enum):
@@ -49,6 +50,8 @@ def read_str_field(
         choices=choices,
         default=choices[0],
     ).ask()
+    if choice is None:
+        raise typer.Abort()
     if choice == USE_ENV_VAR:
         choice = prompt(
             f"Environment variable name for {msg}",
@@ -74,6 +77,8 @@ def read_int_field(
         choices=choices,
         default=choices[0],
     ).ask()
+    if choice is None:
+        raise typer.Abort()
     if choice == USE_ENV_VAR:
         choice = prompt(
             f"Environment variable name for {msg}",
@@ -108,6 +113,8 @@ def read_region() -> str:
         choices=choices,
         default=choices[0],
     ).ask()
+    if region_choice is None:
+        raise typer.Abort()
     if region_choice == USE_ENV_VAR:
         region_choice = prompt(
             "Environment variable name for region", default="ARIZE_REGION"
@@ -123,9 +130,11 @@ def read_routing() -> RoutingConfig:
     """Read routing configuration from user input."""
     choices = [opt.value for opt in AdvancedRoutingOpts]
     choice = questionary.select(
-        "What type of override should we setup?",
+        "What type of override should we set up?",
         choices=choices,
     ).ask()
+    if choice is None:
+        raise typer.Abort()
     match choice:
         case AdvancedRoutingOpts.REGION.value:
             return RoutingConfig(region=read_region())
@@ -213,6 +222,8 @@ def read_request_verify() -> bool | str:
         choices=choices,
         default=choices[0],
     ).ask()
+    if choice is None:
+        raise typer.Abort()
     if choice == USE_ENV_VAR:
         choice = prompt(
             f"Environment variable name for {msg}",
@@ -264,8 +275,11 @@ def read_transport() -> TransportConfig:
 
 def read_output_format() -> Literal["table", "json", "csv", "parquet"]:
     """Read the default output format from user selection."""
-    return questionary.select(
+    choice = questionary.select(
         "Default output format:",
         choices=["table", "json", "csv", "parquet"],
         default="table",
     ).ask()
+    if choice is None:
+        raise typer.Abort()
+    return choice

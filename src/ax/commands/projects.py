@@ -5,14 +5,19 @@ from typing import Annotated
 
 import typer
 from arize import ArizeClient
-from click import confirm
-from rich.console import Console
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
-from ax.utils.console import info, spinner, success, warning
+from ax.utils.console import (
+    confirm,
+    info,
+    setup_logging,
+    spinner,
+    success,
+    warning,
+)
 from ax.utils.file_io import (
     parse_output_option,
 )
@@ -24,8 +29,6 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["--help", "-h"]},
 )
-
-console = Console()
 
 
 @app.command("list")
@@ -79,6 +82,7 @@ def list_projects(
     ] = False,
 ) -> None:
     """List projects in a space."""
+    setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
@@ -152,6 +156,7 @@ def create_project(
     ] = False,
 ) -> None:
     """Create a new project."""
+    setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
@@ -211,6 +216,7 @@ def get_project(
     ] = False,
 ) -> None:
     """Get a project by ID."""
+    setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
@@ -264,6 +270,7 @@ def delete_project(
     ] = False,
 ) -> None:
     """Delete a project by ID."""
+    setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 

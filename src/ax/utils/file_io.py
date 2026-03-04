@@ -160,7 +160,7 @@ def parse_output_option(output: str) -> tuple[str, str]:
             f"Invalid output option: {output}\n"
             f"Must be either:\n"
             f"  - A format: {', '.join(valid_formats)}\n"
-            f"  - A file path with extension: .json, .csv, .jsonl, .parquet, .pq"
+            f"  - A file path with extension: .json, .csv, .parquet, .pq"
         ) from None
     else:
         return (format_type, output)
@@ -182,7 +182,6 @@ def _detect_format(path: str) -> str:
     format_map = {
         ".csv": "csv",
         ".json": "json",
-        ".jsonl": "jsonl",
         ".parquet": "parquet",
         ".pq": "parquet",
     }
