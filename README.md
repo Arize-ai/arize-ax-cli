@@ -47,6 +47,7 @@
   - [Supported Shells](#supported-shells)
 - [Commands](#commands)
   - [Datasets](#datasets)
+  - [Experiments](#experiments)
   - [Projects](#projects)
   - [Spans](#spans)
   - [Traces](#traces)
@@ -79,16 +80,17 @@
 - [License](#license)
 - [Changelog](#changelog)
 
-Official command-line interface for [Arize AI](https://arize.com) - streamline your MLOps workflows with datasets, experiments, projects, and more.
+Official command-line interface for [Arize AI](https://arize.com) - manage your AI observability resources including datasets, projects, spans, traces, and more.
 
 [![PyPI version](https://badge.fury.io/py/arize-ax-cli.svg)](https://badge.fury.io/py/arize-ax-cli)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 ## Features
 
 - **Dataset Management**: Create, list, update, and delete datasets
-- **Project Management**: Organize your ML projects
+- **Experiment Management**: Run and analyze experiments on your datasets
+- **Project Management**: Organize your projects
 - **Spans & Traces**: Query and filter LLM spans and traces
 - **Multiple Profiles**: Switch between different Arize environments
 - **Flexible Output**: Export to JSON, CSV, Parquet, or display as tables
@@ -326,8 +328,10 @@ format = "json"
 
 Configuration files are stored at:
 
-- **Linux/macOS**: `~/.arize/profiles/<profile>.toml`
-- **Windows**: `%USERPROFILE%\.arize\profiles\<profile>.toml`
+| Profile | Linux/macOS | Windows |
+| ------- | ----------- | ------- |
+| `default` | `~/.arize/config.toml` | `%USERPROFILE%\.arize\config.toml` |
+| Named profiles | `~/.arize/profiles/<profile>.toml` | `%USERPROFILE%\.arize\profiles\<profile>.toml` |
 
 ### Configuration Reference
 
@@ -503,7 +507,7 @@ After running the command, restart your shell or open a new terminal window for 
 Once installed, test tab completion:
 
 ```bash
-ax <TAB>         # Shows available commands (cache, datasets, profiles, projects, spans, traces)
+ax <TAB>         # Shows available commands (cache, datasets, experiments, profiles, projects, spans, traces)
 ax datasets <TAB> # Shows dataset subcommands (list, get, create, delete)
 ax datasets list --<TAB>  # Shows available options
 ```
@@ -532,7 +536,7 @@ ax --show-completion >> ~/.zshrc   # For zsh
 
 ### Datasets
 
-Manage your ML datasets:
+Manage your datasets:
 
 ```bash
 # List datasets
@@ -558,9 +562,32 @@ ax datasets delete <dataset-id> [--force]
 - JSON Lines (`.jsonl`)
 - Parquet (`.parquet`)
 
+### Experiments
+
+Run and analyze experiments on your datasets:
+
+```bash
+# List experiments (optionally filtered by dataset)
+ax experiments list [--dataset-id <dataset-id>] [--limit 15] [--cursor <cursor>]
+
+# Get a specific experiment
+ax experiments get <experiment-id>
+
+# Create a new experiment from a data file
+ax experiments create --name "My Experiment" --dataset-id <dataset-id> --file runs.csv
+
+# List runs for an experiment
+ax experiments list_runs <experiment-id> [--limit 30]
+
+# Delete an experiment
+ax experiments delete <experiment-id> [--force]
+```
+
+> **Note:** The data file for `experiments create` must contain `example_id` and `output` columns. Extra columns are passed through as additional fields.
+
 ### Projects
 
-Organize your ML projects:
+Organize your projects:
 
 ```bash
 # List projects
@@ -822,7 +849,7 @@ ax datasets list --space-id sp_abc123 --verbose
 
 ### Configuration Issues
 
-**Problem**: `profiles file not found`
+**Problem**: `Profile 'default' not found.`
 
 **Solution**: Run `ax profiles create` to create a configuration profile.
 
@@ -878,7 +905,7 @@ ax profiles --help
 
 ### Support
 
-- **Documentation**: [https://docs.arize.com/cli](https://docs.arize.com/cli)
+- **Documentation**: [https://arize.com/docs/api-clients/cli/](https://arize.com/docs/api-clients/cli/)
 - **Bug Reports**: [GitHub Issues](https://github.com/Arize-ai/arize-ax-cli/issues)
 - **Community**: [Arize Community Slack](https://arize-ai.slack.com)
 - **Email**: [support@arize.com](mailto:support@arize.com)
