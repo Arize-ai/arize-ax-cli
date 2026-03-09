@@ -45,7 +45,7 @@ def list_projects(
         int,
         typer.Option(
             "--limit",
-            "-n",
+            "-l",
             help="Maximum number of projects to return",
         ),
     ] = 15,
@@ -220,7 +220,6 @@ def get_project(
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
-    # Resolve with helper functions
     output_format, output_file = parse_output_option(
         output if output else config.output.format
     )

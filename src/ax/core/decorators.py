@@ -18,7 +18,7 @@ from ax.core.exceptions import (
 )
 from ax.utils.console import error, new_line, warning
 
-console = Console()
+console = Console(stderr=True)
 
 P = ParamSpec("P")
 R = TypeVar("R")

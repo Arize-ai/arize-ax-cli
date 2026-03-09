@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.2.1...arize-ax-cli/v0.3.0) (2026-03-09)
+
+
+### 🎁 New Features
+
+* A export commands and datasets append ([#64756](https://github.com/Arize-ai/arize/issues/64756)) ([45859e3](https://github.com/Arize-ai/arize/commit/45859e3f6f0338dbe3a8f4f9359a5978454175a3))
+* Annotation Configs CRUD ([#64587](https://github.com/Arize-ai/arize/issues/64587)) ([3eafb99](https://github.com/Arize-ai/arize/commit/3eafb9986340154d5a36c16a3e3adca21c84530e))
+
+
+### 📚 Documentation
+
+* clean up CLI documentation ([#64762](https://github.com/Arize-ai/arize/issues/64762)) ([aeff0a0](https://github.com/Arize-ai/arize/commit/aeff0a070de85abc469f480ddeef5e5df82e4e1c))
+
 ## [0.2.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.2.0...arize-ax-cli/v0.2.1) (2026-03-04)
 
 

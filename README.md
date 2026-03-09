@@ -47,15 +47,19 @@
   - [Supported Shells](#supported-shells)
 - [Commands](#commands)
   - [Datasets](#datasets)
+  - [Experiments](#experiments)
   - [Projects](#projects)
   - [Spans](#spans)
   - [Traces](#traces)
+  - [Annotation Configs](#annotation-configs)
   - [Cache](#cache)
   - [Global Options](#global-options)
 - [Usage Examples](#usage-examples)
   - [Creating a Dataset from a CSV File](#creating-a-dataset-from-a-csv-file)
   - [Exporting Dataset List to JSON](#exporting-dataset-list-to-json)
-  - [Exporting Dataset Examples to Parquet](#exporting-dataset-examples-to-parquet)
+  - [Exporting Dataset Examples](#exporting-dataset-examples)
+  - [Exporting Experiment Runs](#exporting-experiment-runs)
+  - [Exporting Spans by Trace ID](#exporting-spans-by-trace-id)
   - [Using a Different Profile for a Command](#using-a-different-profile-for-a-command)
   - [Listing Spans and Exporting to CSV](#listing-spans-and-exporting-to-csv)
   - [Listing Traces and Exporting to Parquet](#listing-traces-and-exporting-to-parquet)
@@ -79,16 +83,17 @@
 - [License](#license)
 - [Changelog](#changelog)
 
-Official command-line interface for [Arize AI](https://arize.com) - streamline your MLOps workflows with datasets, experiments, projects, and more.
+Official command-line interface for [Arize AI](https://arize.com) - manage your AI observability resources including datasets, projects, spans, traces, and more.
 
 [![PyPI version](https://badge.fury.io/py/arize-ax-cli.svg)](https://badge.fury.io/py/arize-ax-cli)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
 ## Features
 
 - **Dataset Management**: Create, list, update, and delete datasets
-- **Project Management**: Organize your ML projects
+- **Experiment Management**: Run and analyze experiments on your datasets
+- **Project Management**: Organize your projects
 - **Spans & Traces**: Query and filter LLM spans and traces
 - **Multiple Profiles**: Switch between different Arize environments
 - **Flexible Output**: Export to JSON, CSV, Parquet, or display as tables
@@ -182,10 +187,10 @@ List your projects:
 ax projects list
 ```
 
-List spans in a project:
+Export spans from a project:
 
 ```bash
-ax spans list <project-id>
+ax spans export <project> --stdout
 ```
 
 List traces in a project:
@@ -326,8 +331,10 @@ format = "json"
 
 Configuration files are stored at:
 
-- **Linux/macOS**: `~/.arize/profiles/<profile>.toml`
-- **Windows**: `%USERPROFILE%\.arize\profiles\<profile>.toml`
+| Profile | Linux/macOS | Windows |
+| ------- | ----------- | ------- |
+| `default` | `~/.arize/config.toml` | `%USERPROFILE%\.arize\config.toml` |
+| Named profiles | `~/.arize/profiles/<profile>.toml` | `%USERPROFILE%\.arize\profiles\<profile>.toml` |
 
 ### Configuration Reference
 
@@ -503,8 +510,8 @@ After running the command, restart your shell or open a new terminal window for 
 Once installed, test tab completion:
 
 ```bash
-ax <TAB>         # Shows available commands (cache, datasets, profiles, projects, spans, traces)
-ax datasets <TAB> # Shows dataset subcommands (list, get, create, delete)
+ax <TAB>         # Shows available commands (cache, datasets, experiments, profiles, projects, spans, traces)
+ax datasets <TAB> # Shows dataset subcommands (list, get, export, create, append, delete)
 ax datasets list --<TAB>  # Shows available options
 ```
 
@@ -532,20 +539,26 @@ ax --show-completion >> ~/.zshrc   # For zsh
 
 ### Datasets
 
-Manage your ML datasets:
+Manage your datasets:
 
 ```bash
 # List datasets
 ax datasets list --space-id <space-id> [--limit 15] [--cursor <cursor>]
 
-# Get a specific dataset
+# Get dataset metadata
 ax datasets get <dataset-id>
+
+# Export all examples to a file
+ax datasets export <dataset-id> [--version-id <version-id>] [--output-dir .] [--stdout]
 
 # Create a new dataset
 ax datasets create --name "My Dataset" --space-id <space-id> --file data.csv
 
-# List examples from a dataset
-ax datasets list_examples <dataset-id> [--version-id <version-id>] [--limit 30]
+# Append examples (inline JSON)
+ax datasets append <dataset-id> --json '[{"question": "...", "answer": "..."}]'
+
+# Append examples (from file)
+ax datasets append <dataset-id> --file new_examples.csv [--version-id <version-id>]
 
 # Delete a dataset
 ax datasets delete <dataset-id> [--force]
@@ -558,15 +571,50 @@ ax datasets delete <dataset-id> [--force]
 - JSON Lines (`.jsonl`)
 - Parquet (`.parquet`)
 
+### Experiments
+
+Run and analyze experiments on your datasets:
+
+```bash
+# List experiments (optionally filtered by dataset)
+ax experiments list [--dataset-id <dataset-id>] [--limit 15] [--cursor <cursor>]
+
+# Get a specific experiment
+ax experiments get <experiment-id>
+
+# Export all runs from an experiment
+ax experiments export <experiment-id> [--output-dir .] [--stdout]
+
+# Create a new experiment from a data file
+ax experiments create --name "My Experiment" --dataset-id <dataset-id> --file runs.csv
+
+# List runs for an experiment
+ax experiments list_runs <experiment-id> [--limit 30]
+
+# Delete an experiment
+ax experiments delete <experiment-id> [--force]
+```
+
+> **Note:** The data file for `experiments create` must contain `example_id` and `output` columns. Extra columns are passed through as additional fields.
+
+**Export options:**
+
+| Option | Description |
+|--------|-------------|
+| `--output-dir` | Output directory (default: current directory) |
+| `--stdout` | Print JSON to stdout instead of saving to file |
+| `--profile`, `-p` | Configuration profile to use |
+| `--verbose`, `-v` | Enable verbose logs |
+
 ### Projects
 
-Organize your ML projects:
+Organize your projects:
 
 ```bash
 # List projects
 ax projects list --space-id <space-id> [--limit 15] [--cursor <cursor>]
 
-# Get a specific project
+# Get project metadata
 ax projects get <project-id>
 
 # Create a new project
@@ -578,38 +626,54 @@ ax projects delete <project-id> [--force]
 
 ### Spans
 
-Query and filter LLM spans in a project. Spans are individual units of work (e.g., an LLM call, a tool call) within a trace.
+Export LLM spans from a project. Spans are individual units of work (e.g., an LLM call, a tool call) within a trace. By default spans are written to a JSON file; use `--stdout` to print to stdout instead.
 
 ```bash
-# List spans
-ax spans list <project-id> [--start-time <iso8601>] [--end-time <iso8601>] \
-  [--filter "<expr>"] [--limit 15] [--cursor <cursor>] [--output <format>]
+# Export all spans (writes to file by default)
+ax spans export <project>
+
+# Export with filter
+ax spans export <project> --filter "status_code = 'ERROR'"
+
+# Export by trace, span, or session ID
+ax spans export <project> --trace-id <trace-id>
+ax spans export <project> --span-id <span-id>
+ax spans export <project> --session-id <session-id>
+
+# Export to stdout
+ax spans export <project> --stdout
 ```
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
-| `--start-time` | Start of time window, inclusive (ISO 8601, e.g. `2024-01-01T00:00:00Z`) |
-| `--end-time` | End of time window, exclusive (ISO 8601). Defaults to now |
+| `--trace-id` | Filter by trace ID |
+| `--span-id` | Filter by span ID |
+| `--session-id` | Filter by session ID |
 | `--filter` | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`) |
-| `--limit`, `-n` | Maximum number of spans to return (default: 15) |
-| `--cursor` | Pagination cursor for the next page |
-| `--output`, `-o` | Output format (`table`, `json`, `csv`, `parquet`) or file path |
+| `--space-id` | Space ID (required when using a project name instead of ID) |
+| `--limit`, `-n` | Maximum number of spans to export (default: 100) |
+| `--days` | Lookback window in days (default: 30) |
+| `--start-time` | Override start of time window (ISO 8601) |
+| `--end-time` | Override end of time window (ISO 8601) |
+| `--output-dir` | Output directory (default: current directory) |
+| `--stdout` | Print JSON to stdout instead of saving to file |
 | `--profile`, `-p` | Configuration profile to use |
 | `--verbose`, `-v` | Enable verbose logs |
 
-**Filter examples:**
+**Examples:**
 
 ```bash
-ax spans list <project-id> --filter "status_code = 'ERROR'"
-ax spans list <project-id> --filter "latency_ms > 1000"
-ax spans list <project-id> --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z
+ax spans export <project> --filter "status_code = 'ERROR'"
+ax spans export <project> --filter "latency_ms > 1000"
+ax spans export <project> --trace-id abc123 --filter "latency_ms > 1000"
+ax spans export <project> --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z
 ```
 
 ### Traces
 
-Query root-level traces in a project. Traces are spans with no parent (`parent_id = null`), typically representing a full request or conversation. The CLI automatically applies `parent_id = null`; any `--filter` you provide is ANDed with it.
+Query traces in a project. A trace is a collection of spans representing a full request or conversation; the CLI identifies traces by their root span (`parent_id = null`). The CLI automatically applies `parent_id = null`; any `--filter` you provide is ANDed with it.
 
 ```bash
 # List traces
@@ -637,6 +701,40 @@ ax traces list <project-id> --filter "status_code = 'ERROR'"
 ax traces list <project-id> --start-time 2024-01-01T00:00:00Z
 ax traces list <project-id> --filter "latency_ms > 5000" --limit 50
 ```
+
+### Annotation Configs
+
+Manage annotation configs (rubrics for human and automated evaluation):
+
+```bash
+# List annotation configs
+ax annotation-configs list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+
+# Get a specific annotation config
+ax annotation-configs get <annotation-config-id>
+
+# Create a freeform annotation config (free-text feedback)
+ax annotation-configs create --name "Quality" --space-id <space-id> --type freeform
+
+# Create a continuous annotation config (numeric score range)
+ax annotation-configs create --name "Score" --space-id <space-id> --type continuous \
+  --min-score 0 --max-score 1 --optimization-direction maximize
+
+# Create a categorical annotation config (discrete labels)
+ax annotation-configs create --name "Verdict" --space-id <space-id> --type categorical \
+  --value good --value neutral --value bad --optimization-direction maximize
+
+# Delete an annotation config
+ax annotation-configs delete <annotation-config-id> [--force]
+```
+
+**Supported annotation config types:**
+
+| Type | Required options | Optional options |
+|------|-----------------|------------------|
+| `freeform` | _(none)_ | — |
+| `continuous` | `--min-score`, `--max-score` | `--optimization-direction` |
+| `categorical` | `--value` (repeat for multiple labels, e.g. `--value good --value bad`) | `--optimization-direction` |
 
 ### Cache
 
@@ -681,10 +779,40 @@ ax datasets create \
 ax datasets list --space-id sp_abc123 --output json > datasets.json
 ```
 
-### Exporting Dataset Examples to Parquet
+### Exporting Dataset Examples
 
 ```bash
-ax datasets list_examples ds_xyz789 --output examples.parquet
+# Export to a timestamped directory
+ax datasets export ds_xyz789
+
+# Export a specific version
+ax datasets export ds_xyz789 --version-id ver_abc123
+
+# Pipe to jq for processing
+ax datasets export ds_xyz789 --stdout | jq '.[].input'
+```
+
+### Exporting Experiment Runs
+
+```bash
+# Export all runs to a timestamped directory
+ax experiments export exp_abc123
+
+# Pipe to stdout for processing
+ax experiments export exp_abc123 --stdout | jq '.[] | select(.output != null)'
+```
+
+### Exporting Spans by Trace ID
+
+```bash
+# Export all spans in a trace
+ax spans export proj_abc123 --trace-id tr_xyz789
+
+# Export a session's spans to stdout
+ax spans export proj_abc123 --session-id sess_456 --stdout
+
+# Export with a custom lookback window
+ax spans export proj_abc123 --trace-id tr_xyz789 --days 7
 ```
 
 ### Using a Different Profile for a Command
@@ -693,17 +821,17 @@ ax datasets list_examples ds_xyz789 --output examples.parquet
 ax datasets list --space-id sp_abc123 --profile production
 ```
 
-### Listing Spans and Exporting to CSV
+### Exporting Spans
 
 ```bash
-# List spans in a project (default: last 15)
-ax spans list proj_abc123
+# Export all spans from a project
+ax spans export proj_abc123
 
-# Export error spans to a CSV file
-ax spans list proj_abc123 --filter "status_code = 'ERROR'" --limit 100 --output spans_errors.csv
+# Export error spans
+ax spans export proj_abc123 --filter "status_code = 'ERROR'" --limit 100
 
-# List spans in a time window
-ax spans list proj_abc123 --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z --output json
+# Export spans in a time window to stdout
+ax spans export proj_abc123 --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z --stdout
 ```
 
 ### Listing Traces and Exporting to Parquet
@@ -749,7 +877,7 @@ ax datasets list --space-id sp_stage456
 ### Filtering Spans by Status
 
 ```bash
-ax spans list <project-id> --filter "status_code = 'ERROR'" --output json
+ax spans export <project> --filter "status_code = 'ERROR'" --stdout
 ```
 
 ### Listing Traces in a Time Window
@@ -799,7 +927,7 @@ DATASETS=$(ax datasets list --space-id sp_abc123 --output json)
 echo "$DATASETS" | jq '.data[] | select(.name | contains("test"))'
 
 # Export to file
-ax datasets list_examples ds_xyz789 --output data.parquet
+ax datasets export ds_xyz789
 ```
 
 ### Environment Variables
@@ -822,7 +950,7 @@ ax datasets list --space-id sp_abc123 --verbose
 
 ### Configuration Issues
 
-**Problem**: `profiles file not found`
+**Problem**: `Profile 'default' not found.`
 
 **Solution**: Run `ax profiles create` to create a configuration profile.
 
@@ -878,7 +1006,7 @@ ax profiles --help
 
 ### Support
 
-- **Documentation**: [https://docs.arize.com/cli](https://docs.arize.com/cli)
+- **Documentation**: [https://arize.com/docs/api-clients/cli/](https://arize.com/docs/api-clients/cli/)
 - **Bug Reports**: [GitHub Issues](https://github.com/Arize-ai/arize-ax-cli/issues)
 - **Community**: [Arize Community Slack](https://arize-ai.slack.com)
 - **Email**: [support@arize.com](mailto:support@arize.com)

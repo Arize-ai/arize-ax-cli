@@ -64,6 +64,7 @@ def main(
 # These will be implemented in separate files
 def register_commands() -> None:
     """Register all command groups."""
+    from ax.commands.annotation_configs import app as annotation_configs_app
     from ax.commands.cache import app as cache_app
     from ax.commands.datasets import app as datasets_app
     from ax.commands.experiments import app as experiments_app
@@ -73,6 +74,7 @@ def register_commands() -> None:
     from ax.commands.traces import app as traces_app
 
     # Sorted alphabetically for consistency
+    app.add_typer(annotation_configs_app)
     app.add_typer(cache_app)
     app.add_typer(datasets_app)
     app.add_typer(experiments_app)

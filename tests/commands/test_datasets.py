@@ -1,0 +1,354 @@
+"""Tests for dataset CLI commands."""
+
+import json
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+from typer.testing import CliRunner
+
+from ax.commands.datasets import _validate_examples_structure, app
+
+
+class TestDatasetCommands:
+    """Verify dataset subcommands are registered with the correct names."""
+
+    def test_expected_commands_registered(self) -> None:
+        """Check that get, export, append, list, create, delete are present."""
+        names = [cmd.name for cmd in app.registered_commands]
+        for expected in ("get", "export", "append", "list", "create", "delete"):
+            assert expected in names
+        assert "list_examples" not in names
+        assert "list-examples" not in names
+
+
+class TestListDatasets:
+    """Tests for the 'ax datasets list' command."""
+
+    def test_calls_client_datasets_list(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Invoke 'list' with defaults and verify the SDK call."""
+        mock_client.datasets.list.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"datasets": []})
+        )
+        result = cli_runner.invoke(app, ["list"])
+        assert result.exit_code == 0
+        mock_client.datasets.list.assert_called_once_with(
+            space_id=None,
+            limit=15,
+            cursor=None,
+        )
+
+    def test_list_with_space_id(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --space-id is forwarded."""
+        mock_client.datasets.list.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"datasets": []})
+        )
+        result = cli_runner.invoke(app, ["list", "--space-id", "space-abc"])
+        assert result.exit_code == 0
+        mock_client.datasets.list.assert_called_once_with(
+            space_id="space-abc",
+            limit=15,
+            cursor=None,
+        )
+
+    def test_list_with_limit(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --limit / -n is forwarded."""
+        mock_client.datasets.list.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"datasets": []})
+        )
+        result = cli_runner.invoke(app, ["list", "-l", "5"])
+        assert result.exit_code == 0
+        mock_client.datasets.list.assert_called_once_with(
+            space_id=None,
+            limit=5,
+            cursor=None,
+        )
+
+    def test_list_with_cursor(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --cursor for pagination is forwarded."""
+        mock_client.datasets.list.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"datasets": []})
+        )
+        result = cli_runner.invoke(app, ["list", "--cursor", "cursor-xyz"])
+        assert result.exit_code == 0
+        mock_client.datasets.list.assert_called_once_with(
+            space_id=None,
+            limit=15,
+            cursor="cursor-xyz",
+        )
+
+    def test_list_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """API failure should result in a non-zero exit code."""
+        mock_client.datasets.list.side_effect = Exception("connection refused")
+        result = cli_runner.invoke(app, ["list"])
+        assert result.exit_code != 0
+
+
+class TestGetDataset:
+    """Tests for the 'ax datasets get' command."""
+
+    def test_calls_client_datasets_get(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Invoke 'get' and verify the SDK call."""
+        mock_client.datasets.get.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        result = cli_runner.invoke(app, ["get", "ds-1"])
+        assert result.exit_code == 0
+        mock_client.datasets.get.assert_called_once_with(dataset_id="ds-1")
+
+
+class TestExportDataset:
+    """Tests for the 'ax datasets export' command."""
+
+    def test_export_defaults_to_rest(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify export defaults to all=False (REST)."""
+        response = MagicMock()
+        response.examples = []
+        mock_client.datasets.list_examples.return_value = response
+
+        result = cli_runner.invoke(app, ["export", "ds-1", "--stdout"])
+        assert result.exit_code == 0
+        mock_client.datasets.list_examples.assert_called_once_with(
+            dataset_id="ds-1",
+            dataset_version_id=None,
+            all=False,
+        )
+
+    def test_export_all_uses_flight(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --all passes all=True to SDK (Flight path)."""
+        response = MagicMock()
+        response.examples = []
+        mock_client.datasets.list_examples.return_value = response
+
+        result = cli_runner.invoke(app, ["export", "ds-1", "--all", "--stdout"])
+        assert result.exit_code == 0
+        mock_client.datasets.list_examples.assert_called_once_with(
+            dataset_id="ds-1",
+            dataset_version_id=None,
+            all=True,
+        )
+
+    def test_export_with_version_id(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --version-id is forwarded to list_examples."""
+        response = MagicMock()
+        response.examples = []
+        mock_client.datasets.list_examples.return_value = response
+
+        result = cli_runner.invoke(
+            app,
+            ["export", "ds-1", "--version-id", "v2", "--stdout"],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.list_examples.assert_called_once_with(
+            dataset_id="ds-1",
+            dataset_version_id="v2",
+            all=False,
+        )
+
+    def test_export_writes_file(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: object,
+    ) -> None:
+        """Verify export writes to disk when --stdout is not given."""
+        response = MagicMock()
+        response.examples = []
+        mock_client.datasets.list_examples.return_value = response
+
+        with patch("ax.commands.datasets.make_export_dir") as mock_dir:
+            mock_dir.return_value = tmp_path  # type: ignore[assignment]
+            with patch("ax.commands.datasets.write_json_array") as mock_write:
+                mock_write.return_value = tmp_path / "examples.json"  # type: ignore[operator]
+                result = cli_runner.invoke(
+                    app,
+                    ["export", "ds-1", "--output-dir", str(tmp_path)],
+                )
+                assert result.exit_code == 0
+                mock_write.assert_called_once()
+
+
+class TestAppendDataset:
+    """Tests for the 'ax datasets append' command."""
+
+    def test_append_with_json_string(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify append forwards inline JSON to the SDK."""
+        mock_client.datasets.append_examples.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        examples = [{"question": "What is 2+2?", "answer": "4"}]
+        result = cli_runner.invoke(
+            app,
+            ["append", "ds-1", "--json", json.dumps(examples)],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.append_examples.assert_called_once_with(
+            dataset_id="ds-1",
+            dataset_version_id="",
+            examples=examples,
+        )
+
+    def test_append_with_file(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """Verify append reads a CSV file and forwards parsed examples."""
+        mock_client.datasets.append_examples.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        csv_file = tmp_path / "data.csv"
+        csv_file.write_text("question,answer\nWhat is 2+2?,4\n")
+
+        result = cli_runner.invoke(
+            app,
+            ["append", "ds-1", "--file", str(csv_file)],
+        )
+        assert result.exit_code == 0
+        call_kwargs = mock_client.datasets.append_examples.call_args[1]
+        assert call_kwargs["dataset_id"] == "ds-1"
+        assert call_kwargs["examples"][0]["question"] == "What is 2+2?"
+
+    def test_append_with_version_id(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --version-id is forwarded to append_examples."""
+        mock_client.datasets.append_examples.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        examples = [{"q": "hello"}]
+        result = cli_runner.invoke(
+            app,
+            [
+                "append",
+                "ds-1",
+                "--json",
+                json.dumps(examples),
+                "--version-id",
+                "v2",
+            ],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.append_examples.assert_called_once_with(
+            dataset_id="ds-1",
+            dataset_version_id="v2",
+            examples=examples,
+        )
+
+    def test_append_requires_exactly_one_input(
+        self,
+        cli_runner: CliRunner,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """Neither or both inputs should fail."""
+        result_none = cli_runner.invoke(app, ["append", "ds-1"])
+        assert result_none.exit_code != 0
+
+        csv_file = tmp_path / "data.csv"
+        csv_file.write_text("a,b\n1,2\n")
+        result_both = cli_runner.invoke(
+            app,
+            ["append", "ds-1", "--json", '[{"a":1}]', "--file", str(csv_file)],
+        )
+        assert result_both.exit_code != 0
+
+    def test_append_rejects_bad_json(
+        self,
+        cli_runner: CliRunner,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Malformed JSON and non-array JSON both fail."""
+        result_bad = cli_runner.invoke(
+            app, ["append", "ds-1", "--json", "not json"]
+        )
+        assert result_bad.exit_code != 0
+        assert "Invalid JSON" in result_bad.output
+
+        result_obj = cli_runner.invoke(
+            app, ["append", "ds-1", "--json", '{"a": 1}']
+        )
+        assert result_obj.exit_code != 0
+        assert "JSON array" in result_obj.output
+
+
+class TestValidateExamplesStructure:
+    """Tests for the _validate_examples_structure function."""
+
+    def test_valid_examples_accepted(self) -> None:
+        """Well-formed examples should pass without error."""
+        _validate_examples_structure([{"question": "What?", "answer": "That."}])
+        _validate_examples_structure(
+            [{"data": {"nested": True}, "tags": ["a", "b"]}]
+        )
+
+    @pytest.mark.parametrize(
+        "examples,match",
+        [
+            ([], "empty"),
+            ([{}], "index 0"),
+            (["not a dict"], "not a JSON object"),
+        ],
+    )
+    def test_structural_errors_rejected(
+        self, examples: list, match: str
+    ) -> None:
+        """Empty, non-dict, and empty-dict examples should raise."""
+        with pytest.raises(Exception, match=match):
+            _validate_examples_structure(examples)

@@ -3,7 +3,6 @@ from enum import Enum
 
 import questionary
 import typer
-from rich.console import Console
 
 from ax.config.input_readers import (
     read_api_key,
@@ -23,9 +22,6 @@ from ax.config.schema import (
     StorageConfig,
     TransportConfig,
 )
-
-console = Console()
-
 
 # Standard environment variable names for detection
 ENV_VAR_MAPPING = {

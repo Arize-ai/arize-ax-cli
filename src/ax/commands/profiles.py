@@ -41,7 +41,7 @@ app = typer.Typer(
     context_settings={"help_option_names": ["--help", "-h"]},
 )
 
-console = Console()
+console = Console(stderr=True)
 
 
 @app.command("create")

@@ -11,7 +11,6 @@ from typing import Literal
 import questionary
 import typer
 from arize import Region
-from rich.console import Console
 
 from ax.config.schema import (
     RoutingConfig,
@@ -19,8 +18,6 @@ from ax.config.schema import (
     TransportConfig,
 )
 from ax.utils.console import prompt
-
-console = Console()
 
 INSERT_VALUE = "Insert value"
 USE_ENV_VAR = "Use environment variable"

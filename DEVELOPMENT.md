@@ -101,9 +101,12 @@ arize-ax-cli/
 │   ├── commands/             # Command implementations
 │   │   ├── __init__.py
 │   │   ├── cache.py          # Cache management commands
-│   │   ├── config.py         # Configuration commands
 │   │   ├── datasets.py       # Dataset CRUD operations
-│   │   └── projects.py       # Project CRUD operations
+│   │   ├── experiments.py    # Experiment CRUD operations
+│   │   ├── profiles.py       # Profile management commands
+│   │   ├── projects.py       # Project CRUD operations
+│   │   ├── spans.py          # Span query commands
+│   │   └── traces.py         # Trace query commands
 │   │
 │   ├── config/               # Configuration management
 │   │   ├── __init__.py

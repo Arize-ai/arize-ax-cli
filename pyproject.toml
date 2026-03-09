@@ -42,7 +42,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://arize.com"
-Documentation = "https://docs.arize.com/cli"
+Documentation = "https://arize.com/docs/api-clients/cli/"
 Repository = "https://github.com/Arize-ai/arize-ax-cli"
 "Bug Tracker" = "https://github.com/Arize-ai/arize-ax-cli/issues"
 

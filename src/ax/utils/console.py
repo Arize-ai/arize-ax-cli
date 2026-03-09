@@ -17,7 +17,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
-console = Console()
+console = Console(stderr=True)
 
 
 def setup_logging(verbose: bool) -> None:

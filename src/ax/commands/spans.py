@@ -1,7 +1,9 @@
 """Spans management commands."""
 
+import json
+import sys
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import typer
@@ -10,15 +12,14 @@ from arize import ArizeClient
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
-from ax.core.output import output_data
 from ax.utils.console import (
     setup_logging,
     spinner,
     success,
+    warning,
 )
-from ax.utils.file_io import (
-    parse_output_option,
-)
+from ax.utils.export import make_export_dir, print_json_array, write_json_array
+from ax.utils.projects import resolve_project_id
 
 # Create spans subcommand app
 app = typer.Typer(
@@ -29,49 +30,143 @@ app = typer.Typer(
 )
 
 
-@app.command("list")
+def _build_span_filter(
+    trace_id: str | None,
+    span_id: str | None,
+    session_id: str | None,
+    filter_expr: str | None = None,
+) -> tuple[str | None, str, str]:
+    """Build a combined filter from ID flags and an optional filter expression.
+
+    Returns ``(filter_string_or_None, dir_prefix, dir_id)`` used by the export
+    command for both the API call and the output directory name.
+    """
+    provided = [
+        ("trace_id", trace_id),
+        ("span_id", span_id),
+        ("session_id", session_id),
+    ]
+    set_flags = [(name, val) for name, val in provided if val is not None]
+
+    if len(set_flags) > 1:
+        names = ", ".join(f"--{n.replace('_', '-')}" for n, _ in set_flags)
+        raise typer.BadParameter(
+            f"Only one of --trace-id, --span-id, or --session-id may be "
+            f"provided (got {names})."
+        )
+
+    filter_parts: list[str] = []
+    prefix = "spans"
+    id_value = "all"
+
+    if set_flags:
+        flag_name, flag_value = set_flags[0]
+        filter_map = {
+            "trace_id": (f"context.trace_id = '{flag_value}'", "trace"),
+            "span_id": (f"context.span_id = '{flag_value}'", "span"),
+            "session_id": (
+                f"attributes.session.id = '{flag_value}'",
+                "session",
+            ),
+        }
+        id_filter, prefix = filter_map[flag_name]
+        id_value = flag_value
+        filter_parts.append(id_filter)
+
+    if filter_expr:
+        filter_parts.append(filter_expr)
+        if not set_flags:
+            id_value = "filtered"
+
+    combined = " AND ".join(filter_parts) if filter_parts else None
+    return combined, prefix, id_value
+
+
+@app.command("export")
 @handle_errors
-def list_spans(
-    project_id: Annotated[
+def export_spans(
+    project: Annotated[
         str,
-        typer.Argument(help="Project ID"),
+        typer.Argument(help="Project name or ID"),
     ],
-    start_time: Annotated[
+    trace_id: Annotated[
         str | None,
         typer.Option(
-            "--start-time",
-            help="Start of time window, inclusive (ISO 8601, e.g. 2024-01-01T00:00:00Z).",
+            "--trace-id",
+            help="Filter by trace ID",
         ),
     ] = None,
-    end_time: Annotated[
+    span_id: Annotated[
         str | None,
         typer.Option(
-            "--end-time",
-            help="End of time window, exclusive (ISO 8601, e.g. 2024-01-02T00:00:00Z). Defaults to now.",
+            "--span-id",
+            help="Filter by span ID",
         ),
     ] = None,
-    filter: Annotated[
+    session_id: Annotated[
+        str | None,
+        typer.Option(
+            "--session-id",
+            help="Filter by session ID",
+        ),
+    ] = None,
+    filter_expr: Annotated[
         str | None,
         typer.Option(
             "--filter",
             help='Filter expression (e.g. "status_code = \'ERROR\'", "latency_ms > 1000").',
         ),
     ] = None,
+    space_id: Annotated[
+        str | None,
+        typer.Option(
+            "--space-id",
+            help="Space ID (required when using a project name instead of ID)",
+        ),
+    ] = None,
     limit: Annotated[
         int,
         typer.Option(
             "--limit",
-            "-n",
-            help="Maximum number of spans to return",
+            "-l",
+            help="Maximum number of spans to export",
         ),
-    ] = 15,
-    cursor: Annotated[
+    ] = 100,
+    days: Annotated[
+        int,
+        typer.Option(
+            "--days",
+            help="Lookback window in days (default: 30)",
+        ),
+    ] = 30,
+    start_time: Annotated[
         str | None,
         typer.Option(
-            "--cursor",
-            help="Pagination cursor for next page",
+            "--start-time",
+            help="Override start of time window (ISO 8601)",
         ),
     ] = None,
+    end_time: Annotated[
+        str | None,
+        typer.Option(
+            "--end-time",
+            help="Override end of time window (ISO 8601)",
+        ),
+    ] = None,
+    output_dir: Annotated[
+        str,
+        typer.Option(
+            "--output-dir",
+            help="Output directory (default: current directory)",
+        ),
+    ] = ".",
+    stdout: Annotated[
+        bool,
+        typer.Option(
+            "--stdout",
+            help="Print JSON to stdout instead of saving to file",
+        ),
+    ] = False,
     profile: Annotated[
         str,
         typer.Option(
@@ -80,14 +175,13 @@ def list_spans(
             help="Configuration profile to use",
         ),
     ] = "",
-    output: Annotated[
-        str,
+    use_all: Annotated[
+        bool,
         typer.Option(
-            "--output",
-            "-o",
-            help="Output format (table, json, csv, parquet) or file path",
+            "--all",
+            help="Use Arrow Flight for bulk export (streams all matching spans, ignores --limit).",
         ),
-    ] = "",
+    ] = False,
     verbose: Annotated[
         bool,
         typer.Option(
@@ -97,36 +191,99 @@ def list_spans(
         ),
     ] = False,
 ) -> None:
-    """List spans in a project."""
+    """Export spans to a JSON file.
+
+    Filter by trace ID, span ID, or session ID (mutually exclusive), and
+    optionally combine with --filter for additional narrowing.  Without any
+    ID flag, all spans are exported (optionally narrowed by --filter).
+
+    By default writes to a file under --output-dir; use --stdout to print
+    JSON to stdout instead.
+
+    Pass --all to use Arrow Flight for bulk export (requires --space-id).
+    """
     setup_logging(verbose)
+
+    if days <= 0:
+        raise typer.BadParameter("--days must be a positive integer.")
+
+    if not use_all and limit <= 0:
+        raise typer.BadParameter("--limit must be a positive integer.")
+
+    if use_all and not space_id:
+        raise typer.BadParameter("--space-id is required when using --all.")
+
+    if use_all and limit != 100:
+        warning("--limit is ignored when --all is set.")
+
+    filter_combined, prefix, id_value = _build_span_filter(
+        trace_id, span_id, session_id, filter_expr
+    )
+
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
-    # Resolve with helper functions
-    output_format, output_file = parse_output_option(
-        output if output else config.output.format
+    end_dt = (
+        datetime.fromisoformat(end_time)
+        if end_time
+        else datetime.now(tz=timezone.utc)
+    )
+    start_dt = (
+        datetime.fromisoformat(start_time)
+        if start_time
+        else end_dt - timedelta(days=days)
     )
 
-    start_dt = datetime.fromisoformat(start_time) if start_time else None
-    end_dt = datetime.fromisoformat(end_time) if end_time else None
+    if start_dt >= end_dt:
+        raise typer.BadParameter(
+            f"--start-time ({start_dt.isoformat()}) must be before "
+            f"--end-time ({end_dt.isoformat()})."
+        )
 
     try:
-        with spinner("Fetching spans"):
-            response = client.spans.list(
-                project_id=project_id,
-                start_time=start_dt,
-                end_time=end_dt,
-                filter=filter,
-                limit=limit,
-                cursor=cursor,
-            )
+        if use_all:
+            with spinner("Exporting spans via Arrow Flight"):
+                import warnings
+
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    df = client.spans.export_to_df(
+                        space_id=space_id or "",
+                        project_name=project,
+                        start_time=start_dt,
+                        end_time=end_dt,
+                        where=filter_combined or "",
+                    )
+            records = df.to_dict(orient="records")
+            if not records:
+                warning("No spans found")
+            data_json = json.dumps(records, indent=2, default=str)
+            if stdout:
+                sys.stdout.write(data_json)
+                sys.stdout.write("\n")
+            else:
+                export_path = make_export_dir(output_dir, prefix, id_value)
+                file_path = export_path / "spans.json"
+                file_path.write_text(data_json)
+                success(f"Exported {len(records)} spans to {file_path}")
+        else:
+            with spinner("Exporting spans"):
+                resolved_id = resolve_project_id(client, project, space_id)
+                response = client.spans.list(
+                    project_id=resolved_id,
+                    start_time=start_dt,
+                    end_time=end_dt,
+                    filter=filter_combined,
+                    limit=limit,
+                )
+            spans = getattr(response, "spans", None) or []
+            if not spans:
+                warning("No spans found")
+            if stdout:
+                print_json_array(spans)
+            else:
+                export_path = make_export_dir(output_dir, prefix, id_value)
+                file_path = write_json_array(export_path, "spans.json", spans)
+                success(f"Exported {len(spans)} spans to {file_path}")
     except Exception as e:
-        raise APIError(f"Failed to list spans: {e}") from e
-    else:
-        output_data(
-            response,
-            format_type=output_format,
-            output_file=output_file,
-        )
-        if output_file:
-            success(f"Saved spans to {output_file}")
+        raise APIError(f"Failed to export spans: {e}") from e

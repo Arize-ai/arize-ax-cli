@@ -1,6 +1,7 @@
 """Output formatters for different formats (table, json, csv, parquet)."""
 
 import json
+import sys
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -19,7 +20,7 @@ from ax.core.pydantic import (
     flatten_basemodel_for_export,
     is_list_response_model,
 )
-from ax.utils.console import new_line, text, text_dimmed
+from ax.utils.console import new_line, text_dimmed
 
 console = Console()
 
@@ -142,7 +143,6 @@ class OutputFormatter(ABC):
             # that extracts the data as a dataframe (excluding pagination)
             return data.to_df(  # type:ignore
                 exclude_none=True,
-                expand_field="additional_properties",
                 expand_prefix="",
             )
 
@@ -198,7 +198,13 @@ class TableFormatter(OutputFormatter):
 
 
 class JSONFormatter(OutputFormatter):
-    """JSON formatter for machine-readable output."""
+    """JSON formatter for machine-readable output.
+
+    Writes directly to sys.stdout instead of using Rich's console.print().
+    Rich wraps long lines to fit the terminal width (default 80 columns),
+    which inserts literal newlines into JSON string values and produces
+    invalid JSON that json.loads() cannot parse.
+    """
 
     def format(self, data: BaseModel, output_file: str = "") -> None:
         """Format data as JSON."""
@@ -211,11 +217,17 @@ class JSONFormatter(OutputFormatter):
             except Exception as e:
                 raise FileIOError(f"Failed to write JSON file: {e}") from e
         else:
-            text(json_str)
+            sys.stdout.write(json_str)
+            sys.stdout.write("\n")
 
 
 class CSVFormatter(OutputFormatter):
-    """CSV formatter for export-friendly output."""
+    """CSV formatter for export-friendly output.
+
+    Writes directly to sys.stdout instead of Rich's console.print()
+    for the same reason as JSONFormatter -- Rich line-wrapping corrupts
+    machine-readable output.
+    """
 
     def format(self, data: BaseModel, output_file: str = "") -> None:
         """Format data as CSV."""
@@ -227,9 +239,7 @@ class CSVFormatter(OutputFormatter):
             except Exception as e:
                 raise FileIOError(f"Failed to write CSV file: {e}") from e
         else:
-            # Output to stdout
-            csv_str = df.to_csv(index=False)
-            text(csv_str)
+            sys.stdout.write(df.to_csv(index=False))
 
 
 class ParquetFormatter(OutputFormatter):
