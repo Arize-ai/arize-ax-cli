@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.4.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.3.0...arize-ax-cli/v0.4.0) (2026-03-17)
+
+
+### 🎁 New Features
+
+* **profile:** make profile loading resilient to invalid/extra config fields ([#65818](https://github.com/Arize-ai/arize/issues/65818)) ([e07f658](https://github.com/Arize-ai/arize/commit/e07f6585b7801c9f9a42d10f6c339e8c4d0c2b4e))
+* **spaces:** Spaces CLI CRUD ([#64776](https://github.com/Arize-ai/arize/issues/64776)) ([54e3edf](https://github.com/Arize-ai/arize/commit/54e3edf42b6c2fbb438fba3dab7d7ec62c0b9f40))
+
+
+### 🐛 Bug Fixes
+
+* **cli:** add missing else so --verbose enables debug logging ([#65167](https://github.com/Arize-ai/arize/issues/65167)) ([ece74c9](https://github.com/Arize-ai/arize/commit/ece74c906d5611e0ebfc8f857d74fb53cfe2c4cf))
+* **api-keys:** rename regenerate endpoint to refresh ([#65562](https://github.com/Arize-ai/arize/issues/65562)) ([36df84f](https://github.com/Arize-ai/arize/commit/36df84ff50fc77d121173cb449b49344e9b9dded))
+* **cli:** unify output_file success messages in OutputFormatter ([#65279](https://github.com/Arize-ai/arize/issues/65279)) ([620a50a](https://github.com/Arize-ai/arize/commit/620a50a6000c62dd920aa80e5da420cad9be058f))
+
+
+### ❔ Miscellaneous Chores
+
+* Add AGENTS.md for SDKs and CLI ([#65353](https://github.com/Arize-ai/arize/issues/65353)) ([ab80512](https://github.com/Arize-ai/arize/commit/ab80512f26e3b2d08cca6fcc9c831f1b633e55d3))
+* **ax-cli:** replace unrelated name with "project ID" in docs and tests    ([#65166](https://github.com/Arize-ai/arize/issues/65166)) ([61d96f3](https://github.com/Arize-ai/arize/commit/61d96f3656699cb95e52d61611b2f6bc8dd3d662))
+
 ## [0.3.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.2.1...arize-ax-cli/v0.3.0) (2026-03-09)
 
 

@@ -111,8 +111,6 @@ def list_experiments(
             format_type=output_format,
             output_file=output_file,
         )
-        if output_file:
-            success(f"Saved experiments to {output_file}")
 
 
 @app.command("get")

@@ -20,7 +20,7 @@ from ax.core.pydantic import (
     flatten_basemodel_for_export,
     is_list_response_model,
 )
-from ax.utils.console import new_line, text_dimmed
+from ax.utils.console import new_line, success, text_dimmed
 
 console = Console()
 
@@ -216,6 +216,8 @@ class JSONFormatter(OutputFormatter):
                 Path(output_file).write_text(json_str)
             except Exception as e:
                 raise FileIOError(f"Failed to write JSON file: {e}") from e
+            else:
+                success(f"Saved to {output_file}")
         else:
             sys.stdout.write(json_str)
             sys.stdout.write("\n")
@@ -238,6 +240,8 @@ class CSVFormatter(OutputFormatter):
                 df.to_csv(output_file, index=False)
             except Exception as e:
                 raise FileIOError(f"Failed to write CSV file: {e}") from e
+            else:
+                success(f"Saved to {output_file}")
         else:
             sys.stdout.write(df.to_csv(index=False))
 
@@ -253,12 +257,13 @@ class ParquetFormatter(OutputFormatter):
                 "Use --output to specify a file path."
             )
 
-        df = self._to_dataframe(data)
-
         try:
+            df = self._to_dataframe(data)
             df.to_parquet(output_file, index=False)
         except Exception as e:
             raise FileIOError(f"Failed to write Parquet file: {e}") from e
+        else:
+            success(f"Saved to {output_file}")
 
 
 def get_formatter(format_type: str) -> OutputFormatter:

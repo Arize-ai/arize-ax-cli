@@ -327,6 +327,50 @@ def use_profile(
     success(f"Switched to profile '{profile}'")
 
 
+@app.command("validate")
+@handle_errors
+def validate_profile(
+    profile: Annotated[
+        str,
+        typer.Option(
+            "--profile",
+            "-p",
+            help="Profile to validate (uses active if not specified)",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Validate a configuration profile.
+
+    Checks the profile for missing or incorrect configuration and reports
+    any issues found. Run 'ax profiles create' to fix problems.
+    """
+    setup_logging(verbose)
+    if not profile:
+        profile = ConfigManager.get_active_profile()
+
+    if not ConfigManager.exists(profile):
+        raise ConfigError(
+            f"Profile '{profile}' does not exist.\n"
+            "Run 'ax profiles create' to create one."
+        )
+
+    try:
+        ConfigManager.load(profile)
+        success(f"Profile '{profile}' is valid.")
+    except ConfigError as e:
+        console.print(f"[red]Invalid profile '{profile}':[/red] {e}")
+        info("Run 'ax profiles create' to recreate the profile.")
+        raise typer.Exit(code=1)  # noqa: B904
+
+
 @app.command("delete")
 @handle_errors
 def delete_profile(

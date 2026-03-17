@@ -106,8 +106,6 @@ def list_projects(
             format_type=output_format,
             output_file=output_file,
         )
-        if output_file:
-            success(f"Saved projects to {output_file}")
 
 
 @app.command("create")

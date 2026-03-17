@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def _is_base64_id(value: str) -> bool:
-    """Detect whether *value* is a base64-encoded relay ID (e.g. ``Model:123``)."""
+    """Detect whether *value* is a base64-encoded project ID (e.g. ``TW9kZWw6MTIz``)."""
     try:
         decoded = base64.b64decode(value, validate=True).decode("utf-8")
     except Exception:
@@ -27,7 +27,7 @@ def resolve_project_id(
 
     Auto-detects the format of *project*:
 
-    * **Base64 relay ID** (e.g. ``"TW9kZWw6MTIz"``) -- returned as-is,
+    * **Base64 project ID** (e.g. ``"TW9kZWw6MTIz"``) -- returned as-is,
       regardless of whether *space_id* is provided.
     * **Human-readable name** (e.g. ``"copilot-prod"``) -- resolved by
       listing projects in the given space.  Requires *space_id*.

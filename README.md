@@ -207,11 +207,12 @@ The Arize CLI uses a flexible configuration system that supports multiple profil
 
 | Command                        | Description                                      |
 | ------------------------------ | ------------------------------------------------ |
-| `ax profiles create`           | Create a new configuration profile interactively |
-| `ax profiles list`             | List all available profiles                      |
-| `ax profiles show`             | Display the current profile's configuration      |
-| `ax profiles use <profile>`    | Switch to a different profile                    |
-| `ax profiles delete <profile>` | Delete a configuration profile                   |
+| `ax profiles create`             | Create a new configuration profile interactively   |
+| `ax profiles list`               | List all available profiles                        |
+| `ax profiles show`               | Display the current profile's configuration        |
+| `ax profiles use <profile>`      | Switch to a different profile                      |
+| `ax profiles validate`           | Check profile for missing or incorrect config      |
+| `ax profiles delete <profile>`   | Delete a configuration profile                     |
 
 ### Configuration Modes
 
@@ -331,9 +332,9 @@ format = "json"
 
 Configuration files are stored at:
 
-| Profile | Linux/macOS | Windows |
-| ------- | ----------- | ------- |
-| `default` | `~/.arize/config.toml` | `%USERPROFILE%\.arize\config.toml` |
+| Profile        | Linux/macOS                        | Windows                                        |
+| -------------- | ---------------------------------- | ---------------------------------------------- |
+| `default`      | `~/.arize/config.toml`             | `%USERPROFILE%\.arize\config.toml`             |
 | Named profiles | `~/.arize/profiles/<profile>.toml` | `%USERPROFILE%\.arize\profiles\<profile>.toml` |
 
 ### Configuration Reference
@@ -599,12 +600,12 @@ ax experiments delete <experiment-id> [--force]
 
 **Export options:**
 
-| Option | Description |
-|--------|-------------|
-| `--output-dir` | Output directory (default: current directory) |
-| `--stdout` | Print JSON to stdout instead of saving to file |
-| `--profile`, `-p` | Configuration profile to use |
-| `--verbose`, `-v` | Enable verbose logs |
+| Option            | Description                                    |
+| ----------------- | ---------------------------------------------- |
+| `--output-dir`    | Output directory (default: current directory)  |
+| `--stdout`        | Print JSON to stdout instead of saving to file |
+| `--profile`, `-p` | Configuration profile to use                   |
+| `--verbose`, `-v` | Enable verbose logs                            |
 
 ### Projects
 
@@ -646,21 +647,21 @@ ax spans export <project> --stdout
 
 **Options:**
 
-| Option | Description |
-|--------|-------------|
-| `--trace-id` | Filter by trace ID |
-| `--span-id` | Filter by span ID |
-| `--session-id` | Filter by session ID |
-| `--filter` | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`) |
-| `--space-id` | Space ID (required when using a project name instead of ID) |
-| `--limit`, `-n` | Maximum number of spans to export (default: 100) |
-| `--days` | Lookback window in days (default: 30) |
-| `--start-time` | Override start of time window (ISO 8601) |
-| `--end-time` | Override end of time window (ISO 8601) |
-| `--output-dir` | Output directory (default: current directory) |
-| `--stdout` | Print JSON to stdout instead of saving to file |
-| `--profile`, `-p` | Configuration profile to use |
-| `--verbose`, `-v` | Enable verbose logs |
+| Option            | Description                                                           |
+| ----------------- | --------------------------------------------------------------------- |
+| `--trace-id`      | Filter by trace ID                                                    |
+| `--span-id`       | Filter by span ID                                                     |
+| `--session-id`    | Filter by session ID                                                  |
+| `--filter`        | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`) |
+| `--space-id`      | Space ID (required when using a project name instead of ID)           |
+| `--limit`, `-n`   | Maximum number of spans to export (default: 100)                      |
+| `--days`          | Lookback window in days (default: 30)                                 |
+| `--start-time`    | Override start of time window (ISO 8601)                              |
+| `--end-time`      | Override end of time window (ISO 8601)                                |
+| `--output-dir`    | Output directory (default: current directory)                         |
+| `--stdout`        | Print JSON to stdout instead of saving to file                        |
+| `--profile`, `-p` | Configuration profile to use                                          |
+| `--verbose`, `-v` | Enable verbose logs                                                   |
 
 **Examples:**
 
@@ -683,16 +684,16 @@ ax traces list <project-id> [--start-time <iso8601>] [--end-time <iso8601>] \
 
 **Options:**
 
-| Option | Description |
-|--------|-------------|
-| `--start-time` | Start of time window, inclusive (ISO 8601, e.g. `2024-01-01T00:00:00Z`) |
-| `--end-time` | End of time window, exclusive (ISO 8601). Defaults to now |
-| `--filter` | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`) |
-| `--limit`, `-n` | Maximum number of traces to return (default: 15) |
-| `--cursor` | Pagination cursor for the next page |
-| `--output`, `-o` | Output format (`table`, `json`, `csv`, `parquet`) or file path |
-| `--profile`, `-p` | Configuration profile to use |
-| `--verbose`, `-v` | Enable verbose logs |
+| Option            | Description                                                             |
+| ----------------- | ----------------------------------------------------------------------- |
+| `--start-time`    | Start of time window, inclusive (ISO 8601, e.g. `2024-01-01T00:00:00Z`) |
+| `--end-time`      | End of time window, exclusive (ISO 8601). Defaults to now               |
+| `--filter`        | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`)   |
+| `--limit`, `-n`   | Maximum number of traces to return (default: 15)                        |
+| `--cursor`        | Pagination cursor for the next page                                     |
+| `--output`, `-o`  | Output format (`table`, `json`, `csv`, `parquet`) or file path          |
+| `--profile`, `-p` | Configuration profile to use                                            |
+| `--verbose`, `-v` | Enable verbose logs                                                     |
 
 **Filter examples:**
 
@@ -730,10 +731,10 @@ ax annotation-configs delete <annotation-config-id> [--force]
 
 **Supported annotation config types:**
 
-| Type | Required options | Optional options |
-|------|-----------------|------------------|
-| `freeform` | _(none)_ | — |
-| `continuous` | `--min-score`, `--max-score` | `--optimization-direction` |
+| Type          | Required options                                                        | Optional options           |
+| ------------- | ----------------------------------------------------------------------- | -------------------------- |
+| `freeform`    | _(none)_                                                                | —                          |
+| `continuous`  | `--min-score`, `--max-score`                                            | `--optimization-direction` |
 | `categorical` | `--value` (repeat for multiple labels, e.g. `--value good --value bad`) | `--optimization-direction` |
 
 ### Cache
@@ -961,7 +962,7 @@ ax datasets list --space-id sp_abc123 --verbose
 **Solution**: Verify your API key:
 
 1. Check your configuration: `ax profiles show`
-2. Regenerate your API key from the Arize UI
+2. Refresh your API key from the Arize UI
 3. Update your profiles: `ax profiles create` (overwrite existing)
 
 ---

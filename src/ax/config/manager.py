@@ -149,7 +149,17 @@ class ConfigManager:
 
             return Config(**data)
         except ValidationError as e:
-            raise ConfigError(f"Invalid config file: {e}") from e
+            raise ConfigError(
+                f"Profile '{profile}' has an invalid configuration:\n\n"
+                f"{e}\n\n"
+                "Run 'ax profiles create' to recreate it."
+            ) from e
+        except ValueError as e:
+            raise ConfigError(
+                f"Profile '{profile}' references an unset environment variable:\n\n"
+                f"{e}\n\n"
+                "Set the variable or run 'ax profiles create' to update the profile."
+            ) from e
         except Exception as e:
             raise ConfigError(f"Failed to load config: {e}") from e
 

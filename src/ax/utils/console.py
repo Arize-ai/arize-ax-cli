@@ -24,7 +24,8 @@ def setup_logging(verbose: bool) -> None:
     """Configure SDK logging based on verbose flag."""
     if verbose:
         configure_logging(level=logging.DEBUG, structured=False)
-    configure_logging(level=logging.CRITICAL, structured=False)
+    else:
+        configure_logging(level=logging.CRITICAL, structured=False)
 
 
 def confirm(message: str, default: bool = False, abort: bool = False) -> bool:

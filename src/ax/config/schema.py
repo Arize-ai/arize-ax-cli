@@ -232,7 +232,7 @@ class Config(BaseModel):
     storage: StorageConfig = Field(default_factory=StorageConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "ignore"}
 
     def to_sdk_config(self) -> SDKConfiguration:
         """Convert CLI config to SDK config.

@@ -135,8 +135,6 @@ def list_datasets(
             format_type=output_format,
             output_file=output_file,
         )
-        if output_file:
-            success(f"Saved datasets to {output_file}")
 
 
 @app.command("get")

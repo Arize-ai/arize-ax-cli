@@ -148,8 +148,6 @@ def list_spans(
             format_type=output_format,
             output_file=output_file,
         )
-        if output_file:
-            success(f"Saved traces to {output_file}")
 
 
 def _build_trace_id_in_filter(trace_ids: list[str]) -> str:

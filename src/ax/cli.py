@@ -70,6 +70,7 @@ def register_commands() -> None:
     from ax.commands.experiments import app as experiments_app
     from ax.commands.profiles import app as profiles_app
     from ax.commands.projects import app as projects_app
+    from ax.commands.spaces import app as spaces_app
     from ax.commands.spans import app as spans_app
     from ax.commands.traces import app as traces_app
 
@@ -80,6 +81,7 @@ def register_commands() -> None:
     app.add_typer(experiments_app)
     app.add_typer(profiles_app)
     app.add_typer(projects_app)
+    app.add_typer(spaces_app)
     app.add_typer(spans_app)
     app.add_typer(traces_app)
 

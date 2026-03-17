@@ -10,8 +10,8 @@ from ax.utils.projects import _is_base64_id, resolve_project_id
 class TestIsBase64Id:
     """Tests for _is_base64_id helper."""
 
-    def test_valid_relay_id(self) -> None:
-        """Base64-encoded relay ID with colon separator is detected."""
+    def test_valid_project_id(self) -> None:
+        """Base64-encoded project ID with colon separator is detected."""
         assert _is_base64_id("TW9kZWw6MTIz") is True  # Model:123
 
     def test_human_readable_name(self) -> None:
@@ -31,7 +31,7 @@ class TestResolveProjectId:
     """Tests for resolve_project_id."""
 
     def test_base64_id_returned_without_space_id(self) -> None:
-        """A base64 relay ID is returned as-is even without space_id."""
+        """A base64 project ID is returned as-is even without space_id."""
         client = MagicMock()
         assert (
             resolve_project_id(client, "TW9kZWw6MTIz", None) == "TW9kZWw6MTIz"
@@ -39,7 +39,7 @@ class TestResolveProjectId:
         client.projects.list.assert_not_called()
 
     def test_base64_id_returned_with_space_id(self) -> None:
-        """A base64 relay ID is returned as-is even when space_id is given."""
+        """A base64 project ID is returned as-is even when space_id is given."""
         client = MagicMock()
         assert (
             resolve_project_id(client, "TW9kZWw6MTIz", "space-123")

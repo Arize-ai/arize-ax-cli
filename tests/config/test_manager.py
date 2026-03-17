@@ -151,6 +151,35 @@ class TestConfigManager:
         with pytest.raises(ConfigError, match="not found"):
             ConfigManager.load(profile="nonexistent")
 
+    def test_load_raises_configerror_with_fix_hint_on_invalid_config(
+        self, mock_config_dir: Path
+    ) -> None:
+        """Test load raises ConfigError with fix hint for invalid config."""
+        import tomli_w
+
+        bad_data = {"auth": {"api_key": ""}}  # empty API key is invalid
+        with open(ConfigManager.DEFAULT_CONFIG_FILE, "wb") as f:
+            tomli_w.dump(bad_data, f)
+
+        with pytest.raises(ConfigError, match="ax profiles create"):
+            ConfigManager.load(profile="default")
+
+    def test_load_ignores_extra_fields_in_config_file(
+        self, mock_config_dir: Path
+    ) -> None:
+        """Test load succeeds when config file has unknown top-level fields."""
+        import tomli_w
+
+        data = {
+            "auth": {"api_key": "ak-test123"},
+            "unknown_future_section": {"foo": "bar"},
+        }
+        with open(ConfigManager.DEFAULT_CONFIG_FILE, "wb") as f:
+            tomli_w.dump(data, f)
+
+        loaded = ConfigManager.load(profile="default")
+        assert loaded.auth.api_key == "ak-test123"
+
     def test_load_uses_active_profile_when_empty(
         self, mock_config_dir: Path
     ) -> None:

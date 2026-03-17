@@ -296,13 +296,14 @@ class TestConfig:
         assert config.storage.directory == "/custom/path"
         assert config.output.format == "json"
 
-    def test_extra_fields_forbidden(self) -> None:
-        """Test that extra fields are forbidden in config."""
-        with pytest.raises(ValidationError):
-            Config(
-                auth=AuthConfig(api_key="ak-test123"),
-                extra_field="not_allowed",  # type: ignore[call-arg]
-            )
+    def test_extra_fields_ignored(self) -> None:
+        """Test that unknown fields in config are silently ignored."""
+        config = Config(
+            auth=AuthConfig(api_key="ak-test123"),
+            extra_field="ignored",  # type: ignore[call-arg]
+        )
+        assert config.auth.api_key == "ak-test123"
+        assert not hasattr(config, "extra_field")
 
     def test_to_sdk_config(self) -> None:
         """Test converting Config to SDKConfiguration."""
