@@ -306,7 +306,7 @@ class TestCreateAnnotationConfig:
         mock_client.annotation_configs.create.assert_called_once_with(
             name="Q",
             space_id="sp_abc",
-            type=AnnotationConfigType.FREEFORM,
+            config_type=AnnotationConfigType.FREEFORM,
             minimum_score=None,
             maximum_score=None,
             values=None,
@@ -348,7 +348,7 @@ class TestCreateAnnotationConfig:
         mock_client.annotation_configs.create.assert_called_once_with(
             name="Score",
             space_id="sp_abc",
-            type=AnnotationConfigType.CONTINUOUS,
+            config_type=AnnotationConfigType.CONTINUOUS,
             minimum_score=0.0,
             maximum_score=1.0,
             values=None,
@@ -390,7 +390,7 @@ class TestCreateAnnotationConfig:
 
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.annotation_configs.create.call_args.kwargs
-        assert call_kwargs["type"] == AnnotationConfigType.CATEGORICAL
+        assert call_kwargs["config_type"] == AnnotationConfigType.CATEGORICAL
         assert call_kwargs["values"] == [
             CategoricalAnnotationValue(label="good"),
             CategoricalAnnotationValue(label="neutral"),

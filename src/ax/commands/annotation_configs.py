@@ -275,7 +275,7 @@ def create_annotation_config(
             annotation_config = client.annotation_configs.create(
                 name=name,
                 space_id=space_id,
-                type=annotation_type,
+                config_type=annotation_type,
                 minimum_score=min_score,
                 maximum_score=max_score,
                 values=categorical_values,

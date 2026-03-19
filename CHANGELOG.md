@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.4.0...arize-ax-cli/v0.5.0) (2026-03-19)
+
+
+### 🎁 New Features
+
+* Add commands for evaluators ([#65528](https://github.com/Arize-ai/arize/issues/65528)) ([66b9113](https://github.com/Arize-ai/arize/commit/66b91135eb6cf76c840b2afe2362955b77c19d66))
+
 ## [0.4.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.3.0...arize-ax-cli/v0.4.0) (2026-03-17)
 
 
