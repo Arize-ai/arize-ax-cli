@@ -34,7 +34,7 @@ app = typer.Typer(
 )
 
 
-def _parse_llm_messages(
+def _build_llm_messages(
     parsed: dict[str, Any] | list[dict[str, Any]],
 ) -> list[LLMMessage]:
     """Parse a JSON document into a list of :class:`LLMMessage`.
@@ -328,7 +328,7 @@ def create_prompt(
        "content": "This is the result of the search function."},
     ]
     """
-    parsed_messages = _parse_llm_messages(load_json(messages))
+    parsed_messages = _build_llm_messages(load_json(messages))
 
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
@@ -653,7 +653,7 @@ def create_version(
       {"role": "user",   "content": "Summarize: {text}"}
     ]
     """
-    parsed_messages = _parse_llm_messages(load_json(messages))
+    parsed_messages = _build_llm_messages(load_json(messages))
 
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)

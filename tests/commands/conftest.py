@@ -30,6 +30,7 @@ def mock_client() -> MagicMock:
     client.experiments = MagicMock()
     client.spans = MagicMock()
     client.projects = MagicMock()
+    client.tasks = MagicMock()
     return client
 
 
@@ -70,6 +71,10 @@ def patch_config_and_client(
         ),
         patch(
             "ax.commands.projects.ArizeClient",
+            return_value=mock_client,
+        ),
+        patch(
+            "ax.commands.tasks.ArizeClient",
             return_value=mock_client,
         ),
     ):

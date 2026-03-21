@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.6.0...arize-ax-cli/v0.7.0) (2026-03-21)
+
+
+### 🎁 New Features
+
+* **tasks:** implement evaluation tasks commands ([#66363](https://github.com/Arize-ai/arize/issues/66363)) ([49d04d9](https://github.com/Arize-ai/arize/commit/49d04d9478ccf3a60b3593f470cb62aa2abb82ef))
+
 ## [0.6.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.5.0...arize-ax-cli/v0.6.0) (2026-03-21)
 
 

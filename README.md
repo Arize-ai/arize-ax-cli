@@ -48,6 +48,7 @@
   - [Supported Shells](#supported-shells)
 - [Commands](#commands)
   - [Global Options](#global-options)
+  - [AI Integrations](#ai-integrations)
   - [Annotation Configs](#annotation-configs)
   - [API Keys](#api-keys)
   - [Cache](#cache)
@@ -57,11 +58,8 @@
   - [Projects](#projects)
   - [Prompts](#prompts)
   - [Spans](#spans)
+  - [Tasks](#tasks)
   - [Traces](#traces)
-  - [Annotation Configs](#annotation-configs-1)
-  - [AI Integrations](#ai-integrations)
-  - [Cache](#cache-1)
-  - [Global Options](#global-options-1)
 - [Usage Examples](#usage-examples)
   - [Creating a Dataset from a CSV File](#creating-a-dataset-from-a-csv-file)
   - [Exporting Dataset List to JSON](#exporting-dataset-list-to-json)
@@ -608,6 +606,50 @@ Available for all commands:
 
 > **Note:** `--verbose, -v` is available on each individual subcommand (e.g., `ax datasets list --verbose`) rather than as a top-level flag.
 
+### AI Integrations
+
+Configure external LLM providers for use within the Arize platform (for evaluations, online evals, and more):
+
+```bash
+# List AI integrations
+ax ai-integrations list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+
+# Get a specific integration
+ax ai-integrations get <integration-id>
+
+# Create an integration (OpenAI example)
+ax ai-integrations create --name "OpenAI Prod" --provider openAI \
+  --api-key <key> --model-name gpt-4o --model-name gpt-4o-mini
+
+# Create an integration with custom headers
+ax ai-integrations create --name "Custom LLM" --provider custom \
+  --base-url https://my-llm.example.com \
+  --headers-json '{"X-API-Key": "secret"}'
+
+# Create an AWS Bedrock integration
+ax ai-integrations create --name "Bedrock" --provider awsBedrock \
+  --provider-metadata-json '{"role_arn": "arn:aws:iam::123456789:role/MyRole"}'
+
+# Update an integration
+ax ai-integrations update <integration-id> --name "Renamed" --api-key <new-key>
+
+# Delete an integration
+ax ai-integrations delete <integration-id> [--force]
+```
+
+**Supported providers:**
+
+| Provider      | Value         | Notes                                        |
+| ------------- | ------------- | -------------------------------------------- |
+| OpenAI        | `openAI`      |                                              |
+| Azure OpenAI  | `azureOpenAI` | Use `--base-url` for the deployment endpoint |
+| AWS Bedrock   | `awsBedrock`  | Requires `--provider-metadata-json`          |
+| Vertex AI     | `vertexAI`    | Requires `--provider-metadata-json`          |
+| Anthropic     | `anthropic`   |                                              |
+| NVIDIA NIM    | `nvidiaNim`   |                                              |
+| Google Gemini | `gemini`      |                                              |
+| Custom        | `custom`      | Use `--base-url` for a custom endpoint       |
+
 ### Annotation Configs
 
 Manage annotation configs (rubrics for human and automated evaluation):
@@ -957,6 +999,88 @@ ax spans export <project> --trace-id abc123 --filter "latency_ms > 1000"
 ax spans export <project> --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z
 ```
 
+### Tasks
+
+Manage evaluation tasks and trigger on-demand runs:
+
+```bash
+# List tasks (optionally filtered by space, project, dataset, or type)
+ax tasks list [--space-id <space-id>] [--project-id <project-id>] \
+  [--dataset-id <dataset-id>] [--task-type template_evaluation|code_evaluation] \
+  [--limit 15] [--cursor <cursor>]
+
+# Get a specific task
+ax tasks get <task-id>
+
+# Create a project-based task
+ax tasks create \
+  --name "Relevance Check" \
+  --task-type template_evaluation \
+  --evaluators '[{"evaluator_id": "<evaluator-id>"}]' \
+  --project-id <project-id> \
+  --is-continuous
+
+# Create a dataset-based task
+ax tasks create \
+  --name "Dataset Eval" \
+  --task-type template_evaluation \
+  --evaluators '[{"evaluator_id": "<evaluator-id>"}]' \
+  --dataset-id <dataset-id> \
+  --experiment-ids <exp-id-1>,<exp-id-2>
+
+# Trigger an on-demand run
+ax tasks trigger-run <task-id>
+
+# Trigger a run and wait for it to complete
+ax tasks trigger-run <task-id> --wait
+
+# Trigger a run over a specific data window
+ax tasks trigger-run <task-id> \
+  --data-start-time 2024-01-01T00:00:00Z \
+  --data-end-time 2024-01-02T00:00:00Z \
+  --max-spans 5000
+
+# List runs for a task (optionally filtered by status)
+ax tasks list-runs <task-id> [--status pending|running|completed|failed|cancelled] \
+  [--limit 15] [--cursor <cursor>]
+
+# Get a specific run
+ax tasks get-run <run-id>
+
+# Cancel a run (only valid when pending or running)
+ax tasks cancel-run <run-id> [--force]
+
+# Wait for a run to reach a terminal state
+ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
+```
+
+**`create` options:**
+
+| Option | Description |
+| --- | --- |
+| `--name`, `-n` | Task name (must be unique within the space) |
+| `--task-type` | `template_evaluation` or `code_evaluation` |
+| `--evaluators` | JSON array of evaluator objects: `[{"evaluator_id": "...", "query_filter": null, "column_mappings": null}]` |
+| `--project-id` | Project global ID (base64); mutually exclusive with `--dataset-id` |
+| `--dataset-id` | Dataset global ID (base64); mutually exclusive with `--project-id` |
+| `--experiment-ids` | Comma-separated experiment IDs (required for dataset-based tasks) |
+| `--sampling-rate` | Fraction of data to evaluate (0–1); project tasks only |
+| `--is-continuous` / `--no-continuous` | Run continuously on incoming data |
+| `--query-filter` | Task-level filter applied to all evaluators |
+
+**`trigger-run` options:**
+
+| Option | Description |
+| --- | --- |
+| `--data-start-time` | ISO 8601 start of the data window |
+| `--data-end-time` | ISO 8601 end of the data window (defaults to now) |
+| `--max-spans` | Maximum spans to evaluate (default: 10 000) |
+| `--override-evaluations` | Re-evaluate data that already has labels |
+| `--experiment-ids` | Comma-separated experiment IDs; dataset-based tasks only |
+| `--wait`, `-w` | Block until the run reaches a terminal state |
+| `--poll-interval` | Seconds between polling attempts when `--wait` is set (default: 5) |
+| `--timeout` | Maximum seconds to wait when `--wait` is set (default: 600) |
+
 ### Traces
 
 Query traces in a project. A trace is a collection of spans representing a full request or conversation; the CLI identifies traces by their root span (`parent_id = null`). The CLI automatically applies `parent_id = null`; any `--filter` you provide is ANDed with it.
@@ -987,110 +1111,6 @@ ax traces list <project-id> --filter "status_code = 'ERROR'"
 ax traces list <project-id> --start-time 2024-01-01T00:00:00Z
 ax traces list <project-id> --filter "latency_ms > 5000" --limit 50
 ```
-
-### Annotation Configs
-
-Manage annotation configs (rubrics for human and automated evaluation):
-
-```bash
-# List annotation configs
-ax annotation-configs list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
-
-# Get a specific annotation config
-ax annotation-configs get <annotation-config-id>
-
-# Create a freeform annotation config (free-text feedback)
-ax annotation-configs create --name "Quality" --space-id <space-id> --type freeform
-
-# Create a continuous annotation config (numeric score range)
-ax annotation-configs create --name "Score" --space-id <space-id> --type continuous \
-  --min-score 0 --max-score 1 --optimization-direction maximize
-
-# Create a categorical annotation config (discrete labels)
-ax annotation-configs create --name "Verdict" --space-id <space-id> --type categorical \
-  --value good --value neutral --value bad --optimization-direction maximize
-
-# Delete an annotation config
-ax annotation-configs delete <annotation-config-id> [--force]
-```
-
-**Supported annotation config types:**
-
-| Type          | Required options                                                        | Optional options           |
-| ------------- | ----------------------------------------------------------------------- | -------------------------- |
-| `freeform`    | _(none)_                                                                | —                          |
-| `continuous`  | `--min-score`, `--max-score`                                            | `--optimization-direction` |
-| `categorical` | `--value` (repeat for multiple labels, e.g. `--value good --value bad`) | `--optimization-direction` |
-
-### AI Integrations
-
-Configure external LLM providers for use within the Arize platform (for evaluations, online evals, and more):
-
-```bash
-# List AI integrations
-ax ai-integrations list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
-
-# Get a specific integration
-ax ai-integrations get <integration-id>
-
-# Create an integration (OpenAI example)
-ax ai-integrations create --name "OpenAI Prod" --provider openAI \
-  --api-key <key> --model-name gpt-4o --model-name gpt-4o-mini
-
-# Create an integration with custom headers
-ax ai-integrations create --name "Custom LLM" --provider custom \
-  --base-url https://my-llm.example.com \
-  --headers-json '{"X-API-Key": "secret"}'
-
-# Create an AWS Bedrock integration
-ax ai-integrations create --name "Bedrock" --provider awsBedrock \
-  --provider-metadata-json '{"role_arn": "arn:aws:iam::123456789:role/MyRole"}'
-
-# Update an integration
-ax ai-integrations update <integration-id> --name "Renamed" --api-key <new-key>
-
-# Delete an integration
-ax ai-integrations delete <integration-id> [--force]
-```
-
-**Supported providers:**
-
-| Provider      | Value         | Notes                                        |
-| ------------- | ------------- | -------------------------------------------- |
-| OpenAI        | `openAI`      |                                              |
-| Azure OpenAI  | `azureOpenAI` | Use `--base-url` for the deployment endpoint |
-| AWS Bedrock   | `awsBedrock`  | Requires `--provider-metadata-json`          |
-| Vertex AI     | `vertexAI`    | Requires `--provider-metadata-json`          |
-| Anthropic     | `anthropic`   |                                              |
-| NVIDIA NIM    | `nvidiaNim`   |                                              |
-| Google Gemini | `gemini`      |                                              |
-| Custom        | `custom`      | Use `--base-url` for a custom endpoint       |
-
-### Cache
-
-Manage the local cache. The CLI caches downloaded resource data (e.g., dataset examples) locally as Parquet files to avoid redundant API calls. When you fetch a dataset's examples, the results are stored on disk so subsequent requests for the same version load instantly. The cache is automatically invalidated when a resource's `updated_at` timestamp changes, so you always get fresh data when something changes on the server.
-
-Caching is enabled by default and can be toggled in your profile configuration:
-
-```toml
-[storage]
-cache_enabled = true
-```
-
-```bash
-# Clear the cache
-ax cache clear
-```
-
-### Global Options
-
-Available for all commands:
-
-- `--profile, -p <name>`: Use a specific configuration profile
-- `--output, -o <format>`: Set output format (`table`, `json`, `csv`, `parquet`, or a file path)
-- `--help, -h`: Show help message
-
-> **Note:** `--verbose, -v` is available on each individual subcommand (e.g., `ax datasets list --verbose`) rather than as a top-level flag.
 
 ## Usage Examples
 
