@@ -55,8 +55,9 @@ def handle_errors(f: Callable[P, R]) -> Callable[P, R]:
                 error(str(e))
 
             raise typer.Exit(code=e.exit_code) from e
-        except typer.Exit:
-            # Let Typer handle its own exits
+        except (typer.Exit, typer.BadParameter):
+            # Let Typer handle its own exits and bad parameter errors
+            # (e.g. typer.BadParameter raised by load_json for invalid input)
             raise
         except KeyboardInterrupt:
             new_line()

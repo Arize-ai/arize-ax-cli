@@ -1,13 +1,14 @@
 """Configuration management commands."""
 
 import os
+import re
 from typing import Annotated
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from ax.ascii_art import DEFAULT_BANNER
+from ax.ascii_art import WELCOME_BANNER
 from ax.config.manager import ConfigManager
 from ax.config.schema import (
     AuthConfig,
@@ -15,8 +16,11 @@ from ax.config.schema import (
 )
 from ax.config.setup import (
     create_config_from_env_vars,
+    create_config_from_flags,
+    create_config_from_toml,
     create_config_interactively,
     detect_env_vars,
+    merge_config_with_flags,
 )
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import ConfigError
@@ -47,6 +51,42 @@ console = Console(stderr=True)
 @app.command("create")
 @handle_errors
 def create(
+    profile_name: Annotated[
+        str,
+        typer.Argument(
+            help=(
+                "Profile name. If omitted: with no existing profiles the name "
+                "is 'default' (no prompt); with existing profiles you are "
+                "prompted for a name."
+            ),
+        ),
+    ] = "",
+    from_file: Annotated[
+        str | None,
+        typer.Option(
+            "--from-file",
+            "-f",
+            help="Path to a TOML config file to load values from.",
+        ),
+    ] = None,
+    # --- Auth ---
+    api_key: Annotated[
+        str | None,
+        typer.Option("--api-key", help="Arize API key."),
+    ] = None,
+    # --- Routing ---
+    region: Annotated[
+        str | None,
+        typer.Option("--region", help="Routing region (e.g. us-east-1b)."),
+    ] = None,
+    # --- Output ---
+    output_format: Annotated[
+        str | None,
+        typer.Option(
+            "--output-format", help="Output format: table, json, csv, parquet."
+        ),
+    ] = None,
+    # --- Misc ---
     verbose: Annotated[
         bool,
         typer.Option(
@@ -56,81 +96,207 @@ def create(
         ),
     ] = False,
 ) -> None:
-    """Create Arize CLI configuration interactively.
+    """Create Arize CLI configuration interactively or from flags/file.
 
     Creates a new configuration profile with API key, defaults, and
-    preferences. Detects existing ARIZE_* environment variables and offers
-    to create profiles from them.
+    preferences. Non-interactive CLI flags are limited to --api-key, --region,
+    and --output-format; use --from-file (TOML) or interactive setup for hosts,
+    storage, security, transport, and other sections. Detects existing
+    ARIZE_* environment variables when running interactively (only when
+    neither flags nor --from-file are used).
+
+    Precedence (highest to lowest): CLI flags > --from-file (TOML) >
+    interactive prompts.
     """
     setup_logging(verbose)
     existing_profiles = ConfigManager.list_profiles()
 
-    # Profile Selection
-    profile = "default"
     if existing_profiles:
-        # profiles exist - prompt for name
         emphasis("Create a new configuration profile")
         text(f"existing profiles: {', '.join(existing_profiles)}\n")
-        profile = typer.prompt("profile name")
-        if not profile.replace("-", "").replace("_", "").isalnum():
-            raise ConfigError(
-                f"Invalid profile name: {profile!r}. "
-                "Profile names may only contain letters, numbers, hyphens, and underscores."
-            )
-        new_line()
     else:
-        # Display ASCII art welcome banner
+        profile = "default"
         new_line()
-        text(DEFAULT_BANNER)
+        text(WELCOME_BANNER)
         new_line()
         emphasis("Welcome to Arize AX CLI!")
-        text("No configuration found. Let's set it up!\n")
+        text("No configuration profile found. Let's set one up!\n")
+
+    # --- Build flat flags dict (only explicitly-set values) ---
+    flat_flags = {
+        k: v
+        for k, v in {
+            "api_key": api_key,
+            "region": region,
+            "output_format": output_format,
+        }.items()
+        if v is not None
+    }
+
+    # --- Resolve profile name ---
+    if profile_name:
+        profile = profile_name
+    elif existing_profiles:
+        profile = typer.prompt("profile name")
+        new_line()
+    else:
+        profile = "default"
+
+    # Validate profile name (alphanumeric, hyphens, and underscores)
+    if not re.match(r"^[A-Za-z0-9_-]+$", profile):
+        raise ConfigError(
+            f"Invalid profile name: {profile!r}. "
+            "Profile names may only contain letters, numbers, hyphens, and underscores."
+        )
 
     # Check if profile already exists
-    if ConfigManager.exists(profile) and not confirm(
-        f"Profile '{profile}' already exists. Overwrite?",
-        default=False,
-    ):
-        info("Configuration unchanged")
-        raise typer.Exit()
+    if ConfigManager.exists(profile):
+        # Non-interactive sources (flags or --from-file): do not prompt to
+        # overwrite; raise so scripts fail clearly.
+        if flat_flags or from_file:
+            raise ConfigError(
+                f"Profile '{profile}' already exists. You can use a different name, "
+                "edit the profile using `ax profiles update <name>`, or "
+                "remove it using 'ax profiles delete <name>'."
+            )
+        if not confirm(
+            f"Profile '{profile}' already exists. Overwrite?",
+            default=False,
+        ):
+            info("Configuration unchanged")
+            raise typer.Exit()
 
-    # Environment Variable Detection
-    detected_env_vars = detect_env_vars()
-    use_env_vars = False
-    if detected_env_vars:
-        emphasis("Environment Variable Detection\n")
-        for field, env_var in detected_env_vars.items():
-            value = os.environ.get(env_var, "")
-            # Mask API key for display
-            if field == "api_key":
-                value = mask(value)
-            console.print(f"  [green]✓[/green] Detected {env_var} = {value}")
+    # --- Choose creation path ---
+    if from_file:
+        config = create_config_from_toml(from_file, profile)
+        if flat_flags:
+            config = merge_config_with_flags(config, flat_flags)
+    elif flat_flags:
+        config = create_config_from_flags(profile, flat_flags)
+    else:
+        # Existing interactive flow with env var detection
+        detected_env_vars = detect_env_vars()
+        use_env_vars = False
+        if detected_env_vars:
+            emphasis("Environment Variable Detection\n")
+            for field, env_var in detected_env_vars.items():
+                value = os.environ.get(env_var, "")
+                # Mask API key for display
+                if field == "api_key":
+                    value = mask(value)
+                console.print(
+                    f"  [green]✓[/green] Detected {env_var} = {value}"
+                )
 
-        console.print()
-        use_env_vars = confirm(
-            "Create config from detected environment variables?",
-            default=True,
+            console.print()
+            use_env_vars = confirm(
+                "Create config from detected environment variables?",
+                default=True,
+            )
+            console.print()
+
+        config = (
+            create_config_from_env_vars(profile, detected_env_vars)
+            if use_env_vars
+            else create_config_interactively(profile)
         )
-        console.print()
 
-    config = (
-        create_config_from_env_vars(profile, detected_env_vars)
-        if use_env_vars
-        else create_config_interactively(profile)
-    )
-
-    # Save configuration
+    # --- Save and finalize ---
     ConfigManager.save(config, profile)
 
-    # Set as active profile if not default
     if profile != "default":
         ConfigManager.set_active_profile(profile)
 
-    # Summary
     new_line()
     success(f"Configuration saved to profile '{profile}'")
     new_line()
     text_dimmed("You're ready to go! Try: ax datasets list")
+
+
+@app.command("update")
+@handle_errors
+def update(
+    profile_arg: Annotated[
+        str,
+        typer.Argument(
+            help="Profile to update (uses active if omitted).",
+        ),
+    ] = "",
+    from_file: Annotated[
+        str | None,
+        typer.Option(
+            "--from-file",
+            "-f",
+            help="Path to a TOML config file. Completely replaces the existing profile.",
+        ),
+    ] = None,
+    # --- Auth ---
+    api_key: Annotated[
+        str | None,
+        typer.Option("--api-key", help="Arize API key."),
+    ] = None,
+    # --- Routing ---
+    region: Annotated[
+        str | None,
+        typer.Option("--region", help="Routing region (e.g. us-east-1b)."),
+    ] = None,
+    # --- Output ---
+    output_format: Annotated[
+        str | None,
+        typer.Option(
+            "--output-format", help="Output format: table, json, csv, parquet."
+        ),
+    ] = None,
+    # --- Misc ---
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logs."),
+    ] = False,
+) -> None:
+    """Update an existing configuration profile.
+
+    CLI flags are limited to --api-key, --region, and --output-format; use
+    --from-file (TOML) for other fields. With --from-file, the profile is
+    replaced by the file contents; any flags you pass are applied on top (CLI
+    overrides file). With flags only, only the specified fields are updated;
+    all others are preserved.
+    """
+    setup_logging(verbose)
+
+    profile = profile_arg or ConfigManager.get_active_profile()
+
+    if not ConfigManager.exists(profile):
+        raise ConfigError(
+            f"Profile '{profile}' does not exist. "
+            "Run 'ax profiles create' to create one."
+        )
+
+    flat_flags = {
+        k: v
+        for k, v in {
+            "api_key": api_key,
+            "region": region,
+            "output_format": output_format,
+        }.items()
+        if v is not None
+    }
+
+    if not from_file and not flat_flags:
+        raise ConfigError(
+            "Nothing to update. Provide --from-file or at least one field flag."
+        )
+
+    if from_file:
+        config = create_config_from_toml(from_file, profile)
+        if flat_flags:
+            config = merge_config_with_flags(config, flat_flags)
+    else:
+        existing = ConfigManager.load(profile)
+        config = merge_config_with_flags(existing, flat_flags)
+
+    ConfigManager.save(config, profile)
+    new_line()
+    success(f"Profile '{profile}' updated.")
 
 
 @app.command("list")
@@ -173,11 +339,9 @@ def list_profiles(
 @app.command("show")
 @handle_errors
 def show_profile(
-    profile: Annotated[
+    profile_arg: Annotated[
         str,
-        typer.Option(
-            "--profile",
-            "-p",
+        typer.Argument(
             help="Profile to show (uses active if not specified)",
         ),
     ] = "",
@@ -211,9 +375,7 @@ def show_profile(
     Use --all to show all sections including defaults.
     """
     setup_logging(verbose)
-    # Use profile from context if not specified
-    if not profile:
-        profile = ConfigManager.get_active_profile()
+    profile = profile_arg or ConfigManager.get_active_profile()
     config = ConfigManager.load(profile, expand_vars)
 
     # Display configuration
@@ -330,11 +492,9 @@ def use_profile(
 @app.command("validate")
 @handle_errors
 def validate_profile(
-    profile: Annotated[
+    profile_arg: Annotated[
         str,
-        typer.Option(
-            "--profile",
-            "-p",
+        typer.Argument(
             help="Profile to validate (uses active if not specified)",
         ),
     ] = "",
@@ -353,8 +513,7 @@ def validate_profile(
     any issues found. Run 'ax profiles create' to fix problems.
     """
     setup_logging(verbose)
-    if not profile:
-        profile = ConfigManager.get_active_profile()
+    profile = profile_arg or ConfigManager.get_active_profile()
 
     if not ConfigManager.exists(profile):
         raise ConfigError(

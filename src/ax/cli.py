@@ -6,7 +6,7 @@ from typing import Annotated
 import typer
 from arize.logging import configure_logging
 
-from ax.ascii_art import DEFAULT_BANNER
+from ax.ascii_art import WELCOME_BANNER
 from ax.utils.console import console, text
 from ax.version import __version__
 
@@ -55,35 +55,37 @@ def main(
     configure_logging(level=logging.CRITICAL, structured=False)
 
     if ctx.invoked_subcommand is None:
-        console.print(DEFAULT_BANNER)
+        console.print(WELCOME_BANNER)
         console.print()
         console.print(ctx.get_help())
 
 
 # Import and register command groups
-# These will be implemented in separate files
 def register_commands() -> None:
-    """Register all command groups."""
-    from ax.commands.annotation_configs import app as annotation_configs_app
-    from ax.commands.cache import app as cache_app
-    from ax.commands.datasets import app as datasets_app
-    from ax.commands.experiments import app as experiments_app
-    from ax.commands.profiles import app as profiles_app
-    from ax.commands.projects import app as projects_app
-    from ax.commands.spaces import app as spaces_app
-    from ax.commands.spans import app as spans_app
-    from ax.commands.traces import app as traces_app
+    """Auto-discover and register all command groups from ax.commands.
 
-    # Sorted alphabetically for consistency
-    app.add_typer(annotation_configs_app)
-    app.add_typer(cache_app)
-    app.add_typer(datasets_app)
-    app.add_typer(experiments_app)
-    app.add_typer(profiles_app)
-    app.add_typer(projects_app)
-    app.add_typer(spaces_app)
-    app.add_typer(spans_app)
-    app.add_typer(traces_app)
+    Any module inside ax/commands/ that exposes a top-level ``app``
+    attribute (a ``typer.Typer`` instance) is registered automatically.
+    Adding a new command file to that package is sufficient — no changes
+    here are required.
+    """
+    import importlib
+    import pkgutil
+
+    import ax.commands as commands_pkg
+
+    for module_info in sorted(
+        pkgutil.iter_modules(commands_pkg.__path__), key=lambda m: m.name
+    ):
+        try:
+            module = importlib.import_module(f"ax.commands.{module_info.name}")
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to load command module 'ax.commands.{module_info.name}': {e}"
+            ) from e
+        command_app = getattr(module, "app", None)
+        if isinstance(command_app, typer.Typer):
+            app.add_typer(command_app)
 
 
 # Register commands on module import

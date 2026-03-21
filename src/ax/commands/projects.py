@@ -15,7 +15,6 @@ from ax.utils.console import (
     info,
     setup_logging,
     spinner,
-    success,
     warning,
 )
 from ax.utils.file_io import (
@@ -223,7 +222,8 @@ def get_project(
     )
 
     try:
-        project = client.projects.get(project_id=id)
+        with spinner("Fetching project"):
+            project = client.projects.get(project_id=id)
     except Exception as e:
         raise APIError(f"Failed to get project: {e}") from e
     else:
@@ -281,8 +281,10 @@ def delete_project(
 
     # Delete project
     try:
-        client.projects.delete(project_id=id)
+        with spinner(
+            "Deleting project",
+            success_msg=f"Project with ID '{id}' deleted successfully",
+        ):
+            client.projects.delete(project_id=id)
     except Exception as e:
         raise APIError(f"Failed to delete project: {e}") from e
-    else:
-        success(f"Project with ID '{id}' deleted successfully")

@@ -1,8 +1,12 @@
 import os
 from enum import Enum
+from pathlib import Path
+from typing import Any
 
 import questionary
+import tomllib
 import typer
+from pydantic import ValidationError
 
 from ax.config.input_readers import (
     read_api_key,
@@ -22,6 +26,7 @@ from ax.config.schema import (
     StorageConfig,
     TransportConfig,
 )
+from ax.core.exceptions import ConfigError
 
 # Standard environment variable names for detection
 ENV_VAR_MAPPING = {
@@ -127,6 +132,147 @@ def detect_env_vars() -> dict[str, str]:
         for field, env_var in ENV_VAR_MAPPING.items()
         if env_var in os.environ
     }
+
+
+def create_config_from_toml(toml_path: str, profile: str) -> Config:
+    """Parse a TOML config file and return a validated Config.
+
+    Args:
+        toml_path: Path to the TOML configuration file. Supports ``~``.
+        profile: Profile name to embed in the returned Config.
+
+    Returns:
+        A validated Config object. Env var references
+        (e.g. ``${ARIZE_API_KEY}``) are preserved as plain strings.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ConfigError: If the file cannot be parsed as valid TOML or fails
+            schema validation.
+    """
+    path = Path(toml_path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"TOML config file not found: {path}")
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(
+            f"Failed to parse TOML config file '{path}': {e}"
+        ) from e
+
+    data["profile"] = {"name": profile}
+    try:
+        return Config.model_validate(data)
+    except ValidationError as e:
+        raise ConfigError(str(e)) from e
+
+
+_ROUTING_KEYS = (
+    "region",
+    "single_host",
+    "single_port",
+    "base_domain",
+    "api_host",
+    "api_scheme",
+    "otlp_host",
+    "otlp_scheme",
+    "flight_host",
+    "flight_port",
+    "flight_scheme",
+)
+_TRANSPORT_KEYS = (
+    "stream_max_workers",
+    "stream_max_queue_bound",
+    "pyarrow_max_chunksize",
+    "max_http_payload_size_mb",
+)
+_STORAGE_KEYS = ("directory", "cache_enabled")
+
+
+def create_config_from_flags(
+    profile: str,
+    flat: dict[str, Any],
+) -> Config:
+    """Build a Config from a flat dict of CLI flag values.
+
+    Args:
+        profile: Profile name to embed in the returned Config.
+        flat: Flat mapping of flag-name to value. None values must be excluded
+            by the caller; only keys that were explicitly set should be present.
+
+    Returns:
+        A validated Config object.
+
+    Raises:
+        ConfigError: If required fields are missing or Pydantic validation fails.
+    """
+    data: dict[str, Any] = {"profile": {"name": profile}}
+
+    if "api_key" in flat:
+        data["auth"] = {"api_key": flat["api_key"]}
+
+    routing = {k: flat[k] for k in _ROUTING_KEYS if k in flat}
+    if routing:
+        data["routing"] = routing
+
+    transport = {k: flat[k] for k in _TRANSPORT_KEYS if k in flat}
+    if transport:
+        data["transport"] = transport
+
+    if "request_verify" in flat:
+        data["security"] = {"request_verify": flat["request_verify"]}
+
+    storage = {k: flat[k] for k in _STORAGE_KEYS if k in flat}
+    if storage:
+        data["storage"] = storage
+
+    if "output_format" in flat:
+        data["output"] = {"format": flat["output_format"]}
+
+    try:
+        return Config.model_validate(data)
+    except ValidationError as e:
+        raise ConfigError(str(e)) from e
+
+
+def merge_config_with_flags(existing: Config, flat: dict[str, Any]) -> Config:
+    """Merge CLI flag values into an existing Config, returning an updated copy.
+
+    Only fields present in ``flat`` are updated; all others retain their
+    current values from ``existing``.
+
+    Args:
+        existing: The current Config to update.
+        flat: Flat mapping of flag-name to value. None values must be excluded
+            by the caller; only keys that were explicitly set should be present.
+
+    Returns:
+        A validated Config object with the merged values.
+
+    Raises:
+        ConfigError: If the resulting config fails Pydantic validation.
+    """
+    data = existing.model_dump()
+
+    if "api_key" in flat:
+        data["auth"]["api_key"] = flat["api_key"]
+
+    data["routing"].update({k: flat[k] for k in _ROUTING_KEYS if k in flat})
+    data["transport"].update({k: flat[k] for k in _TRANSPORT_KEYS if k in flat})
+
+    if "request_verify" in flat:
+        data["security"]["request_verify"] = flat["request_verify"]
+
+    data["storage"].update({k: flat[k] for k in _STORAGE_KEYS if k in flat})
+
+    if "output_format" in flat:
+        data["output"]["format"] = flat["output_format"]
+
+    try:
+        return Config.model_validate(data)
+    except ValidationError as e:
+        raise ConfigError(str(e)) from e
 
 
 def create_config_from_env_vars(

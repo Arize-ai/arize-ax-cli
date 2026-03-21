@@ -155,7 +155,8 @@ def get_experiment(
     )
 
     try:
-        experiment = client.experiments.get(experiment_id=id)
+        with spinner("Fetching experiment"):
+            experiment = client.experiments.get(experiment_id=id)
     except Exception as e:
         raise APIError(f"Failed to get experiment: {e}") from e
     else:
@@ -393,8 +394,10 @@ def delete_experiment(
             raise typer.Exit()
 
     try:
-        client.experiments.delete(experiment_id=id)
+        with spinner(
+            "Deleting experiment",
+            success_msg=f"Experiment with ID '{id}' deleted successfully",
+        ):
+            client.experiments.delete(experiment_id=id)
     except Exception as e:
         raise APIError(f"Failed to delete experiment: {e}") from e
-    else:
-        success(f"Experiment with ID '{id}' deleted successfully")

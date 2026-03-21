@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.5.0...arize-ax-cli/v0.6.0) (2026-03-21)
+
+
+### 🎁 New Features
+
+* **ai-integrations:** add ax ai-integrations command group ([#65932](https://github.com/Arize-ai/arize/issues/65932)) ([e694a30](https://github.com/Arize-ai/arize/commit/e694a3029eb1dbc0d7d57f5803ab3ddf6ae2708e))
+* **api-keys:** add ax api-keys command group ([#65931](https://github.com/Arize-ai/arize/issues/65931)) ([16178e2](https://github.com/Arize-ai/arize/commit/16178e2904c6e86e705eb22692f1a2d24dd78141))
+* **cli:** auto-discover and register all command groups dynamically ([#66184](https://github.com/Arize-ai/arize/issues/66184)) ([772ef7c](https://github.com/Arize-ai/arize/commit/772ef7c2e574d88127bf797d44bc2422d767b913))
+* **evaluators:** add evaluators command group ([#66096](https://github.com/Arize-ai/arize/issues/66096)) ([a0ce2ee](https://github.com/Arize-ai/arize/commit/a0ce2ee7671632bc6ab679f290fd08165258e788))
+* **profiles:** add non-interactive config creation via TOML and CLI flags with precedence ([#65308](https://github.com/Arize-ai/arize/issues/65308)) ([c2444b7](https://github.com/Arize-ai/arize/commit/c2444b77b29997bc567b62f846bf18d24b0cc1e0))
+* **prompts:** add ax prompts command group ([#65930](https://github.com/Arize-ai/arize/issues/65930)) ([206b678](https://github.com/Arize-ai/arize/commit/206b6784ff593b7ae34e0c8e04fd60b2c3a3b4af))
+
+
+### 🐛 Bug Fixes
+
+* add missing spinner feedback for resource fetching and deletion ([#66356](https://github.com/Arize-ai/arize/issues/66356)) ([b62df4b](https://github.com/Arize-ai/arize/commit/b62df4b1f418b5058f0c65f39bb7304f4870c60b))
+
+
+### 💫 Code Refactoring
+
+* **api-keys:** centralize ApiKeyStatus schema and update references ([#66333](https://github.com/Arize-ai/arize/issues/66333)) ([e32438d](https://github.com/Arize-ai/arize/commit/e32438d56098a25bd925c17ee262e0895e9f5ab6))
+
 ## [0.5.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.4.0...arize-ax-cli/v0.5.0) (2026-03-19)
 
 

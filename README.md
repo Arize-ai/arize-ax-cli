@@ -33,6 +33,7 @@
     - [Simple Configuration (Recommended)](#simple-configuration-recommended)
     - [Advanced Configuration](#advanced-configuration)
   - [Configuration File Location](#configuration-file-location)
+  - [Updating a Profile](#updating-a-profile)
   - [Configuration Reference](#configuration-reference)
     - [All Available Sections](#all-available-sections)
   - [Using Environment Variables](#using-environment-variables)
@@ -46,14 +47,21 @@
   - [Manual Installation (Alternative)](#manual-installation-alternative)
   - [Supported Shells](#supported-shells)
 - [Commands](#commands)
+  - [Global Options](#global-options)
+  - [Annotation Configs](#annotation-configs)
+  - [API Keys](#api-keys)
+  - [Cache](#cache)
   - [Datasets](#datasets)
+  - [Evaluators](#evaluators)
   - [Experiments](#experiments)
   - [Projects](#projects)
+  - [Prompts](#prompts)
   - [Spans](#spans)
   - [Traces](#traces)
-  - [Annotation Configs](#annotation-configs)
-  - [Cache](#cache)
-  - [Global Options](#global-options)
+  - [Annotation Configs](#annotation-configs-1)
+  - [AI Integrations](#ai-integrations)
+  - [Cache](#cache-1)
+  - [Global Options](#global-options-1)
 - [Usage Examples](#usage-examples)
   - [Creating a Dataset from a CSV File](#creating-a-dataset-from-a-csv-file)
   - [Exporting Dataset List to JSON](#exporting-dataset-list-to-json)
@@ -61,7 +69,7 @@
   - [Exporting Experiment Runs](#exporting-experiment-runs)
   - [Exporting Spans by Trace ID](#exporting-spans-by-trace-id)
   - [Using a Different Profile for a Command](#using-a-different-profile-for-a-command)
-  - [Listing Spans and Exporting to CSV](#listing-spans-and-exporting-to-csv)
+  - [Exporting Spans](#exporting-spans)
   - [Listing Traces and Exporting to Parquet](#listing-traces-and-exporting-to-parquet)
   - [Pagination](#pagination)
   - [Working with Multiple Environments](#working-with-multiple-environments)
@@ -92,8 +100,12 @@ Official command-line interface for [Arize AI](https://arize.com) - manage your 
 ## Features
 
 - **Dataset Management**: Create, list, update, and delete datasets
+- **Evaluator Management**: Create and manage LLM-as-judge evaluators and their versions
 - **Experiment Management**: Run and analyze experiments on your datasets
 - **Project Management**: Organize your projects
+- **API Key Management**: Create, refresh, and revoke API keys
+- **AI Integrations**: Configure external LLM providers (OpenAI, Anthropic, AWS Bedrock, and more)
+- **Prompt Management**: Create and version prompts with label management
 - **Spans & Traces**: Query and filter LLM spans and traces
 - **Multiple Profiles**: Switch between different Arize environments
 - **Flexible Output**: Export to JSON, CSV, Parquet, or display as tables
@@ -160,7 +172,7 @@ Create config from detected environment variables? [Y/n]: y
 
 ? Default output format: table
 
-✓ Configuration saved to profile 'default1'
+✓ Configuration saved to profile 'default'
 
 You're ready to go! Try: ax datasets list
 ```
@@ -205,18 +217,34 @@ The Arize CLI uses a flexible configuration system that supports multiple profil
 
 ### Configuration Commands
 
-| Command                        | Description                                      |
-| ------------------------------ | ------------------------------------------------ |
-| `ax profiles create`             | Create a new configuration profile interactively   |
-| `ax profiles list`               | List all available profiles                        |
-| `ax profiles show`               | Display the current profile's configuration        |
-| `ax profiles use <profile>`      | Switch to a different profile                      |
-| `ax profiles validate`           | Check profile for missing or incorrect config      |
-| `ax profiles delete <profile>`   | Delete a configuration profile                     |
+| Command                        | Description                                                         |
+| ------------------------------ | ------------------------------------------------------------------- |
+| `ax profiles create [name]`    | Create a new configuration profile interactively or from flags/file |
+| `ax profiles update`           | Update fields in an existing profile                                |
+| `ax profiles list`             | List all available profiles                                         |
+| `ax profiles show`             | Display the current profile's configuration                         |
+| `ax profiles use <profile>`    | Switch to a different profile                                       |
+| `ax profiles validate`         | Check profile for missing or incorrect config                       |
+| `ax profiles delete <profile>` | Delete a configuration profile                                      |
 
 ### Configuration Modes
 
-When you run `ax profiles create`, you'll be prompted to choose between two configuration modes:
+You can also create a profile non-interactively using CLI flags or a TOML file:
+
+```bash
+# Create with flags (no prompts)
+ax profiles create staging --api-key ak_abc123 --region US --output-format json
+
+# Create from a TOML file
+ax profiles create production --from-file ./prod.toml
+
+# Create from file and override the API key
+ax profiles create production --from-file ./prod.toml --api-key ak_override
+```
+
+**Flag precedence (highest to lowest):** CLI flags → `--from-file` (TOML) → interactive prompts.
+
+When you run `ax profiles create` without flags, you'll be prompted to choose between two configuration modes:
 
 #### Simple Configuration (Recommended)
 
@@ -336,6 +364,37 @@ Configuration files are stored at:
 | -------------- | ---------------------------------- | ---------------------------------------------- |
 | `default`      | `~/.arize/config.toml`             | `%USERPROFILE%\.arize\config.toml`             |
 | Named profiles | `~/.arize/profiles/<profile>.toml` | `%USERPROFILE%\.arize\profiles\<profile>.toml` |
+
+### Updating a Profile
+
+Use `ax profiles update` to modify specific fields in an existing profile without recreating it:
+
+```bash
+# Update the API key in the active profile
+ax profiles update --api-key ak_new_key
+
+# Update the region in a named profile
+ax profiles update --profile production --region EU
+
+# Replace an entire profile from a TOML file
+ax profiles update --profile production --from-file ./prod.toml
+
+# Load from file and override the API key
+ax profiles update --profile staging --from-file ./staging.toml --api-key ak_override
+```
+
+**Options:**
+
+| Option              | Description                                                 |
+| ------------------- | ----------------------------------------------------------- |
+| `--profile`, `-p`   | Profile to update (uses active profile if omitted)          |
+| `--from-file`, `-f` | TOML file to load; completely replaces the existing profile |
+| `--api-key`         | Arize API key                                               |
+| `--region`          | Routing region (e.g. `us-east-1b`, `US`, `EU`)              |
+| `--output-format`   | Default output format (`table`, `json`, `csv`, `parquet`)   |
+| `--verbose`, `-v`   | Enable verbose logs                                         |
+
+With flags only, just the specified fields are updated; all others are preserved. With `--from-file`, the profile is fully replaced by the file contents (flags are still applied on top).
 
 ### Configuration Reference
 
@@ -464,13 +523,11 @@ Without `--expand`, you'll see the variable references like `${ARIZE_API_KEY}`.
 Create different profiles for different environments:
 
 ```bash
-# Create a production profile
-ax profiles create
-# Enter profile name: production
+# Create a production profile (name as argument skips the name prompt)
+ax profiles create production
 
-# Create a staging profile
-ax profiles create
-# Enter profile name: staging
+# Create a staging profile interactively
+ax profiles create staging
 
 # List all profiles
 ax profiles list
@@ -479,11 +536,14 @@ ax profiles list
 ax profiles use production
 ax profiles use staging
 
+# Update a field in a specific profile
+ax profiles update --profile staging --region EU
+
 # Use a specific profile for a single command
 ax datasets list --profile production
 
 # Delete a profile
-ax profiles delete production
+ax profiles delete staging
 ```
 
 ## Shell Autocompletion
@@ -538,6 +598,95 @@ ax --show-completion >> ~/.zshrc   # For zsh
 
 ## Commands
 
+### Global Options
+
+Available for all commands:
+
+- `--profile, -p <name>`: Use a specific configuration profile
+- `--output, -o <format>`: Set output format (`table`, `json`, `csv`, `parquet`, or a file path)
+- `--help, -h`: Show help message
+
+> **Note:** `--verbose, -v` is available on each individual subcommand (e.g., `ax datasets list --verbose`) rather than as a top-level flag.
+
+### Annotation Configs
+
+Manage annotation configs (rubrics for human and automated evaluation):
+
+```bash
+# List annotation configs
+ax annotation-configs list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+
+# Get a specific annotation config
+ax annotation-configs get <annotation-config-id>
+
+# Create a freeform annotation config (free-text feedback)
+ax annotation-configs create --name "Quality" --space-id <space-id> --type freeform
+
+# Create a continuous annotation config (numeric score range)
+ax annotation-configs create --name "Score" --space-id <space-id> --type continuous \
+  --min-score 0 --max-score 1 --optimization-direction maximize
+
+# Create a categorical annotation config (discrete labels)
+ax annotation-configs create --name "Verdict" --space-id <space-id> --type categorical \
+  --value good --value neutral --value bad --optimization-direction maximize
+
+# Delete an annotation config
+ax annotation-configs delete <annotation-config-id> [--force]
+```
+
+**Supported annotation config types:**
+
+| Type          | Required options                                                        | Optional options           |
+| ------------- | ----------------------------------------------------------------------- | -------------------------- |
+| `freeform`    | _(none)_                                                                | —                          |
+| `continuous`  | `--min-score`, `--max-score`                                            | `--optimization-direction` |
+| `categorical` | `--value` (repeat for multiple labels, e.g. `--value good --value bad`) | `--optimization-direction` |
+
+### API Keys
+
+> **Security note:** The raw key value is only returned once (on `create` and `refresh`). Store it securely immediately — it cannot be retrieved again.
+
+```bash
+# List API keys
+ax api-keys list [--key-type user|service] [--status active|deleted] \
+  [--limit 15] [--cursor <cursor>]
+
+# Create a user key (authenticates as you)
+ax api-keys create --name "My Key" [--description "..."] [--expires-at 2025-12-31T23:59:59]
+
+# Create a service key (scoped to a space)
+ax api-keys create --name "CI Key" --key-type service --space-id <space-id>
+
+# Refresh a key (revokes old key, issues replacement)
+ax api-keys refresh <key-id> [--expires-at 2025-12-31T23:59:59]
+
+# Delete a key
+ax api-keys delete <key-id> [--force]
+```
+
+**Key types:**
+
+| Type      | Description                                                             |
+| --------- | ----------------------------------------------------------------------- |
+| `user`    | Authenticates as the creating user. Global, so `--space-id` not needed. |
+| `service` | Scoped to a specific space. `--space-id` is required.                  |
+
+### Cache
+
+Manage the local cache. The CLI caches downloaded resource data (e.g., dataset examples) locally as Parquet files to avoid redundant API calls. When you fetch a dataset's examples, the results are stored on disk so subsequent requests for the same version load instantly. The cache is automatically invalidated when a resource's `updated_at` timestamp changes, so you always get fresh data when something changes on the server.
+
+Caching is enabled by default and can be toggled in your profile configuration:
+
+```toml
+[storage]
+cache_enabled = true
+```
+
+```bash
+# Clear the cache
+ax cache clear
+```
+
 ### Datasets
 
 Manage your datasets:
@@ -571,6 +720,65 @@ ax datasets delete <dataset-id> [--force]
 - JSON (`.json`)
 - JSON Lines (`.jsonl`)
 - Parquet (`.parquet`)
+
+### Evaluators
+
+Manage LLM-as-judge evaluators and their versions:
+
+```bash
+# List evaluators (optionally filtered by space)
+ax evaluators list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+
+# Get an evaluator with its latest version
+ax evaluators get <evaluator-id>
+
+# Get an evaluator at a specific version
+ax evaluators get <evaluator-id> --version-id <version-id>
+
+# Create a new evaluator
+ax evaluators create \
+  --name "Response Relevance" \
+  --space-id <space-id> \
+  --commit-message "Initial version" \
+  --template-name relevance \
+  --template "Is this response relevant to the query? {{input}} {{output}}" \
+  --ai-integration-id <integration-id> \
+  --model-name gpt-4o
+
+# Update evaluator metadata
+ax evaluators update <evaluator-id> --name "New Name"
+ax evaluators update <evaluator-id> --description "Updated description"
+
+# Delete an evaluator (and all its versions)
+ax evaluators delete <evaluator-id> [--force]
+
+# List all versions of an evaluator
+ax evaluators list-versions <evaluator-id> [--limit 15] [--cursor <cursor>]
+
+# Get a specific version by ID
+ax evaluators get-version <version-id>
+
+# Create a new version of an existing evaluator
+ax evaluators create-version <evaluator-id> \
+  --commit-message "Improved prompt" \
+  --template-name relevance \
+  --template "Rate the relevance of the response: {{input}} {{output}}" \
+  --ai-integration-id <integration-id> \
+  --model-name gpt-4o
+```
+
+**Template configuration options:**
+
+| Option | Description |
+| --- | --- |
+| `--template-name` | Eval column name (alphanumeric, spaces, hyphens, underscores) |
+| `--template` | Prompt template with `{{variable}}` placeholders referencing span attributes |
+| `--ai-integration-id` | AI integration global ID (base64) |
+| `--model-name` | Model name (e.g. `gpt-4o`, `claude-3-5-sonnet`) |
+| `--include-explanations` | Include reasoning explanation alongside the score (default: on) |
+| `--use-function-calling` | Prefer structured function-call output when supported (default: on) |
+| `--invocation-params` | JSON object of model invocation parameters (e.g. `'{"temperature": 0.7}'`) |
+| `--provider-params` | JSON object of provider-specific parameters |
 
 ### Experiments
 
@@ -624,6 +832,83 @@ ax projects create --name "My Project" --space-id <space-id>
 # Delete a project
 ax projects delete <project-id> [--force]
 ```
+
+### Prompts
+
+Manage versioned prompt templates with label-based deployment:
+
+```bash
+# List prompts
+ax prompts list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+
+# Get a prompt (latest version by default)
+ax prompts get <prompt-id>
+
+# Get a specific version by ID or label
+ax prompts get <prompt-id> --version-id <version-id>
+ax prompts get <prompt-id> --label production
+
+# Create a prompt with an initial version
+ax prompts create \
+  --name "My Prompt" \
+  --space-id <space-id> \
+  --provider openAI \
+  --input-variable-format f_string \
+  --messages messages.json \
+  --commit-message "Initial version"
+
+# Update a prompt's description
+ax prompts update <prompt-id> --description "Updated description"
+
+# Delete a prompt (removes all versions)
+ax prompts delete <prompt-id> [--force]
+
+# List versions for a prompt
+ax prompts list-versions <prompt-id> [--limit 15] [--cursor <cursor>]
+
+# Create a new version
+ax prompts create-version <prompt-id> \
+  --provider openAI \
+  --input-variable-format f_string \
+  --messages messages_v2.json \
+  --commit-message "Improved system prompt"
+
+# Create a new version (inline messages JSON)
+ax prompts create-version <prompt-id> \
+  --provider openAI \
+  --input-variable-format f_string \
+  --messages '[{"role": "user", "content": "Your prompt here"}]' \
+  --commit-message "Minimal inline JSON example"
+
+
+# Resolve a label to its version
+ax prompts get-version-by-label <prompt-id> --label production
+
+# Set labels on a version (replaces all existing labels)
+ax prompts set-version-labels <version-id> --label production --label staging
+
+# Remove a label from a version
+ax prompts remove-version-label <version-id> --label staging
+```
+
+**Messages** (`--messages`): pass a path to a JSON file, or inline JSON. Inline values must start with `[` or `{` after whitespace (so a missing file path like `msgs.json` yields a clear “file not found” error instead of a JSON parse error). The payload must be a non-empty JSON array of message objects. Example file `messages.json`:
+
+```json
+[
+  {"role": "system", "content": "You are a helpful assistant."},
+  {"role": "user",   "content": "Summarize the following: {text}"},
+  {"role": "assistant", "tool_calls": [{"id": "tool-call-1", "type": "function", "function": {"name": "search", "arguments": "{\"query\": \"summarize {text}\"}}]},
+  {"role": "tool", "tool_call_id": "tool-call-1", "content": "This is the result of the search function."},
+]
+```
+
+**Input variable formats:**
+
+| Format     | Syntax              |
+| ---------- | ------------------- |
+| `f_string` | `{variable_name}`   |
+| `mustache` | `{{variable_name}}` |
+| `none`     | No variable parsing |
 
 ### Spans
 
@@ -736,6 +1021,50 @@ ax annotation-configs delete <annotation-config-id> [--force]
 | `freeform`    | _(none)_                                                                | —                          |
 | `continuous`  | `--min-score`, `--max-score`                                            | `--optimization-direction` |
 | `categorical` | `--value` (repeat for multiple labels, e.g. `--value good --value bad`) | `--optimization-direction` |
+
+### AI Integrations
+
+Configure external LLM providers for use within the Arize platform (for evaluations, online evals, and more):
+
+```bash
+# List AI integrations
+ax ai-integrations list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+
+# Get a specific integration
+ax ai-integrations get <integration-id>
+
+# Create an integration (OpenAI example)
+ax ai-integrations create --name "OpenAI Prod" --provider openAI \
+  --api-key <key> --model-name gpt-4o --model-name gpt-4o-mini
+
+# Create an integration with custom headers
+ax ai-integrations create --name "Custom LLM" --provider custom \
+  --base-url https://my-llm.example.com \
+  --headers-json '{"X-API-Key": "secret"}'
+
+# Create an AWS Bedrock integration
+ax ai-integrations create --name "Bedrock" --provider awsBedrock \
+  --provider-metadata-json '{"role_arn": "arn:aws:iam::123456789:role/MyRole"}'
+
+# Update an integration
+ax ai-integrations update <integration-id> --name "Renamed" --api-key <new-key>
+
+# Delete an integration
+ax ai-integrations delete <integration-id> [--force]
+```
+
+**Supported providers:**
+
+| Provider      | Value         | Notes                                        |
+| ------------- | ------------- | -------------------------------------------- |
+| OpenAI        | `openAI`      |                                              |
+| Azure OpenAI  | `azureOpenAI` | Use `--base-url` for the deployment endpoint |
+| AWS Bedrock   | `awsBedrock`  | Requires `--provider-metadata-json`          |
+| Vertex AI     | `vertexAI`    | Requires `--provider-metadata-json`          |
+| Anthropic     | `anthropic`   |                                              |
+| NVIDIA NIM    | `nvidiaNim`   |                                              |
+| Google Gemini | `gemini`      |                                              |
+| Custom        | `custom`      | Use `--base-url` for a custom endpoint       |
 
 ### Cache
 
@@ -963,7 +1292,7 @@ ax datasets list --space-id sp_abc123 --verbose
 
 1. Check your configuration: `ax profiles show`
 2. Refresh your API key from the Arize UI
-3. Update your profiles: `ax profiles create` (overwrite existing)
+3. Update your profile: `ax profiles update --api-key <new-key>`
 
 ---
 

@@ -12,4 +12,4 @@ OPTION_1 = """
 [dim cyan]                 AI Observability Platform (v{version})[/dim cyan]"""
 
 # Default banner (can be changed to any option)
-DEFAULT_BANNER = OPTION_1.format(version=__version__)
+WELCOME_BANNER = OPTION_1.format(version=__version__)

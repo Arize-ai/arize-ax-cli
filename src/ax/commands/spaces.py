@@ -146,7 +146,8 @@ def get_space(
     )
 
     try:
-        space = client.spaces.get(space_id=id)
+        with spinner("Fetching space"):
+            space = client.spaces.get(space_id=id)
     except Exception as e:
         raise APIError(f"Failed to get space: {e}") from e
     else:

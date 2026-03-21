@@ -179,7 +179,8 @@ def get_dataset(
     )
 
     try:
-        dataset = client.datasets.get(dataset_id=id)
+        with spinner("Fetching dataset"):
+            dataset = client.datasets.get(dataset_id=id)
     except Exception as e:
         raise APIError(f"Failed to get dataset: {e}") from e
     else:
@@ -525,8 +526,10 @@ def delete_dataset(
 
     # Delete dataset
     try:
-        client.datasets.delete(dataset_id=id)
+        with spinner(
+            "Deleting dataset",
+            success_msg=f"Dataset with ID '{id}' deleted successfully",
+        ):
+            client.datasets.delete(dataset_id=id)
     except Exception as e:
         raise APIError(f"Failed to delete dataset: {e}") from e
-    else:
-        success(f"Dataset with ID '{id}' deleted successfully")

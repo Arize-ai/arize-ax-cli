@@ -18,6 +18,7 @@ from ax.utils.console import (
     success,
     warning,
 )
+from ax.utils.datetime_parse import parse_optional_iso8601
 from ax.utils.export import make_export_dir, print_json_array, write_json_array
 from ax.utils.projects import resolve_project_id
 
@@ -223,13 +224,9 @@ def export_spans(
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
-    end_dt = (
-        datetime.fromisoformat(end_time)
-        if end_time
-        else datetime.now(tz=timezone.utc)
-    )
+    end_dt = parse_optional_iso8601(end_time) or datetime.now(tz=timezone.utc)
     start_dt = (
-        datetime.fromisoformat(start_time)
+        parse_optional_iso8601(start_time)
         if start_time
         else end_dt - timedelta(days=days)
     )

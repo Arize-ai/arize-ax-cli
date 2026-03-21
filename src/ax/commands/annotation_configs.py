@@ -20,7 +20,6 @@ from ax.utils.console import (
     info,
     setup_logging,
     spinner,
-    success,
     warning,
 )
 from ax.utils.file_io import parse_output_option
@@ -152,7 +151,8 @@ def get_annotation_config(
     )
 
     try:
-        annotation_config = client.annotation_configs.get(id=id)
+        with spinner("Fetching annotation config"):
+            annotation_config = client.annotation_configs.get(id=id)
     except Exception as e:
         raise APIError(f"Failed to get annotation config: {e}") from e
     else:
@@ -336,8 +336,10 @@ def delete_annotation_config(
             raise typer.Exit()
 
     try:
-        client.annotation_configs.delete(id=id)
+        with spinner(
+            "Deleting annotation config",
+            success_msg=f"Annotation config with ID '{id}' deleted successfully",
+        ):
+            client.annotation_configs.delete(id=id)
     except Exception as e:
         raise APIError(f"Failed to delete annotation config: {e}") from e
-    else:
-        success(f"Annotation config with ID '{id}' deleted successfully")

@@ -20,6 +20,7 @@ from ax.utils.console import (
     success,
     warning,
 )
+from ax.utils.datetime_parse import parse_optional_iso8601
 from ax.utils.export import make_export_dir, print_json_array, write_json_array
 from ax.utils.file_io import (
     parse_output_option,
@@ -121,8 +122,8 @@ def list_spans(
         output if output else config.output.format
     )
 
-    start_dt = datetime.fromisoformat(start_time) if start_time else None
-    end_dt = datetime.fromisoformat(end_time) if end_time else None
+    start_dt = parse_optional_iso8601(start_time)
+    end_dt = parse_optional_iso8601(end_time)
 
     # Traces are root spans (no parent). Always inject the parent_id filter.
     trace_filter = "parent_id = null"
@@ -268,13 +269,9 @@ def export_traces(
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
-    end_dt = (
-        datetime.fromisoformat(end_time)
-        if end_time
-        else datetime.now(tz=timezone.utc)
-    )
+    end_dt = parse_optional_iso8601(end_time) or datetime.now(tz=timezone.utc)
     start_dt = (
-        datetime.fromisoformat(start_time)
+        parse_optional_iso8601(start_time)
         if start_time
         else end_dt - timedelta(days=days)
     )

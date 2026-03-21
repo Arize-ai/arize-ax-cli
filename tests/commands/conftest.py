@@ -26,6 +26,7 @@ def mock_client() -> MagicMock:
     """Provide a MagicMock ArizeClient with sub-client stubs."""
     client = MagicMock()
     client.datasets = MagicMock()
+    client.evaluators = MagicMock()
     client.experiments = MagicMock()
     client.spans = MagicMock()
     client.projects = MagicMock()
@@ -49,6 +50,10 @@ def patch_config_and_client(
         ) as cfg_mock,
         patch(
             "ax.commands.datasets.ArizeClient",
+            return_value=mock_client,
+        ),
+        patch(
+            "ax.commands.evaluators.ArizeClient",
             return_value=mock_client,
         ),
         patch(

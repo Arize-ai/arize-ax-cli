@@ -21,7 +21,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "arize>=8.6.0, <9",
+    "arize>=8.8.0, <9",
     "pydantic>=2.0.0, <3",
     "questionary>=2.0.0, <3",
     "rich>=13.0.0, <14",
@@ -227,6 +227,7 @@ exclude_lines = [
 directory = "htmlcov"
 
 [tool.taskipy.tasks]
+all = { cmd = "task lint && task type-check && task test", cwd = ".", help = "Run all tasks" }
 lint = { cmd = "ruff format . && ruff check --fix .", cwd = ".", help = "Run ruff to format and lint the package." }
 type-check = {cmd = "mypy --no-incremental --show-traceback --config-file pyproject.toml .", cwd = ".", help = "Run mypy for type checking."}
 test = {cmd = "pytest --cov .", cwd = ".", help = "Run the test suite with coverage."}
@@ -235,3 +236,4 @@ ci-format = { cmd = "ruff format --check .", cwd = ".", help = "Run ruff to chec
 ci-lint = { cmd = "ruff check .", cwd = ".", help = "Run ruff to check linting rules of the package during CI." }
 ci-type-check = {cmd = "mypy --no-incremental --show-traceback --config-file pyproject.toml .", cwd = ".", help = "Run mypy for type checking during CI."}
 ci-test = {cmd = "pytest --cov --cov-report=term-missing --cov-report=html .", cwd = ".", help = "Run the test suite with coverage during CI."}
+
