@@ -1,12 +1,51 @@
 """File I/O utilities for reading and writing various formats."""
 
+import io
 import os
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 from ax.core.exceptions import FileIOError
 from ax.utils.console import spinner
+
+_STDIN_PATHS = {"-", "/dev/stdin", "/proc/self/fd/0", "stdin"}
+
+
+def _is_stdin_path(path: str) -> bool:
+    return path.strip() in _STDIN_PATHS
+
+
+def _read_stdin_as_dataframe() -> pd.DataFrame:
+    """Read from stdin and auto-detect JSON/JSONL/CSV format from content."""
+    if hasattr(sys.stdin, "buffer"):
+        try:
+            text = sys.stdin.buffer.read().decode("utf-8").strip()
+        except Exception:
+            text = sys.stdin.read().strip()
+    else:
+        text = sys.stdin.read().strip()
+
+    if text.startswith("["):
+        try:
+            return pd.read_json(io.StringIO(text))
+        except ValueError:
+            pass
+
+    lines = [line for line in text.splitlines() if line.strip()]
+    if lines and lines[0].strip().startswith("{"):
+        try:
+            return pd.read_json(io.StringIO(text), lines=True)
+        except ValueError:
+            pass
+
+    try:
+        return pd.read_csv(io.StringIO(text))
+    except Exception as e:
+        raise FileIOError(
+            f"Failed to parse stdin data as JSON, JSONL, or CSV: {e}"
+        ) from e
 
 
 def read_data_file(path: str) -> pd.DataFrame:
@@ -17,9 +56,10 @@ def read_data_file(path: str) -> pd.DataFrame:
     - JSON (.json)
     - JSON Lines (.jsonl)
     - Parquet (.parquet, .pq)
+    - stdin ('-' or '/dev/stdin')
 
     Args:
-        path: Path to data file
+        path: Path to data file, or '-' / '/dev/stdin' for stdin
 
     Returns:
         DataFrame containing the data
@@ -27,6 +67,9 @@ def read_data_file(path: str) -> pd.DataFrame:
     Raises:
         FileIOError: If file doesn't exist, format unsupported, or read fails
     """
+    if _is_stdin_path(path):
+        return _read_stdin_as_dataframe()
+
     file_path = Path(path)
 
     if not file_path.exists():

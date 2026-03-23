@@ -329,7 +329,7 @@ def delete_annotation_config(
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
     if not force:
-        warning("Warning: This will permanently delete the annotation config")
+        warning("This will permanently delete the annotation config")
 
         if not confirm("Are you sure?", default=False):
             info("Annotation config not deleted")

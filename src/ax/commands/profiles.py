@@ -33,7 +33,6 @@ from ax.utils.console import (
     setup_logging,
     success,
     text,
-    text_bold,
     text_dimmed,
 )
 
@@ -326,11 +325,12 @@ def list_profiles(
 
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Profile")
-    table.add_column("Status")
 
     for profile in profiles:
-        status = "[green]active[/green]" if profile == active else ""
-        table.add_row(profile, status)
+        if profile == active:
+            table.add_row(f"[bold]{profile}[/bold] [green]●[/green]")
+        else:
+            table.add_row(profile)
 
     console.print(table)
     new_line()
@@ -378,10 +378,16 @@ def show_profile(
     profile = profile_arg or ConfigManager.get_active_profile()
     config = ConfigManager.load(profile, expand_vars)
 
-    # Display configuration
-    text_bold(f"\nProfile: {profile}")
-    if profile == ConfigManager.get_active_profile():
-        console.print("[green](active)[/green]")
+    from rich.panel import Panel
+
+    # Display profile header
+    active_badge = (
+        " [green]● active[/green]"
+        if profile == ConfigManager.get_active_profile()
+        else ""
+    )
+    new_line()
+    console.print(f"[bold]Profile:[/bold] {profile}{active_badge}")
     new_line()
 
     # Determine which sections to show
@@ -399,68 +405,98 @@ def show_profile(
             return True
         return config_section != default_section
 
+    def kv(label: str, value: object) -> str:
+        return f"[bold cyan]{label}:[/bold cyan] {value}"
+
+    # Build panel lines
+    lines: list[str] = []
+
     # Auth section (always shown)
-    emphasis("Authentication:")
     key = config.auth.api_key
     key = key if _is_env_var_ref(key) else mask(key)
-    text(f"  API Key: {key}")
+    lines.append("[bold]Authentication[/bold]")
+    lines.append(kv("  API Key", key))
+
+    # Output section (always shown)
+    lines.append("")
+    lines.append("[bold]Output[/bold]")
+    lines.append(kv("  Format", config.output.format))
 
     # Routing section
     if all_sections or is_customized("routing"):
-        emphasis("\nRouting:")
+        lines.append("")
+        lines.append("[bold]Routing[/bold]")
         if config.routing.region:
-            text(f"  Region: {config.routing.region}")
+            lines.append(kv("  Region", config.routing.region))
         if config.routing.single_host:
-            text(f"  Single Host: {config.routing.single_host}")
+            lines.append(kv("  Single Host", config.routing.single_host))
         if config.routing.single_port:
-            text(f"  Single Port: {config.routing.single_port}")
+            lines.append(kv("  Single Port", config.routing.single_port))
         if config.routing.base_domain:
-            text(f"  Base Domain: {config.routing.base_domain}")
+            lines.append(kv("  Base Domain", config.routing.base_domain))
         if not (
             config.routing.region
             or config.routing.single_host
             or config.routing.base_domain
         ):
-            text(f"  API Scheme: {config.routing.api_scheme}")
-            text(f"  API Host: {config.routing.api_host}")
-            text(f"  OTLP Scheme: {config.routing.otlp_scheme}")
-            text(f"  OTLP Host: {config.routing.otlp_host}")
-            text(f"  Flight Scheme: {config.routing.flight_scheme}")
-            text(f"  Flight Host: {config.routing.flight_host}")
-            text(f"  Flight Port: {config.routing.flight_port}")
+            lines.append(kv("  API Scheme", config.routing.api_scheme))
+            lines.append(kv("  API Host", config.routing.api_host))
+            lines.append(kv("  OTLP Scheme", config.routing.otlp_scheme))
+            lines.append(kv("  OTLP Host", config.routing.otlp_host))
+            lines.append(kv("  Flight Scheme", config.routing.flight_scheme))
+            lines.append(kv("  Flight Host", config.routing.flight_host))
+            lines.append(kv("  Flight Port", config.routing.flight_port))
 
     # Transport section
     if all_sections or is_customized("transport"):
-        emphasis("\nTransport:")
-        text(f"  Stream Max Workers: {config.transport.stream_max_workers}")
-        text(
-            f"  Stream Max Queue Bound: {config.transport.stream_max_queue_bound}"
+        lines.append("")
+        lines.append("[bold]Transport[/bold]")
+        lines.append(
+            kv("  Stream Max Workers", config.transport.stream_max_workers)
         )
-        text(
-            f"  PyArrow Max Chunksize: {config.transport.pyarrow_max_chunksize}"
+        lines.append(
+            kv(
+                "  Stream Max Queue Bound",
+                config.transport.stream_max_queue_bound,
+            )
         )
-        text(
-            f"  Max HTTP Payload Size: {config.transport.max_http_payload_size_mb} MB"
+        lines.append(
+            kv(
+                "  PyArrow Max Chunksize",
+                config.transport.pyarrow_max_chunksize,
+            )
+        )
+        lines.append(
+            kv(
+                "  Max HTTP Payload Size",
+                f"{config.transport.max_http_payload_size_mb} MB",
+            )
         )
 
     # Security section
     if all_sections or is_customized("security"):
-        emphasis("\nSecurity:")
+        lines.append("")
+        lines.append("[bold]Security[/bold]")
         val = config.security.request_verify
         if isinstance(val, str) and _is_bool(val):
             val = val.lower() == "true"
-        text(f"  Request Verify: {val}")
+        lines.append(kv("  Request Verify", val))
 
     # Storage section
     if all_sections or is_customized("storage"):
-        emphasis("\nStorage:")
-        text(f"  Directory: {config.storage.directory}")
-        text(f"  Cache: {config.storage.cache_enabled}")
+        lines.append("")
+        lines.append("[bold]Storage[/bold]")
+        lines.append(kv("  Directory", config.storage.directory))
+        lines.append(kv("  Cache", config.storage.cache_enabled))
 
-    # Output section (always shown)
-    emphasis("\nOutput:")
-    text(f"  Format: {config.output.format}")
-
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title=f"[bold]Profile: {profile}[/bold]",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
     new_line()
 
 

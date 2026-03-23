@@ -4,6 +4,7 @@ import json
 import sys
 from abc import ABC, abstractmethod
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,23 @@ from ax.core.pydantic import (
 from ax.utils.console import new_line, success, text_dimmed
 
 console = Console()
+
+
+_NO_WRAP_SUBSTRINGS: set[str] = {"id", "cursor", "token", "key"}
+
+_STATUS_COLORS: dict[str, str] = {
+    "active": "green",
+    "deleted": "red",
+    "pending": "yellow",
+    "expired": "dim",
+    "inactive": "dim",
+}
+
+
+def _col_no_wrap(col_name: str) -> bool:
+    """Return True for columns that should not wrap (IDs, tokens, cursors)."""
+    lower = col_name.lower()
+    return any(sub in lower for sub in _NO_WRAP_SUBSTRINGS)
 
 
 class BaseModelTableFormatter:
@@ -93,7 +111,7 @@ class BaseModelTableFormatter:
 
         # Add columns
         for col in df.columns:
-            table.add_column(str(col))
+            table.add_column(str(col), no_wrap=_col_no_wrap(col))
 
         # Add rows with formatted values
         for _, row in df.iterrows():
@@ -120,6 +138,13 @@ class BaseModelTableFormatter:
         if isinstance(value, list):
             # Empty list or list of scalars
             return f"[dim]{len(value)} items[/dim]" if value else "[dim][]"
+        # Unwrap enum instances (e.g. ApiKeyStatus.ACTIVE → "active") before display
+        if isinstance(value, Enum):
+            value = value.value
+        if isinstance(value, str):
+            color = _STATUS_COLORS.get(value.lower())
+            if color:
+                return f"[{color}]{value}[/{color}]"
         return str(value)
 
 
@@ -169,25 +194,32 @@ class TableFormatter(OutputFormatter):
                 # Render table
                 table = Table(show_header=True, header_style="bold cyan")
                 for col in df.columns:
-                    table.add_column(str(col))
+                    table.add_column(str(col), no_wrap=_col_no_wrap(col))
+                formatter = BaseModelTableFormatter()
                 for _, row in df.iterrows():
-                    table.add_row(*[str(val) for val in row])
+                    table.add_row(
+                        *[formatter._format_value(val) for val in row]
+                    )
                 console.print(table)
             else:
                 text_dimmed("No items to display")
 
             # Show pagination info below
             if data.pagination.has_more:  # type: ignore
-                msg = "Page complete. More items available."
-                if data.pagination.next_cursor:  # type: ignore
-                    msg += f" Use --cursor {data.pagination.next_cursor}"  # type: ignore
-                else:
-                    msg += (
-                        " Pagination cursor not supported for this command, "
-                        "it will be available in a future release."
-                    )
                 new_line()
-                text_dimmed(msg)
+                if data.pagination.next_cursor:  # type: ignore
+                    text_dimmed(
+                        "More items available. To fetch the next page, add:"
+                    )
+                    console.print(
+                        f"  [bold cyan]--cursor[/bold cyan] "
+                        f"[yellow]{data.pagination.next_cursor}[/yellow]"  # type: ignore
+                    )
+                else:
+                    text_dimmed(
+                        "More items available. Pagination cursor not supported for "
+                        "this command — it will be available in a future release."
+                    )
             return
 
         # Special handling for BaseModel - use BaseModelTableFormatter

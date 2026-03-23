@@ -63,9 +63,11 @@ def basemodel_to_dataframe(models: list[BaseModel | dict]) -> pd.DataFrame:
     if not models:
         return pd.DataFrame()
 
-    # Convert BaseModels to dicts if needed
+    # Convert BaseModels to dicts if needed.
+    # mode="json" ensures enum fields are serialized to their string values
+    # rather than returning enum instances (which stringify as e.g. ApiKeyStatus.active).
     data = (
-        [model.model_dump() for model in models]  # type: ignore[union-attr]
+        [model.model_dump(mode="json") for model in models]  # type: ignore[union-attr]
         if isinstance(models[0], BaseModel)
         else models
     )

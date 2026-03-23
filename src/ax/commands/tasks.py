@@ -24,6 +24,7 @@ from ax.utils.console import (
 )
 from ax.utils.file_io import parse_output_option
 from ax.utils.json_source import load_json
+from ax.utils.projects import resolve_project_id
 
 app = typer.Typer(
     name="tasks",
@@ -48,7 +49,12 @@ def _build_evaluators(
     except Exception as exc:
         raise typer.BadParameter(f"Failed to parse evaluators: {exc}") from exc
 
-    return [e for e in evaluators if e is not None]
+    none_indices = [i for i, e in enumerate(evaluators) if e is None]
+    if none_indices:
+        raise typer.BadParameter(
+            f"Failed to parse evaluator(s) at index(es): {none_indices}"
+        )
+    return evaluators  # type: ignore[return-value]
 
 
 def _parse_experiment_ids(value: str | None) -> list[str] | None:
@@ -73,7 +79,7 @@ def list_tasks(
     project_id: Annotated[
         str | None,
         typer.Option(
-            "--project-id", help="Filter tasks by project global ID (base64)"
+            "--project-id", help="Filter tasks by project name or ID (base64)"
         ),
     ] = None,
     dataset_id: Annotated[
@@ -122,6 +128,9 @@ def list_tasks(
     output_format, output_file = parse_output_option(
         output if output else config.output.format
     )
+
+    if project_id is not None:
+        project_id = resolve_project_id(client, project_id, space_id)
 
     try:
         with spinner("Fetching tasks"):
@@ -189,7 +198,6 @@ def create_task(
             "--name",
             "-n",
             help="Task name (unique within the space)",
-            prompt=True,
         ),
     ],
     task_type: Annotated[
@@ -197,7 +205,6 @@ def create_task(
         typer.Option(
             "--task-type",
             help="Task type: template_evaluation or code_evaluation",
-            prompt=True,
         ),
     ],
     evaluators: Annotated[
@@ -205,17 +212,28 @@ def create_task(
         typer.Option(
             "--evaluators",
             help=(
-                "JSON array of evaluator objects, e.g. "
-                '[{"evaluator_id": "...", "query_filter": null, "column_mappings": null}]'
+                "JSON array of evaluator configs. Find evaluator IDs with `ax evaluators list`. "
+                'Example: \'[{"evaluator_id": "RXZhbaGWx9yOjEyMzQ1", '
+                '"query_filter": "tag[environment] = \'production\'", '
+                '"column_mappings": {"input": "user_query", "output": "model_response"}}]\'. '
+                "Fields: evaluator_id (required, base64 ID from ax evaluators list), "
+                "query_filter (optional per-evaluator filter string), "
+                "column_mappings (optional dict remapping column names)."
             ),
-            prompt=True,
         ),
     ],
     project_id: Annotated[
         str | None,
         typer.Option(
             "--project-id",
-            help="Project global ID (base64); mutually exclusive with --dataset-id",
+            help="Project name or ID (base64); mutually exclusive with --dataset-id",
+        ),
+    ] = None,
+    space_id: Annotated[
+        str | None,
+        typer.Option(
+            "--space-id",
+            help="Space ID (required when using a project name instead of ID)",
         ),
     ] = None,
     dataset_id: Annotated[
@@ -277,9 +295,14 @@ def create_task(
         raise UsageError("One of --project-id or --dataset-id must be provided")
     if project_id is not None and dataset_id is not None:
         raise UsageError("--project-id and --dataset-id are mutually exclusive")
+    if sampling_rate is not None and not (0.0 <= sampling_rate <= 1.0):
+        raise UsageError("--sampling-rate must be between 0.0 and 1.0")
 
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
+
+    if project_id is not None:
+        project_id = resolve_project_id(client, project_id, space_id)
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -388,6 +411,8 @@ def trigger_run(
 ) -> None:
     """Trigger an on-demand run for a task."""
     setup_logging(verbose)
+    if not wait and (poll_interval != 5.0 or timeout != 600.0):
+        warning("--poll-interval and --timeout have no effect without --wait")
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
@@ -417,7 +442,8 @@ def trigger_run(
                     timeout=timeout,
                 )
         except TimeoutError as e:
-            raise APIError(str(e) or "Task run timed out") from e
+            msg = str(e)
+            raise APIError(msg if msg else "Task run timed out") from e
         except Exception as e:
             raise APIError(f"Failed while waiting for task run: {e}") from e
 
@@ -553,7 +579,7 @@ def cancel_run(
     setup_logging(verbose)
 
     if not force:
-        warning("Warning: This will cancel the task run")
+        warning("This will cancel the task run")
         if not confirm("Are you sure?", default=False):
             info("Task run not cancelled")
             raise typer.Exit()
@@ -623,7 +649,8 @@ def wait_for_run(
                 timeout=timeout,
             )
     except TimeoutError as e:
-        raise APIError(str(e) or "Task run timed out") from e
+        msg = str(e)
+        raise APIError(msg if msg else "Task run timed out") from e
     except Exception as e:
         raise APIError(f"Failed while waiting for task run: {e}") from e
     else:

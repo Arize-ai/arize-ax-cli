@@ -24,6 +24,7 @@ from ax.utils.console import (
 )
 from ax.utils.export import make_export_dir, print_json_array, write_json_array
 from ax.utils.file_io import (
+    _is_stdin_path,
     parse_output_option,
     read_data_file,
 )
@@ -262,12 +263,11 @@ def create_experiment(
         ),
     ],
     file: Annotated[
-        Path,
+        str,
         typer.Option(
             "--file",
             "-f",
-            help="Data file (CSV, JSON, JSONL, or Parquet) with experiment runs",
-            exists=True,
+            help="Data file (CSV, JSON, JSONL, or Parquet) with experiment runs, or '-' for stdin",
             prompt=True,
         ),
     ],
@@ -310,7 +310,11 @@ def create_experiment(
     )
 
     # Read data file
-    df = read_data_file(str(file))
+    if not _is_stdin_path(file) and not Path(file).exists():
+        raise typer.BadParameter(
+            f"File not found: {file}", param_hint="'--file'"
+        )
+    df = read_data_file(file)
 
     required_cols = {"example_id", "output"}
     missing = required_cols - set(df.columns)
@@ -387,7 +391,7 @@ def delete_experiment(
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
     if not force:
-        warning("Warning: This will permanently delete the experiment")
+        warning("This will permanently delete the experiment")
 
         if not confirm("Are you sure?", default=False):
             info("Experiment not deleted")

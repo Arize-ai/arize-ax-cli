@@ -62,6 +62,7 @@
   - [Traces](#traces)
 - [Usage Examples](#usage-examples)
   - [Creating a Dataset from a CSV File](#creating-a-dataset-from-a-csv-file)
+  - [Creating a Dataset from stdin](#creating-a-dataset-from-stdin)
   - [Exporting Dataset List to JSON](#exporting-dataset-list-to-json)
   - [Exporting Dataset Examples](#exporting-dataset-examples)
   - [Exporting Experiment Runs](#exporting-experiment-runs)
@@ -746,11 +747,17 @@ ax datasets export <dataset-id> [--version-id <version-id>] [--output-dir .] [--
 # Create a new dataset
 ax datasets create --name "My Dataset" --space-id <space-id> --file data.csv
 
+# Create a dataset from stdin (pipe or heredoc)
+ax datasets create --name "My Dataset" --space-id <space-id> --file - < data.json
+
 # Append examples (inline JSON)
 ax datasets append <dataset-id> --json '[{"question": "...", "answer": "..."}]'
 
 # Append examples (from file)
 ax datasets append <dataset-id> --file new_examples.csv [--version-id <version-id>]
+
+# Append examples from stdin
+ax datasets append <dataset-id> --file -
 
 # Delete a dataset
 ax datasets delete <dataset-id> [--force]
@@ -762,6 +769,7 @@ ax datasets delete <dataset-id> [--force]
 - JSON (`.json`)
 - JSON Lines (`.jsonl`)
 - Parquet (`.parquet`)
+- stdin (`-` or `/dev/stdin`) — format auto-detected from content
 
 ### Evaluators
 
@@ -863,6 +871,9 @@ ax experiments export <experiment-id> [--output-dir .] [--stdout]
 
 # Create a new experiment from a data file
 ax experiments create --name "My Experiment" --dataset-id <dataset-id> --file runs.csv
+
+# Create an experiment from stdin
+ax experiments create --name "My Experiment" --dataset-id <dataset-id> --file -
 
 # List runs for an experiment
 ax experiments list_runs <experiment-id> [--limit 30]
@@ -1030,19 +1041,19 @@ Manage evaluation tasks and trigger on-demand runs:
 
 ```bash
 # List tasks (optionally filtered by space, project, dataset, or type)
-ax tasks list [--space-id <space-id>] [--project-id <project-id>] \
+ax tasks list [--space-id <space-id>] [--project-id <project-name-or-id>] \
   [--dataset-id <dataset-id>] [--task-type template_evaluation|code_evaluation] \
   [--limit 15] [--cursor <cursor>]
 
 # Get a specific task
 ax tasks get <task-id>
 
-# Create a project-based task
+# Create a project-based task (use ax evaluators list to find evaluator IDs)
 ax tasks create \
   --name "Relevance Check" \
   --task-type template_evaluation \
-  --evaluators '[{"evaluator_id": "<evaluator-id>"}]' \
-  --project-id <project-id> \
+  --evaluators '[{"evaluator_id": "<id from ax evaluators list>", "query_filter": null, "column_mappings": null}]' \
+  --project-id <project-name-or-id> [--space-id <space-id>] \
   --is-continuous
 
 # Create a dataset-based task
@@ -1085,8 +1096,9 @@ ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 | --- | --- |
 | `--name`, `-n` | Task name (must be unique within the space) |
 | `--task-type` | `template_evaluation` or `code_evaluation` |
-| `--evaluators` | JSON array of evaluator objects: `[{"evaluator_id": "...", "query_filter": null, "column_mappings": null}]` |
-| `--project-id` | Project global ID (base64); mutually exclusive with `--dataset-id` |
+| `--evaluators` | JSON array of evaluator configs. Get IDs via `ax evaluators list`. Example: `[{"evaluator_id": "<id>", "query_filter": null, "column_mappings": null}]`. Fields: `evaluator_id` (required), `query_filter` (optional per-evaluator filter), `column_mappings` (optional column name remappings) |
+| `--project-id` | Project name or ID (base64); mutually exclusive with `--dataset-id` |
+| `--space-id` | Space ID (required when `--project-id` is a name instead of a base64 ID) |
 | `--dataset-id` | Dataset global ID (base64); mutually exclusive with `--project-id` |
 | `--experiment-ids` | Comma-separated experiment IDs (required for dataset-based tasks) |
 | `--sampling-rate` | Fraction of data to evaluate (0–1); project tasks only |
@@ -1146,6 +1158,29 @@ ax datasets create \
   --name "Customer Churn Dataset" \
   --space-id sp_abc123 \
   --file ./data/churn.csv
+```
+
+### Creating a Dataset from stdin
+
+Use `-` (or `/dev/stdin`) as the file path to pipe data directly into the CLI. Format is auto-detected from the content (JSON array, JSONL, or CSV).
+
+```bash
+# Pipe from a file
+cat data.json | ax datasets create \
+  --name "customer-support-evals" \
+  --space-id "U3BhY2U6OTA1MDoxSmtS" \
+  --file -
+
+# Inline heredoc — useful for scripting or quick one-offs
+ax datasets create \
+  --name "customer-support-evals" \
+  --space-id "U3BhY2U6OTA1MDoxSmtS" \
+  --file - <<'EOF'
+[
+  {"question": "How do I reset my password?", "ideal_answer": "Go to the login page and click 'Forgot Password'. Enter your email address and we'll send you a reset link within a few minutes.", "category": "Account Management"},
+  ...
+]
+EOF
 ```
 
 ### Exporting Dataset List to JSON

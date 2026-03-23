@@ -24,6 +24,7 @@ from ax.utils.console import (
 )
 from ax.utils.export import make_export_dir, print_json_array, write_json_array
 from ax.utils.file_io import (
+    _is_stdin_path,
     parse_output_option,
     read_data_file,
 )
@@ -294,13 +295,11 @@ def create_dataset(
         ),
     ],
     file: Annotated[
-        Path,
+        str,
         typer.Option(
             "--file",
             "-f",
-            help="Data file (CSV, JSON, JSONL, or Parquet)",
-            exists=True,
-            prompt=True,
+            help="Data file (CSV, JSON, JSONL, or Parquet), or '-' for stdin",
         ),
     ],
     profile: Annotated[
@@ -338,7 +337,11 @@ def create_dataset(
     )
 
     # Read data file
-    df = read_data_file(str(file))
+    if not _is_stdin_path(file) and not Path(file).exists():
+        raise typer.BadParameter(
+            f"File not found: {file}", param_hint="'--file'"
+        )
+    df = read_data_file(file)
 
     try:
         # Create dataset
@@ -380,12 +383,11 @@ def append_examples(
         ),
     ] = None,
     file: Annotated[
-        Path | None,
+        str | None,
         typer.Option(
             "--file",
             "-f",
-            help="Data file (CSV, JSON, JSONL, or Parquet)",
-            exists=True,
+            help="Data file (CSV, JSON, JSONL, or Parquet), or '-' for stdin",
         ),
     ] = None,
     version_id: Annotated[
@@ -454,7 +456,11 @@ def append_examples(
         _validate_examples_structure(parsed)
         examples: list[dict[str, object]] = parsed
     else:
-        df = read_data_file(str(file))  # type: ignore[arg-type]
+        if not _is_stdin_path(file) and not Path(file).exists():  # type: ignore[arg-type]
+            raise typer.BadParameter(
+                f"File not found: {file}", param_hint="'--file'"
+            )
+        df = read_data_file(file)  # type: ignore[arg-type]
         records: list[dict[str, object]] = df.to_dict(orient="records")  # type: ignore[assignment]
         _validate_examples_structure(records)
         examples = records
@@ -518,7 +524,7 @@ def delete_dataset(
 
     # Confirm deletion
     if not force:
-        warning("Warning: This will permanently delete the dataset")
+        warning("This will permanently delete the dataset")
 
         if not confirm("Are you sure?", default=False):
             info("Dataset not deleted")

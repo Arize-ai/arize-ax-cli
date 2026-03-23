@@ -273,7 +273,7 @@ def delete_project(
 
     # Confirm deletion
     if not force:
-        warning("Warning: This will permanently delete the project")
+        warning("This will permanently delete the project")
 
         if not confirm("Are you sure?", default=False):
             info("Project not deleted")

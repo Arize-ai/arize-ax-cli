@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ax.core.exceptions import UsageError
 from ax.utils.projects import _is_base64_id, resolve_project_id
 
 
@@ -50,7 +51,7 @@ class TestResolveProjectId:
     def test_name_without_space_id_raises(self) -> None:
         """A name without space_id raises a helpful error."""
         client = MagicMock()
-        with pytest.raises(ValueError, match="looks like a name"):
+        with pytest.raises(UsageError, match="looks like a name"):
             resolve_project_id(client, "copilot-prod", None)
 
     def test_resolves_name_to_id(self) -> None:
@@ -106,7 +107,7 @@ class TestResolveProjectId:
         response.next_cursor = None
         client.projects.list.return_value = response
 
-        with pytest.raises(ValueError, match="not found in space"):
+        with pytest.raises(UsageError, match="not found in space"):
             resolve_project_id(client, "copilot-prod", "space-123")
 
     def test_matches_exact_name(self) -> None:

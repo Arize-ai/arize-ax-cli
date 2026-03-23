@@ -230,12 +230,12 @@ def create_api_key(
     except Exception as e:
         raise APIError(f"Failed to create API key: {e}") from e
     else:
+        warning("Save this API key now — it will not be shown again.")
         output_data(
             key_created,
             format_type=output_format,
             output_file=output_file,
         )
-        warning("Save this API key now — it will not be shown again.")
 
 
 @app.command("delete")
@@ -279,7 +279,7 @@ def delete_api_key(
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
     if not force:
-        warning("Warning: This will permanently delete the API key")
+        warning("This will permanently delete the API key")
 
         if not confirm("Are you sure?", default=False):
             info("API key not deleted")
@@ -367,9 +367,9 @@ def refresh_api_key(
     except Exception as e:
         raise APIError(f"Failed to refresh API key: {e}") from e
     else:
+        warning("Save this API key now — it will not be shown again.")
         output_data(
             key_created,
             format_type=output_format,
             output_file=output_file,
         )
-        warning("Save this API key now — it will not be shown again.")

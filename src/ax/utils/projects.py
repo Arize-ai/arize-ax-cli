@@ -5,6 +5,8 @@ import logging
 
 from arize import ArizeClient
 
+from ax.core.exceptions import UsageError
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,7 +44,7 @@ def resolve_project_id(
         The base64 project ID suitable for the REST API.
 
     Raises:
-        ValueError: If the project name cannot be found, or if a name is
+        UsageError: If the project name cannot be found, or if a name is
             given without *space_id*.
     """
     if _is_base64_id(project):
@@ -50,7 +52,7 @@ def resolve_project_id(
         return project
 
     if not space_id:
-        raise ValueError(
+        raise UsageError(
             f"Project '{project}' looks like a name, not a base64 ID. "
             f"Provide --space-id so the name can be resolved."
         )
@@ -72,7 +74,7 @@ def resolve_project_id(
         if not cursor:
             break
 
-    raise ValueError(
+    raise UsageError(
         f"Project '{project}' not found in space {space_id}. "
         f"Available projects: {', '.join(available)}"
     )

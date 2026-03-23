@@ -82,12 +82,12 @@ def success(message: str) -> None:
 
 def error(message: str) -> None:
     """Print error message."""
-    console.print(f"[red] ✗ Error: {message}[/red]")
+    console.print(f"[red]✗ Error:[/red] {message}")
 
 
 def warning(message: str) -> None:
     """Print warning message."""
-    console.print(f"[yellow] ⚠ Warning: {message}[/yellow]")
+    console.print(f"[yellow]⚠ {message}[/yellow]")
 
 
 def info(message: str) -> None:

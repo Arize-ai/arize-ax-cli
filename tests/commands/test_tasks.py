@@ -1,6 +1,7 @@
 """Tests for task CLI commands."""
 
-from unittest.mock import MagicMock
+from collections.abc import Generator
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -24,7 +25,10 @@ def _make_task_list_response(*tasks: MagicMock) -> MagicMock:
     mock = MagicMock()
     mock.tasks = list(tasks)
     mock.pagination.has_more = False
-    mock.model_dump.return_value = {"tasks": [], "pagination": {}}
+    mock.model_dump.return_value = {
+        "tasks": [t.model_dump() for t in tasks],
+        "pagination": {},
+    }
     return mock
 
 
@@ -42,6 +46,20 @@ def _make_run_list_response(*runs: MagicMock) -> MagicMock:
     mock.pagination.has_more = False
     mock.model_dump.return_value = {"task_runs": [], "pagination": {}}
     return mock
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_resolve_project_id() -> Generator[MagicMock, None, None]:
+    """Patch resolve_project_id to pass the project argument through unchanged."""
+    with patch(
+        "ax.commands.tasks.resolve_project_id", side_effect=lambda c, p, s: p
+    ) as mock:
+        yield mock
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +186,7 @@ class TestListTasks:
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
+        mock_resolve_project_id: MagicMock,
     ) -> None:
         """All filter flags are forwarded to the SDK."""
         mock_client.tasks.list.return_value = _make_task_list_response()
@@ -196,6 +215,38 @@ class TestListTasks:
             task_type="template_evaluation",
             limit=5,
             cursor="cursor-abc",
+        )
+
+    @pytest.mark.unit
+    def test_project_name_resolved_to_id(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """A project name is resolved to a base64 ID before filtering."""
+        # Configure projects.list to return a mock project named "my-project"
+        mock_project = MagicMock()
+        mock_project.name = "my-project"
+        mock_project.id = "UHJvamVjdDox"
+        projects_response = MagicMock()
+        projects_response.projects = [mock_project]
+        projects_response.next_cursor = None
+        mock_client.projects.list.return_value = projects_response
+        mock_client.tasks.list.return_value = _make_task_list_response()
+
+        result = cli_runner.invoke(
+            app,
+            ["list", "--space-id", "space-1", "--project-id", "my-project"],
+        )
+        assert result.exit_code == 0
+        mock_client.tasks.list.assert_called_once_with(
+            space_id="space-1",
+            project_id="UHJvamVjdDox",
+            dataset_id=None,
+            task_type=None,
+            limit=15,
+            cursor=None,
         )
 
     @pytest.mark.unit
@@ -262,6 +313,7 @@ class TestCreateTask:
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
+        mock_resolve_project_id: MagicMock,
     ) -> None:
         """Create a project-based task and verify the SDK call arguments."""
         mock_client.tasks.create.return_value = _make_task()
@@ -322,6 +374,43 @@ class TestCreateTask:
         assert call_kwargs["experiment_ids"] == ["exp-1", "exp-2"]
 
     @pytest.mark.unit
+    def test_project_name_resolved_to_id(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """A project name is resolved to a base64 ID before creating the task."""
+        mock_project = MagicMock()
+        mock_project.name = "my-project"
+        mock_project.id = "UHJvamVjdDox"
+        projects_response = MagicMock()
+        projects_response.projects = [mock_project]
+        projects_response.next_cursor = None
+        mock_client.projects.list.return_value = projects_response
+        mock_client.tasks.create.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "My Task",
+                "--task-type",
+                "template_evaluation",
+                "--evaluators",
+                self._EVALUATORS_JSON,
+                "--project-id",
+                "my-project",
+                "--space-id",
+                "space-1",
+            ],
+        )
+        assert result.exit_code == 0
+        call_kwargs = mock_client.tasks.create.call_args.kwargs
+        assert call_kwargs["project_id"] == "UHJvamVjdDox"
+
+    @pytest.mark.unit
     def test_requires_project_or_dataset(
         self,
         cli_runner: CliRunner,
@@ -377,6 +466,7 @@ class TestCreateTask:
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
+        mock_resolve_project_id: MagicMock,
     ) -> None:
         """Optional flags (sampling-rate, is-continuous, query-filter) are passed through."""
         mock_client.tasks.create.return_value = _make_task()
@@ -412,6 +502,7 @@ class TestCreateTask:
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
+        mock_resolve_project_id: MagicMock,
     ) -> None:
         """API failure results in a non-zero exit code."""
         mock_client.tasks.create.side_effect = Exception("conflict")

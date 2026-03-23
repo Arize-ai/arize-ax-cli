@@ -11,7 +11,7 @@ from arize import ArizeClient
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
-from ax.core.exceptions import APIError
+from ax.core.exceptions import APIError, AxError
 from ax.utils.console import (
     setup_logging,
     spinner,
@@ -282,5 +282,7 @@ def export_spans(
                 export_path = make_export_dir(output_dir, prefix, id_value)
                 file_path = write_json_array(export_path, "spans.json", spans)
                 success(f"Exported {len(spans)} spans to {file_path}")
+    except AxError:
+        raise
     except Exception as e:
         raise APIError(f"Failed to export spans: {e}") from e

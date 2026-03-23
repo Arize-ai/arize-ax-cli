@@ -11,7 +11,7 @@ from arize import ArizeClient
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
-from ax.core.exceptions import APIError
+from ax.core.exceptions import APIError, AxError
 from ax.core.output import output_data
 from ax.utils.console import (
     info,
@@ -306,6 +306,8 @@ def export_traces(
                 output_dir=output_dir,
                 stdout=stdout,
             )
+    except AxError:
+        raise
     except Exception as e:
         raise APIError(f"Failed to export traces: {e}") from e
 

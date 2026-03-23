@@ -627,7 +627,7 @@ def delete_ai_integration(
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
     if not force:
-        warning("Warning: This will permanently delete the AI integration")
+        warning("This will permanently delete the AI integration")
 
         if not confirm("Are you sure?", default=False):
             info("AI integration not deleted")

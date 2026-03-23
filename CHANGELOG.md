@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.7.1...arize-ax-cli/v0.8.0) (2026-03-23)
+
+
+### 🎁 New Features
+
+* add stdin pipe support for datasets create/append and experiments create ([#66422](https://github.com/Arize-ai/arize/issues/66422)) ([3313e80](https://github.com/Arize-ai/arize/commit/3313e80eeaf391c6818d0d24dc3bae95eae07f3c))
+
+
+### 🐛 Bug Fixes
+
+* CLI tasks improvements ([#66412](https://github.com/Arize-ai/arize/issues/66412)) ([f58b5f3](https://github.com/Arize-ai/arize/commit/f58b5f3d052cac66eaa0f615f553cbb225bb8925))
+
+
+### ❔ Miscellaneous Chores
+
+* CLI general DX improvements ([#66413](https://github.com/Arize-ai/arize/issues/66413)) ([87e1391](https://github.com/Arize-ai/arize/commit/87e1391b27009290f78a3487ebd63d638f1f65a0))
+
 ## [0.7.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.7.0...arize-ax-cli/v0.7.1) (2026-03-23)
 
 

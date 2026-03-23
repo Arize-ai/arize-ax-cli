@@ -214,6 +214,109 @@ class TestExportDataset:
                 mock_write.assert_called_once()
 
 
+class TestCreateDataset:
+    """Tests for the 'ax datasets create' command."""
+
+    def test_create_with_file(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """Verify create reads a CSV file and calls the SDK."""
+        mock_client.datasets.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        csv_file = tmp_path / "data.csv"
+        csv_file.write_text("question,answer\nWhat is 2+2?,4\n")
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "test",
+                "--space-id",
+                "sp-1",
+                "--file",
+                str(csv_file),
+            ],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.create.assert_called_once()
+        call_kwargs = mock_client.datasets.create.call_args[1]
+        assert call_kwargs["name"] == "test"
+        assert call_kwargs["space_id"] == "sp-1"
+
+    def test_create_with_stdin_dash(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify '--file -' reads JSON array from stdin."""
+        mock_client.datasets.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        stdin_data = '[{"question": "What is 2+2?", "answer": "4"}]'
+        result = cli_runner.invoke(
+            app,
+            ["create", "--name", "test", "--space-id", "sp-1", "--file", "-"],
+            input=stdin_data,
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.create.assert_called_once()
+
+    def test_create_with_stdin_dev_stdin(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify '--file /dev/stdin' is treated as a stdin path."""
+        mock_client.datasets.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        stdin_data = '[{"question": "hi", "answer": "bye"}]'
+        with patch("ax.utils.file_io._is_stdin_path", return_value=True):
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create",
+                    "--name",
+                    "test",
+                    "--space-id",
+                    "sp-1",
+                    "--file",
+                    "/dev/stdin",
+                ],
+                input=stdin_data,
+            )
+        assert result.exit_code == 0
+
+    def test_create_missing_file_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Non-existent file path should fail with non-zero exit."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "test",
+                "--space-id",
+                "sp-1",
+                "--file",
+                "/nonexistent/path/data.csv",
+            ],
+        )
+        assert result.exit_code != 0
+
+
 class TestAppendDataset:
     """Tests for the 'ax datasets append' command."""
 
@@ -326,6 +429,26 @@ class TestAppendDataset:
         )
         assert result_obj.exit_code != 0
         assert "JSON array" in result_obj.output
+
+    def test_append_with_stdin_dash(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify '--file -' reads JSON from stdin."""
+        mock_client.datasets.append_examples.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        stdin_data = '[{"question": "What is 2+2?", "answer": "4"}]'
+        result = cli_runner.invoke(
+            app,
+            ["append", "ds-1", "--file", "-"],
+            input=stdin_data,
+        )
+        assert result.exit_code == 0
+        call_kwargs = mock_client.datasets.append_examples.call_args[1]
+        assert call_kwargs["examples"][0]["question"] == "What is 2+2?"
 
 
 class TestValidateExamplesStructure:
