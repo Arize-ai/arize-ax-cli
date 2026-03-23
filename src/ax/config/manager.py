@@ -240,7 +240,7 @@ def _to_float(value: int | float | str) -> float:
     Raises:
         ValueError: If conversion fails
     """
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return float(value)
     return float(value)
 

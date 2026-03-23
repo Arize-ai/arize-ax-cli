@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.7.0...arize-ax-cli/v0.7.1) (2026-03-23)
+
+
+### 🐛 Bug Fixes
+
+* Adding Missing Config Options (Classification choices, direction, data granularity) for Evaluators CLI ([#66401](https://github.com/Arize-ai/arize/issues/66401)) ([174eddb](https://github.com/Arize-ai/arize/commit/174eddb71056a4dc65e9e0e7d254a1ff3610facb))
+
 ## [0.7.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.6.0...arize-ax-cli/v0.7.0) (2026-03-21)
 
 

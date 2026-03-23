@@ -320,6 +320,9 @@ class TestCreateEvaluator:
             use_function_calling=True,
             invocation_params_str="{}",
             provider_params_str="{}",
+            classification_choices_str=None,
+            direction=None,
+            data_granularity=None,
         )
         mock_client.evaluators.create.assert_called_once_with(
             name="My Evaluator",
@@ -369,6 +372,64 @@ class TestCreateEvaluator:
         mock_client.evaluators.create.assert_called_once()
         _, kwargs = mock_client.evaluators.create.call_args
         assert kwargs["description"] == "Evaluates relevance"
+
+    @pytest.mark.unit
+    def test_create_passes_classification_choices_to_build(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--classification-choices and related flags reach _build_template_config."""
+        mock_client.evaluators.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "eval-new"})
+        )
+
+        with patch(
+            "ax.commands.evaluators._build_template_config"
+        ) as mock_build:
+            mock_build.return_value = MagicMock()
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create",
+                    "--name",
+                    "My Evaluator",
+                    "--space-id",
+                    "space-1",
+                    "--commit-message",
+                    "Initial version",
+                    "--template-name",
+                    "relevance",
+                    "--template",
+                    "t",
+                    "--ai-integration-id",
+                    "integ-1",
+                    "--model-name",
+                    "gpt-4o",
+                    "--classification-choices",
+                    '{"relevant":1,"irrelevant":0}',
+                    "--direction",
+                    "maximize",
+                    "--data-granularity",
+                    "span",
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            template_name="relevance",
+            template="t",
+            ai_integration_id="integ-1",
+            model_name="gpt-4o",
+            include_explanations=False,
+            use_function_calling=False,
+            invocation_params_str="{}",
+            provider_params_str="{}",
+            classification_choices_str='{"relevant":1,"irrelevant":0}',
+            direction="maximize",
+            data_granularity="span",
+        )
 
 
 class TestCreateVersion:
@@ -422,11 +483,67 @@ class TestCreateVersion:
             use_function_calling=True,
             invocation_params_str="{}",
             provider_params_str="{}",
+            classification_choices_str=None,
+            direction=None,
+            data_granularity=None,
         )
         mock_client.evaluators.create_version.assert_called_once_with(
             evaluator_id="eval-1",
             commit_message="v2 update",
             template_config=mock_template_config,
+        )
+
+    @pytest.mark.unit
+    def test_create_version_passes_classification_choices_to_build(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """New template flags are forwarded on create-version."""
+        mock_client.evaluators.create_version.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "v-2"})
+        )
+
+        with patch(
+            "ax.commands.evaluators._build_template_config"
+        ) as mock_build:
+            mock_build.return_value = MagicMock()
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create-version",
+                    "eval-1",
+                    "--commit-message",
+                    "v2",
+                    "--template-name",
+                    "col",
+                    "--template",
+                    "t",
+                    "--ai-integration-id",
+                    "integ-1",
+                    "--model-name",
+                    "gpt-4o",
+                    "--classification-choices",
+                    '{"yes":1,"no":0}',
+                    "--data-granularity",
+                    "session",
+                ],
+            )
+
+        assert result.exit_code == 0
+        mock_build.assert_called_once_with(
+            template_name="col",
+            template="t",
+            ai_integration_id="integ-1",
+            model_name="gpt-4o",
+            include_explanations=False,
+            use_function_calling=False,
+            invocation_params_str="{}",
+            provider_params_str="{}",
+            classification_choices_str='{"yes":1,"no":0}',
+            direction=None,
+            data_granularity="session",
         )
 
 
@@ -450,6 +567,9 @@ class TestBuildTemplateConfig:
                 use_function_calling=True,
                 invocation_params_str="{bad json}",
                 provider_params_str="{}",
+                classification_choices_str=None,
+                direction=None,
+                data_granularity=None,
             )
 
     @pytest.mark.unit
@@ -469,6 +589,9 @@ class TestBuildTemplateConfig:
                 use_function_calling=True,
                 invocation_params_str="{}",
                 provider_params_str="{bad json}",
+                classification_choices_str=None,
+                direction=None,
+                data_granularity=None,
             )
 
     @pytest.mark.unit
@@ -489,6 +612,9 @@ class TestBuildTemplateConfig:
                 use_function_calling=True,
                 invocation_params_str="[]",
                 provider_params_str="{}",
+                classification_choices_str=None,
+                direction=None,
+                data_granularity=None,
             )
 
     @pytest.mark.unit
@@ -509,4 +635,140 @@ class TestBuildTemplateConfig:
                 use_function_calling=True,
                 invocation_params_str="{}",
                 provider_params_str="[]",
+                classification_choices_str=None,
+                direction=None,
+                data_granularity=None,
             )
+
+    @pytest.mark.unit
+    def test_classification_choices_applied_to_template_config(self) -> None:
+        """Parsed classification choices, direction, and granularity are set."""
+        from ax.commands.evaluators import _build_template_config
+
+        cfg = _build_template_config(
+            template_name="col",
+            template="Hello {{x}}",
+            ai_integration_id="integ-1",
+            model_name="gpt-4o",
+            include_explanations=False,
+            use_function_calling=False,
+            invocation_params_str="{}",
+            provider_params_str="{}",
+            classification_choices_str='{"relevant": 1, "irrelevant": 0}',
+            direction="minimize",
+            data_granularity="trace",
+        )
+        assert cfg.classification_choices == {"relevant": 1, "irrelevant": 0}
+        assert cfg.direction == "minimize"
+        assert cfg.data_granularity == "trace"
+
+    @pytest.mark.unit
+    def test_classification_choices_json_array_raises_usage_error(self) -> None:
+        """classification-choices must be an object, not an array."""
+        from ax.commands.evaluators import _build_template_config
+        from ax.core.exceptions import UsageError
+
+        with pytest.raises(
+            UsageError, match="--classification-choices must be a JSON object"
+        ):
+            _build_template_config(
+                template_name="test",
+                template="template",
+                ai_integration_id="integ-1",
+                model_name="gpt-4o",
+                include_explanations=True,
+                use_function_calling=True,
+                invocation_params_str="{}",
+                provider_params_str="{}",
+                classification_choices_str="[]",
+                direction=None,
+                data_granularity=None,
+            )
+
+    @pytest.mark.unit
+    def test_invalid_direction_raises_usage_error(self) -> None:
+        """Direction must be maximize or minimize."""
+        from ax.commands.evaluators import _build_template_config
+        from ax.core.exceptions import UsageError
+
+        with pytest.raises(
+            UsageError, match="--direction must be 'maximize' or 'minimize'"
+        ):
+            _build_template_config(
+                template_name="test",
+                template="template",
+                ai_integration_id="integ-1",
+                model_name="gpt-4o",
+                include_explanations=True,
+                use_function_calling=True,
+                invocation_params_str="{}",
+                provider_params_str="{}",
+                classification_choices_str=None,
+                direction="sideways",
+                data_granularity=None,
+            )
+
+    @pytest.mark.unit
+    def test_invalid_data_granularity_raises_usage_error(self) -> None:
+        """data_granularity must be span, trace, or session."""
+        from ax.commands.evaluators import _build_template_config
+        from ax.core.exceptions import UsageError
+
+        with pytest.raises(
+            UsageError,
+            match="--data-granularity must be span, trace, or session",
+        ):
+            _build_template_config(
+                template_name="test",
+                template="template",
+                ai_integration_id="integ-1",
+                model_name="gpt-4o",
+                include_explanations=True,
+                use_function_calling=True,
+                invocation_params_str="{}",
+                provider_params_str="{}",
+                classification_choices_str=None,
+                direction=None,
+                data_granularity="record",
+            )
+
+    @pytest.mark.unit
+    def test_classification_choices_bool_value_raises_usage_error(self) -> None:
+        """JSON booleans must not be used as numeric scores."""
+        from ax.commands.evaluators import _build_template_config
+        from ax.core.exceptions import UsageError
+
+        with pytest.raises(
+            UsageError,
+            match="--classification-choices values must be numbers",
+        ):
+            _build_template_config(
+                template_name="test",
+                template="template",
+                ai_integration_id="integ-1",
+                model_name="gpt-4o",
+                include_explanations=True,
+                use_function_calling=True,
+                invocation_params_str="{}",
+                provider_params_str="{}",
+                classification_choices_str='{"ok": true}',
+                direction=None,
+                data_granularity=None,
+            )
+
+    @pytest.mark.unit
+    def test_direction_normalized_to_lowercase(self) -> None:
+        """Mixed-case direction values are accepted and normalized."""
+        from ax.commands.evaluators import _parse_optional_direction
+
+        assert _parse_optional_direction("Maximize") == "maximize"
+        assert _parse_optional_direction("MINIMIZE") == "minimize"
+
+    @pytest.mark.unit
+    def test_data_granularity_normalized_to_lowercase(self) -> None:
+        """Mixed-case granularity values are accepted and normalized."""
+        from ax.commands.evaluators import _parse_optional_data_granularity
+
+        assert _parse_optional_data_granularity("Span") == "span"
+        assert _parse_optional_data_granularity("TRACE") == "trace"
+        assert _parse_optional_data_granularity("Session") == "session"

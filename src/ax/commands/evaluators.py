@@ -32,6 +32,49 @@ app = typer.Typer(
 )
 
 
+def _parse_optional_classification_choices(
+    source: str | None,
+) -> dict[str, int | float] | None:
+    """Parse label→score map for structured classification output.
+
+    Returns:
+        Parsed map, or None when omitted or empty (freeform evaluator output).
+    """
+    if source is None or not source.strip():
+        return None
+    parsed = load_json(source.strip())
+    if not isinstance(parsed, dict):
+        raise UsageError("--classification-choices must be a JSON object")
+    result: dict[str, int | float] = {}
+    for key, value in parsed.items():
+        if isinstance(value, bool) or type(value) not in (int, float):
+            raise UsageError("--classification-choices values must be numbers")
+        result[key] = value
+    if not result:
+        return None
+    return result
+
+
+def _parse_optional_direction(source: str | None) -> str | None:
+    """Return API direction value or None."""
+    if source is None or not source.strip():
+        return None
+    normalized = source.strip().lower()
+    if normalized not in ("maximize", "minimize"):
+        raise UsageError("--direction must be 'maximize' or 'minimize'")
+    return normalized
+
+
+def _parse_optional_data_granularity(source: str | None) -> str | None:
+    """Return API data_granularity value or None."""
+    if source is None or not source.strip():
+        return None
+    normalized = source.strip().lower()
+    if normalized not in ("span", "trace", "session"):
+        raise UsageError("--data-granularity must be span, trace, or session")
+    return normalized
+
+
 def _build_template_config(
     template_name: str,
     template: str,
@@ -41,6 +84,9 @@ def _build_template_config(
     use_function_calling: bool,
     invocation_params_str: str,
     provider_params_str: str,
+    classification_choices_str: str | None = None,
+    direction: str | None = None,
+    data_granularity: str | None = None,
 ) -> TemplateConfig:
     r"""Build a TemplateConfig from individual CLI option values."""
     invocation_params = load_json(invocation_params_str)
@@ -63,6 +109,11 @@ def _build_template_config(
         include_explanations=include_explanations,
         use_function_calling_if_available=use_function_calling,
         llm_config=llm_config,
+        classification_choices=_parse_optional_classification_choices(
+            classification_choices_str
+        ),
+        direction=_parse_optional_direction(direction),
+        data_granularity=_parse_optional_data_granularity(data_granularity),
     )
 
 
@@ -301,6 +352,31 @@ def create_evaluator(
             help="JSON object of provider-specific parameters",
         ),
     ] = "{}",
+    classification_choices: Annotated[
+        str | None,
+        typer.Option(
+            "--classification-choices",
+            help=(
+                "JSON object mapping choice labels to numeric scores "
+                '(e.g. \'{"relevant":1,"irrelevant":0}\'). '
+                "Omit for freeform (non-classification) output."
+            ),
+        ),
+    ] = None,
+    direction: Annotated[
+        str | None,
+        typer.Option(
+            "--direction",
+            help="Optimization direction: maximize or minimize",
+        ),
+    ] = None,
+    data_granularity: Annotated[
+        str | None,
+        typer.Option(
+            "--data-granularity",
+            help="Data granularity: span, trace, or session",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -344,6 +420,9 @@ def create_evaluator(
         use_function_calling=use_function_calling,
         invocation_params_str=invocation_params,
         provider_params_str=provider_params,
+        classification_choices_str=classification_choices,
+        direction=direction,
+        data_granularity=data_granularity,
     )
 
     try:
@@ -705,6 +784,31 @@ def create_version(
             help="JSON object of provider-specific parameters",
         ),
     ] = "{}",
+    classification_choices: Annotated[
+        str | None,
+        typer.Option(
+            "--classification-choices",
+            help=(
+                "JSON object mapping choice labels to numeric scores "
+                '(e.g. \'{"relevant":1,"irrelevant":0}\'). '
+                "Omit for freeform (non-classification) output."
+            ),
+        ),
+    ] = None,
+    direction: Annotated[
+        str | None,
+        typer.Option(
+            "--direction",
+            help="Optimization direction: maximize or minimize",
+        ),
+    ] = None,
+    data_granularity: Annotated[
+        str | None,
+        typer.Option(
+            "--data-granularity",
+            help="Data granularity: span, trace, or session",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -748,6 +852,9 @@ def create_version(
         use_function_calling=use_function_calling,
         invocation_params_str=invocation_params,
         provider_params_str=provider_params,
+        classification_choices_str=classification_choices,
+        direction=direction,
+        data_granularity=data_granularity,
     )
 
     try:

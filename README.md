@@ -787,6 +787,19 @@ ax evaluators create \
   --ai-integration-id <integration-id> \
   --model-name gpt-4o
 
+# Create a classification evaluator (label → numeric score; omit flag for freeform)
+ax evaluators create \
+  --name "Relevance classifier" \
+  --space-id <space-id> \
+  --commit-message "Initial version" \
+  --template-name relevance \
+  --template "Classify: {{output}}" \
+  --ai-integration-id <integration-id> \
+  --model-name gpt-4o \
+  --classification-choices '{"relevant":1,"irrelevant":0}' \
+  --direction maximize \
+  --data-granularity span
+
 # Update evaluator metadata
 ax evaluators update <evaluator-id> --name "New Name"
 ax evaluators update <evaluator-id> --description "Updated description"
@@ -807,6 +820,15 @@ ax evaluators create-version <evaluator-id> \
   --template "Rate the relevance of the response: {{input}} {{output}}" \
   --ai-integration-id <integration-id> \
   --model-name gpt-4o
+
+# Same optional template fields as create (e.g. classification choices)
+ax evaluators create-version <evaluator-id> \
+  --commit-message "Add rails" \
+  --template-name relevance \
+  --template "Classify: {{output}}" \
+  --ai-integration-id <integration-id> \
+  --model-name gpt-4o \
+  --classification-choices '{"relevant":1,"irrelevant":0}'
 ```
 
 **Template configuration options:**
@@ -821,6 +843,9 @@ ax evaluators create-version <evaluator-id> \
 | `--use-function-calling` | Prefer structured function-call output when supported (default: on) |
 | `--invocation-params` | JSON object of model invocation parameters (e.g. `'{"temperature": 0.7}'`) |
 | `--provider-params` | JSON object of provider-specific parameters |
+| `--classification-choices` | JSON object mapping labels to numeric scores (e.g. `'{"relevant":1,"irrelevant":0}'`); omit for freeform output |
+| `--direction` | `maximize` or `minimize` (optimization direction for scores) |
+| `--data-granularity` | `span`, `trace`, or `session` |
 
 ### Experiments
 
