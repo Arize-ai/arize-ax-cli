@@ -95,7 +95,7 @@ def list_annotation_configs(
     try:
         with spinner("Fetching annotation configs"):
             response = client.annotation_configs.list(
-                space_id=space_id,
+                space=space_id,
                 limit=limit,
                 cursor=cursor,
             )
@@ -152,7 +152,7 @@ def get_annotation_config(
 
     try:
         with spinner("Fetching annotation config"):
-            annotation_config = client.annotation_configs.get(id=id)
+            annotation_config = client.annotation_configs.get(annotation_config=id)
     except Exception as e:
         raise APIError(f"Failed to get annotation config: {e}") from e
     else:
@@ -274,7 +274,7 @@ def create_annotation_config(
         ):
             annotation_config = client.annotation_configs.create(
                 name=name,
-                space_id=space_id,
+                space=space_id,
                 config_type=annotation_type,
                 minimum_score=min_score,
                 maximum_score=max_score,
@@ -340,6 +340,6 @@ def delete_annotation_config(
             "Deleting annotation config",
             success_msg=f"Annotation config with ID '{id}' deleted successfully",
         ):
-            client.annotation_configs.delete(id=id)
+            client.annotation_configs.delete(annotation_config=id)
     except Exception as e:
         raise APIError(f"Failed to delete annotation config: {e}") from e

@@ -135,9 +135,9 @@ def list_tasks(
     try:
         with spinner("Fetching tasks"):
             response = client.tasks.list(
-                space_id=space_id,
-                project_id=project_id,
-                dataset_id=dataset_id,
+                space=space_id,
+                project=project_id,
+                dataset=dataset_id,
                 task_type=task_type,
                 limit=limit,
                 cursor=cursor,
@@ -182,7 +182,7 @@ def get_task(
 
     try:
         with spinner("Fetching task"):
-            task = client.tasks.get(task_id=task_id)
+            task = client.tasks.get(task=task_id)
     except Exception as e:
         raise APIError(f"Failed to get task: {e}") from e
     else:
@@ -316,8 +316,8 @@ def create_task(
                 name=name,
                 task_type=task_type,
                 evaluators=parsed_evaluators,
-                project_id=project_id,
-                dataset_id=dataset_id,
+                project=project_id,
+                dataset=dataset_id,
                 experiment_ids=_parse_experiment_ids(experiment_ids),
                 sampling_rate=sampling_rate,
                 is_continuous=is_continuous,
@@ -423,7 +423,7 @@ def trigger_run(
     try:
         with spinner("Triggering task run", success_msg="Task run triggered"):
             run = client.tasks.trigger_run(
-                task_id=task_id,
+                task=task_id,
                 data_start_time=data_start_time,
                 data_end_time=data_end_time,
                 max_spans=max_spans,
@@ -498,7 +498,7 @@ def list_runs(
     try:
         with spinner("Fetching task runs"):
             response = client.tasks.list_runs(
-                task_id=task_id,
+                task=task_id,
                 status=status,
                 limit=limit,
                 cursor=cursor,

@@ -129,7 +129,7 @@ def list_prompts(
     try:
         with spinner("Fetching prompts"):
             response = client.prompts.list(
-                space_id=space_id,
+                space=space_id,
                 limit=limit,
                 cursor=cursor,
             )
@@ -204,7 +204,7 @@ def get_prompt(
 
     try:
         prompt = client.prompts.get(
-            prompt_id=id,
+            prompt=id,
             version_id=version_id,
             label=label,
         )
@@ -343,7 +343,7 @@ def create_prompt(
             "Creating prompt", success_msg="Prompt created successfully"
         ):
             prompt = client.prompts.create(
-                space_id=space_id,
+                space=space_id,
                 name=name,
                 commit_message=commit_message,
                 input_variable_format=input_variable_format,
@@ -423,7 +423,7 @@ def update_prompt(
             "Updating prompt", success_msg="Prompt updated successfully"
         ):
             prompt = client.prompts.update(
-                prompt_id=id,
+                prompt=id,
                 description=description,
             )
     except Exception as e:
@@ -490,7 +490,7 @@ def delete_prompt(
             "Deleting prompt",
             success_msg=f"Prompt with ID '{id}' deleted successfully",
         ):
-            client.prompts.delete(prompt_id=id)
+            client.prompts.delete(prompt=id)
     except Exception as e:
         raise APIError(f"Failed to delete prompt: {e}") from e
 
@@ -554,7 +554,7 @@ def list_versions(
     try:
         with spinner("Fetching prompt versions"):
             response = client.prompts.list_versions(
-                prompt_id=id,
+                prompt=id,
                 limit=limit,
                 cursor=cursor,
             )
@@ -669,7 +669,7 @@ def create_version(
             success_msg="Prompt version created successfully",
         ):
             version = client.prompts.create_version(
-                prompt_id=id,
+                prompt=id,
                 commit_message=commit_message,
                 input_variable_format=input_variable_format,
                 provider=provider,
@@ -737,7 +737,7 @@ def get_version_by_label(
     try:
         with spinner("Fetching prompt version by label"):
             version = client.prompts.get_label(
-                prompt_id=id,
+                prompt=id,
                 label_name=label,
             )
     except Exception as e:

@@ -124,7 +124,7 @@ def list_datasets(
     try:
         with spinner("Fetching datasets"):
             response = client.datasets.list(
-                space_id=space_id,
+                space=space_id,
                 limit=limit,
                 cursor=cursor,
             )
@@ -181,7 +181,7 @@ def get_dataset(
 
     try:
         with spinner("Fetching dataset"):
-            dataset = client.datasets.get(dataset_id=id)
+            dataset = client.datasets.get(dataset=id)
     except Exception as e:
         raise APIError(f"Failed to get dataset: {e}") from e
     else:
@@ -255,7 +255,7 @@ def export_dataset(
     try:
         with spinner("Exporting dataset examples"):
             response = client.datasets.list_examples(
-                dataset_id=id,
+                dataset=id,
                 dataset_version_id=version_id,
                 all=use_all,
             )
@@ -351,7 +351,7 @@ def create_dataset(
         ):
             dataset = client.datasets.create(
                 name=name,
-                space_id=space_id,
+                space=space_id,
                 examples=df,
             )
     except Exception as e:
@@ -471,7 +471,7 @@ def append_examples(
             success_msg=f"Appended {len(examples)} example(s)",
         ):
             dataset = client.datasets.append_examples(
-                dataset_id=id,
+                dataset=id,
                 dataset_version_id=version_id or "",
                 examples=examples,
             )
@@ -536,6 +536,6 @@ def delete_dataset(
             "Deleting dataset",
             success_msg=f"Dataset with ID '{id}' deleted successfully",
         ):
-            client.datasets.delete(dataset_id=id)
+            client.datasets.delete(dataset=id)
     except Exception as e:
         raise APIError(f"Failed to delete dataset: {e}") from e

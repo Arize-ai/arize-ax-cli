@@ -100,7 +100,7 @@ def list_experiments(
     try:
         with spinner("Fetching experiments"):
             response = client.experiments.list(
-                dataset_id=dataset_id,
+                dataset=dataset_id,
                 limit=limit,
                 cursor=cursor,
             )
@@ -157,7 +157,7 @@ def get_experiment(
 
     try:
         with spinner("Fetching experiment"):
-            experiment = client.experiments.get(experiment_id=id)
+            experiment = client.experiments.get(experiment=id)
     except Exception as e:
         raise APIError(f"Failed to get experiment: {e}") from e
     else:
@@ -224,7 +224,7 @@ def export_experiment(
     try:
         with spinner("Exporting experiment runs"):
             response = client.experiments.list_runs(
-                experiment_id=id,
+                experiment=id,
                 all=use_all,
             )
     except Exception as e:
@@ -331,7 +331,7 @@ def create_experiment(
         ):
             experiment = client.experiments.create(
                 name=name,
-                dataset_id=dataset_id,
+                dataset=dataset_id,
                 experiment_runs=df,
                 task_fields=ExperimentTaskFieldNames(
                     example_id="example_id",
@@ -402,6 +402,6 @@ def delete_experiment(
             "Deleting experiment",
             success_msg=f"Experiment with ID '{id}' deleted successfully",
         ):
-            client.experiments.delete(experiment_id=id)
+            client.experiments.delete(experiment=id)
     except Exception as e:
         raise APIError(f"Failed to delete experiment: {e}") from e

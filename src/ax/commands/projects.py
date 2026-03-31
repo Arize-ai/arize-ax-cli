@@ -93,7 +93,7 @@ def list_projects(
     try:
         with spinner("Fetching projects"):
             response = client.projects.list(
-                space_id=space_id,
+                space=space_id,
                 limit=limit,
                 cursor=cursor,
             )
@@ -168,7 +168,7 @@ def create_project(
         ):
             project = client.projects.create(
                 name=name,
-                space_id=space_id,
+                space=space_id,
             )
     except Exception as e:
         raise APIError(f"Failed to create project: {e}") from e
@@ -223,7 +223,7 @@ def get_project(
 
     try:
         with spinner("Fetching project"):
-            project = client.projects.get(project_id=id)
+            project = client.projects.get(project=id)
     except Exception as e:
         raise APIError(f"Failed to get project: {e}") from e
     else:
@@ -285,6 +285,6 @@ def delete_project(
             "Deleting project",
             success_msg=f"Project with ID '{id}' deleted successfully",
         ):
-            client.projects.delete(project_id=id)
+            client.projects.delete(project=id)
     except Exception as e:
         raise APIError(f"Failed to delete project: {e}") from e

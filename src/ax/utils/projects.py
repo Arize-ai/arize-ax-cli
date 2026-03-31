@@ -62,7 +62,7 @@ def resolve_project_id(
 
     while True:
         response = client.projects.list(
-            space_id=space_id, limit=1000, cursor=cursor
+            space=space_id, limit=1000, cursor=cursor
         )
         for p in response.projects:
             if p.name == project:

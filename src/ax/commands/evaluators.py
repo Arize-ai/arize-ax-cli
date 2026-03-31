@@ -179,7 +179,7 @@ def list_evaluators(
     try:
         with spinner("Fetching evaluators"):
             response = client.evaluators.list(
-                space_id=space_id,
+                space=space_id,
                 limit=limit,
                 cursor=cursor,
             )
@@ -244,7 +244,7 @@ def get_evaluator(
     try:
         with spinner("Fetching evaluator"):
             evaluator = client.evaluators.get(
-                evaluator_id=evaluator_id,
+                evaluator=evaluator_id,
                 version_id=version_id,
             )
     except Exception as e:
@@ -432,7 +432,7 @@ def create_evaluator(
         ):
             evaluator = client.evaluators.create(
                 name=name,
-                space_id=space_id,
+                space=space_id,
                 commit_message=commit_message,
                 template_config=template_config,
                 description=description,
@@ -511,7 +511,7 @@ def update_evaluator(
     try:
         with spinner("Updating evaluator"):
             evaluator = client.evaluators.update(
-                evaluator_id=evaluator_id,
+                evaluator=evaluator_id,
                 name=name,
                 description=description,
             )
@@ -577,7 +577,7 @@ def delete_evaluator(
             "Deleting evaluator",
             success_msg=f"Evaluator '{evaluator_id}' deleted successfully",
         ):
-            client.evaluators.delete(evaluator_id=evaluator_id)
+            client.evaluators.delete(evaluator=evaluator_id)
     except Exception as e:
         raise APIError(f"Failed to delete evaluator: {e}") from e
 
@@ -641,7 +641,7 @@ def list_versions(
     try:
         with spinner("Fetching evaluator versions"):
             response = client.evaluators.list_versions(
-                evaluator_id=evaluator_id,
+                evaluator=evaluator_id,
                 limit=limit,
                 cursor=cursor,
             )
@@ -863,7 +863,7 @@ def create_version(
             success_msg="Evaluator version created successfully",
         ):
             version = client.evaluators.create_version(
-                evaluator_id=evaluator_id,
+                evaluator=evaluator_id,
                 commit_message=commit_message,
                 template_config=template_config,
             )

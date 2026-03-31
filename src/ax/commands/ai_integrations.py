@@ -124,7 +124,7 @@ def list_ai_integrations(
     try:
         with spinner("Fetching AI integrations"):
             response = client.ai_integrations.list(
-                space_id=space_id,
+                space=space_id,
                 limit=limit,
                 cursor=cursor,
             )
@@ -181,7 +181,7 @@ def get_ai_integration(
 
     try:
         with spinner("Fetching AI integration"):
-            integration = client.ai_integrations.get(integration_id=id)
+            integration = client.ai_integrations.get(integration=id)
     except Exception as e:
         raise APIError(f"Failed to get AI integration: {e}") from e
     else:
@@ -546,7 +546,7 @@ def update_ai_integration(
 
     # Build kwargs with only the explicitly provided fields so the SDK's
     # _UNSET sentinel logic correctly skips omitted ones.
-    update_kwargs: dict[str, Any] = {"integration_id": id}
+    update_kwargs: dict[str, Any] = {"integration": id}
     if name is not None:
         update_kwargs["name"] = name
     if provider is not None:
@@ -638,6 +638,6 @@ def delete_ai_integration(
             "Deleting AI integration",
             success_msg=f"AI integration with ID '{id}' deleted successfully",
         ):
-            client.ai_integrations.delete(integration_id=id)
+            client.ai_integrations.delete(integration=id)
     except Exception as e:
         raise APIError(f"Failed to delete AI integration: {e}") from e
