@@ -38,25 +38,27 @@ class TestListDatasets:
         result = cli_runner.invoke(app, ["list"])
         assert result.exit_code == 0
         mock_client.datasets.list.assert_called_once_with(
-            space_id=None,
+            name=None,
+            space=None,
             limit=15,
             cursor=None,
         )
 
-    def test_list_with_space_id(
+    def test_list_with_space(
         self,
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Verify --space-id is forwarded."""
+        """Verify --space is forwarded."""
         mock_client.datasets.list.return_value = MagicMock(
             model_dump=MagicMock(return_value={"datasets": []})
         )
-        result = cli_runner.invoke(app, ["list", "--space-id", "space-abc"])
+        result = cli_runner.invoke(app, ["list", "--space", "space-abc"])
         assert result.exit_code == 0
         mock_client.datasets.list.assert_called_once_with(
-            space_id="space-abc",
+            name=None,
+            space="space-abc",
             limit=15,
             cursor=None,
         )
@@ -74,7 +76,8 @@ class TestListDatasets:
         result = cli_runner.invoke(app, ["list", "-l", "5"])
         assert result.exit_code == 0
         mock_client.datasets.list.assert_called_once_with(
-            space_id=None,
+            name=None,
+            space=None,
             limit=5,
             cursor=None,
         )
@@ -92,9 +95,29 @@ class TestListDatasets:
         result = cli_runner.invoke(app, ["list", "--cursor", "cursor-xyz"])
         assert result.exit_code == 0
         mock_client.datasets.list.assert_called_once_with(
-            space_id=None,
+            name=None,
+            space=None,
             limit=15,
             cursor="cursor-xyz",
+        )
+
+    def test_list_with_name_filter(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --name filter is forwarded to the SDK."""
+        mock_client.datasets.list.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"datasets": []})
+        )
+        result = cli_runner.invoke(app, ["list", "--name", "eval"])
+        assert result.exit_code == 0
+        mock_client.datasets.list.assert_called_once_with(
+            name="eval",
+            space=None,
+            limit=15,
+            cursor=None,
         )
 
     def test_list_api_error_exits_nonzero(
@@ -124,7 +147,9 @@ class TestGetDataset:
         )
         result = cli_runner.invoke(app, ["get", "ds-1"])
         assert result.exit_code == 0
-        mock_client.datasets.get.assert_called_once_with(dataset_id="ds-1")
+        mock_client.datasets.get.assert_called_once_with(
+            dataset="ds-1", space=None
+        )
 
 
 class TestExportDataset:
@@ -144,7 +169,8 @@ class TestExportDataset:
         result = cli_runner.invoke(app, ["export", "ds-1", "--stdout"])
         assert result.exit_code == 0
         mock_client.datasets.list_examples.assert_called_once_with(
-            dataset_id="ds-1",
+            dataset="ds-1",
+            space=None,
             dataset_version_id=None,
             all=False,
         )
@@ -163,7 +189,8 @@ class TestExportDataset:
         result = cli_runner.invoke(app, ["export", "ds-1", "--all", "--stdout"])
         assert result.exit_code == 0
         mock_client.datasets.list_examples.assert_called_once_with(
-            dataset_id="ds-1",
+            dataset="ds-1",
+            space=None,
             dataset_version_id=None,
             all=True,
         )
@@ -185,7 +212,8 @@ class TestExportDataset:
         )
         assert result.exit_code == 0
         mock_client.datasets.list_examples.assert_called_once_with(
-            dataset_id="ds-1",
+            dataset="ds-1",
+            space=None,
             dataset_version_id="v2",
             all=False,
         )
@@ -237,7 +265,7 @@ class TestCreateDataset:
                 "create",
                 "--name",
                 "test",
-                "--space-id",
+                "--space",
                 "sp-1",
                 "--file",
                 str(csv_file),
@@ -247,7 +275,29 @@ class TestCreateDataset:
         mock_client.datasets.create.assert_called_once()
         call_kwargs = mock_client.datasets.create.call_args[1]
         assert call_kwargs["name"] == "test"
-        assert call_kwargs["space_id"] == "sp-1"
+        assert call_kwargs["space"] == "sp-1"
+
+    def test_create_with_json_inline(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify create accepts inline JSON via --json."""
+        mock_client.datasets.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        payload = json.dumps([{"question": "What is 2+2?", "answer": "4"}])
+        result = cli_runner.invoke(
+            app,
+            ["create", "--name", "test", "--space", "sp-1", "--json", payload],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.create.assert_called_once()
+        call_kwargs = mock_client.datasets.create.call_args[1]
+        assert call_kwargs["examples"] == [
+            {"question": "What is 2+2?", "answer": "4"}
+        ]
 
     def test_create_with_stdin_dash(
         self,
@@ -262,7 +312,7 @@ class TestCreateDataset:
         stdin_data = '[{"question": "What is 2+2?", "answer": "4"}]'
         result = cli_runner.invoke(
             app,
-            ["create", "--name", "test", "--space-id", "sp-1", "--file", "-"],
+            ["create", "--name", "test", "--space", "sp-1", "--file", "-"],
             input=stdin_data,
         )
         assert result.exit_code == 0
@@ -286,7 +336,7 @@ class TestCreateDataset:
                     "create",
                     "--name",
                     "test",
-                    "--space-id",
+                    "--space",
                     "sp-1",
                     "--file",
                     "/dev/stdin",
@@ -308,7 +358,7 @@ class TestCreateDataset:
                 "create",
                 "--name",
                 "test",
-                "--space-id",
+                "--space",
                 "sp-1",
                 "--file",
                 "/nonexistent/path/data.csv",
@@ -337,7 +387,8 @@ class TestAppendDataset:
         )
         assert result.exit_code == 0
         mock_client.datasets.append_examples.assert_called_once_with(
-            dataset_id="ds-1",
+            dataset="ds-1",
+            space=None,
             dataset_version_id="",
             examples=examples,
         )
@@ -362,7 +413,7 @@ class TestAppendDataset:
         )
         assert result.exit_code == 0
         call_kwargs = mock_client.datasets.append_examples.call_args[1]
-        assert call_kwargs["dataset_id"] == "ds-1"
+        assert call_kwargs["dataset"] == "ds-1"
         assert call_kwargs["examples"][0]["question"] == "What is 2+2?"
 
     def test_append_with_version_id(
@@ -389,7 +440,8 @@ class TestAppendDataset:
         )
         assert result.exit_code == 0
         mock_client.datasets.append_examples.assert_called_once_with(
-            dataset_id="ds-1",
+            dataset="ds-1",
+            space=None,
             dataset_version_id="v2",
             examples=examples,
         )
@@ -449,6 +501,74 @@ class TestAppendDataset:
         assert result.exit_code == 0
         call_kwargs = mock_client.datasets.append_examples.call_args[1]
         assert call_kwargs["examples"][0]["question"] == "What is 2+2?"
+
+
+class TestDeleteDataset:
+    """Tests for the 'ax datasets delete' command."""
+
+    def test_delete_force_skips_confirmation(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--force bypasses the prompt and deletes the dataset."""
+        result = cli_runner.invoke(app, ["delete", "ds-1", "--force"])
+        assert result.exit_code == 0
+        mock_client.datasets.delete.assert_called_once_with(
+            dataset="ds-1", space=None
+        )
+
+    def test_delete_confirms_yes_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Confirming the prompt proceeds with deletion."""
+        result = cli_runner.invoke(app, ["delete", "ds-1"], input="y\n")
+        assert result.exit_code == 0
+        mock_client.datasets.delete.assert_called_once_with(
+            dataset="ds-1", space=None
+        )
+
+    def test_delete_declines_does_not_call_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Declining the confirmation leaves the dataset untouched."""
+        result = cli_runner.invoke(app, ["delete", "ds-1"], input="n\n")
+        assert result.exit_code == 0
+        mock_client.datasets.delete.assert_not_called()
+
+    def test_delete_with_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--space is forwarded when deleting by name."""
+        result = cli_runner.invoke(
+            app,
+            ["delete", "my-dataset", "--force", "--space", "space-abc"],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.delete.assert_called_once_with(
+            dataset="my-dataset", space="space-abc"
+        )
+
+    def test_delete_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """API failure results in a non-zero exit code."""
+        mock_client.datasets.delete.side_effect = Exception("not found")
+        result = cli_runner.invoke(app, ["delete", "ds-1", "--force"])
+        assert result.exit_code != 0
 
 
 class TestValidateExamplesStructure:

@@ -124,7 +124,7 @@ class TestListAiIntegrations:
             [
                 "ai-integrations",
                 "list",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--limit",
                 "5",
@@ -136,9 +136,29 @@ class TestListAiIntegrations:
         )
 
         mock_client.ai_integrations.list.assert_called_once_with(
-            space_id="sp_abc",
+            name=None,
+            space="sp_abc",
             limit=5,
             cursor="tok",
+        )
+
+    def test_list_name_filter_forwarded(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --name is forwarded to the SDK."""
+        mock_client.ai_integrations.list.return_value = _make_list_response()
+
+        _invoke(
+            ["ai-integrations", "list", "--name", "openai"],
+            mock_config,
+            mock_client,
+        )
+
+        mock_client.ai_integrations.list.assert_called_once_with(
+            name="openai",
+            space=None,
+            limit=15,
+            cursor=None,
         )
 
     def test_list_sdk_error_exits_nonzero(
@@ -171,7 +191,7 @@ class TestGetAiIntegration:
         )
 
         mock_client.ai_integrations.get.assert_called_once_with(
-            integration_id=_INTEGRATION_ID
+            integration=_INTEGRATION_ID, space=None
         )
 
     def test_get_sdk_error_exits_nonzero(
@@ -420,8 +440,35 @@ class TestUpdateAiIntegration:
 
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.ai_integrations.update.call_args.kwargs
-        assert call_kwargs["integration_id"] == _INTEGRATION_ID
+        assert call_kwargs["integration"] == _INTEGRATION_ID
+        assert call_kwargs["space"] is None
         assert call_kwargs["name"] == "Renamed"
+
+    def test_update_space_forwarded(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --space is forwarded to the SDK."""
+        mock_client.ai_integrations.update.return_value = _make_integration(
+            name="Renamed"
+        )
+
+        result = _invoke(
+            [
+                "ai-integrations",
+                "update",
+                _INTEGRATION_ID,
+                "--name",
+                "Renamed",
+                "--space",
+                "sp_xyz",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.ai_integrations.update.call_args.kwargs
+        assert call_kwargs["space"] == "sp_xyz"
 
     def test_update_no_options_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -773,7 +820,7 @@ class TestDeleteAiIntegration:
 
         assert result.exit_code == 0, result.output
         mock_client.ai_integrations.delete.assert_called_once_with(
-            integration_id=_INTEGRATION_ID
+            integration=_INTEGRATION_ID, space=None
         )
 
     def test_delete_confirms_yes_calls_sdk(
@@ -791,7 +838,7 @@ class TestDeleteAiIntegration:
 
         assert result.exit_code == 0, result.output
         mock_client.ai_integrations.delete.assert_called_once_with(
-            integration_id=_INTEGRATION_ID
+            integration=_INTEGRATION_ID, space=None
         )
 
     def test_delete_declines_does_not_call_sdk(

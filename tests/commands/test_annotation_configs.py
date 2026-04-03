@@ -154,17 +154,17 @@ class TestListAnnotationConfigs:
         assert "Alpha" in result.output
         assert "Beta" in result.output
 
-    def test_list_passes_space_id_limit_cursor_to_sdk(
+    def test_list_passes_space_limit_cursor_to_sdk(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that --space-id, --limit, --cursor are forwarded to the SDK call."""
+        """Test that --space, --limit, --cursor are forwarded to the SDK call."""
         mock_client.annotation_configs.list.return_value = _list_response()
 
         _invoke(
             [
                 "annotation-configs",
                 "list",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--limit",
                 "5",
@@ -176,9 +176,29 @@ class TestListAnnotationConfigs:
         )
 
         mock_client.annotation_configs.list.assert_called_once_with(
-            space_id="sp_abc",
+            name=None,
+            space="sp_abc",
             limit=5,
             cursor="tok",
+        )
+
+    def test_list_name_filter_forwarded(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --name is forwarded to the SDK."""
+        mock_client.annotation_configs.list.return_value = _list_response()
+
+        _invoke(
+            ["annotation-configs", "list", "--name", "quality"],
+            mock_config,
+            mock_client,
+        )
+
+        mock_client.annotation_configs.list.assert_called_once_with(
+            name="quality",
+            space=None,
+            limit=15,
+            cursor=None,
         )
 
     def test_list_sdk_error_exits_nonzero(
@@ -228,7 +248,9 @@ class TestGetAnnotationConfig:
         _invoke(
             ["annotation-configs", "get", "ac_123"], mock_config, mock_client
         )
-        mock_client.annotation_configs.get.assert_called_once_with(id="ac_123")
+        mock_client.annotation_configs.get.assert_called_once_with(
+            annotation_config="ac_123", space=None
+        )
 
     def test_get_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -265,7 +287,7 @@ class TestCreateAnnotationConfig:
                 "create",
                 "--name",
                 "Quality",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--type",
                 "freeform",
@@ -294,7 +316,7 @@ class TestCreateAnnotationConfig:
                 "create",
                 "--name",
                 "Q",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--type",
                 "freeform",
@@ -305,7 +327,7 @@ class TestCreateAnnotationConfig:
 
         mock_client.annotation_configs.create.assert_called_once_with(
             name="Q",
-            space_id="sp_abc",
+            space="sp_abc",
             config_type=AnnotationConfigType.FREEFORM,
             minimum_score=None,
             maximum_score=None,
@@ -327,7 +349,7 @@ class TestCreateAnnotationConfig:
                 "create",
                 "--name",
                 "Score",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--type",
                 "continuous",
@@ -347,7 +369,7 @@ class TestCreateAnnotationConfig:
         assert result.exit_code == 0, result.output
         mock_client.annotation_configs.create.assert_called_once_with(
             name="Score",
-            space_id="sp_abc",
+            space="sp_abc",
             config_type=AnnotationConfigType.CONTINUOUS,
             minimum_score=0.0,
             maximum_score=1.0,
@@ -371,7 +393,7 @@ class TestCreateAnnotationConfig:
                 "create",
                 "--name",
                 "Verdict",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--type",
                 "categorical",
@@ -407,7 +429,7 @@ class TestCreateAnnotationConfig:
                 "create",
                 "--name",
                 "Score",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--type",
                 "continuous",
@@ -433,7 +455,7 @@ class TestCreateAnnotationConfig:
                 "create",
                 "--name",
                 "Test",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--type",
                 "freeform",
@@ -467,7 +489,7 @@ class TestDeleteAnnotationConfig:
         assert result.exit_code == 0, result.output
         assert "ac_123" in result.output
         mock_client.annotation_configs.delete.assert_called_once_with(
-            id="ac_123"
+            annotation_config="ac_123", space=None
         )
 
     def test_delete_confirms_yes_calls_sdk(
@@ -485,7 +507,7 @@ class TestDeleteAnnotationConfig:
 
         assert result.exit_code == 0, result.output
         mock_client.annotation_configs.delete.assert_called_once_with(
-            id="ac_123"
+            annotation_config="ac_123", space=None
         )
 
     def test_delete_declines_does_not_call_sdk(

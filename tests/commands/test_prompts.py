@@ -218,14 +218,14 @@ class TestListPrompts:
     def test_list_passes_options_to_sdk(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that --space-id, --limit, --cursor are forwarded."""
+        """Test that --space, --limit, --cursor are forwarded."""
         mock_client.prompts.list.return_value = _make_list_response()
 
         _invoke(
             [
                 "prompts",
                 "list",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--limit",
                 "5",
@@ -237,9 +237,29 @@ class TestListPrompts:
         )
 
         mock_client.prompts.list.assert_called_once_with(
-            space_id="sp_abc",
+            name=None,
+            space="sp_abc",
             limit=5,
             cursor="tok",
+        )
+
+    def test_list_name_filter_forwarded(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --name is forwarded to the SDK."""
+        mock_client.prompts.list.return_value = _make_list_response()
+
+        _invoke(
+            ["prompts", "list", "--name", "my-prompt"],
+            mock_config,
+            mock_client,
+        )
+
+        mock_client.prompts.list.assert_called_once_with(
+            name="my-prompt",
+            space=None,
+            limit=15,
+            cursor=None,
         )
 
     def test_list_sdk_error_exits_nonzero(
@@ -272,7 +292,8 @@ class TestGetPrompt:
         )
 
         mock_client.prompts.get.assert_called_once_with(
-            prompt_id=_PROMPT_ID,
+            prompt=_PROMPT_ID,
+            space=None,
             version_id=None,
             label=None,
         )
@@ -298,7 +319,8 @@ class TestGetPrompt:
         )
 
         mock_client.prompts.get.assert_called_once_with(
-            prompt_id=_PROMPT_ID,
+            prompt=_PROMPT_ID,
+            space=None,
             version_id="pv_xyz",
             label="production",
         )
@@ -342,7 +364,7 @@ class TestCreatePrompt:
                 "create",
                 "--name",
                 "My Prompt",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--provider",
                 "openAI",
@@ -360,7 +382,7 @@ class TestCreatePrompt:
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.prompts.create.call_args.kwargs
         assert call_kwargs["name"] == "My Prompt"
-        assert call_kwargs["space_id"] == "sp_abc"
+        assert call_kwargs["space"] == "sp_abc"
         assert call_kwargs["provider"] == LlmProvider.OPENAI
         assert (
             call_kwargs["input_variable_format"] == InputVariableFormat.F_STRING
@@ -393,7 +415,7 @@ class TestCreatePrompt:
                 "create",
                 "--name",
                 "P",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--provider",
                 "openAI",
@@ -439,7 +461,7 @@ class TestCreatePrompt:
                 "create",
                 "--name",
                 "P",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--provider",
                 "openAI",
@@ -474,7 +496,7 @@ class TestCreatePrompt:
                 "create",
                 "--name",
                 "P",
-                "--space-id",
+                "--space",
                 "sp_abc",
                 "--provider",
                 "openAI",
@@ -519,7 +541,8 @@ class TestUpdatePrompt:
 
         assert result.exit_code == 0, result.output
         mock_client.prompts.update.assert_called_once_with(
-            prompt_id=_PROMPT_ID,
+            prompt=_PROMPT_ID,
+            space=None,
             description="New description",
         )
 
@@ -557,7 +580,9 @@ class TestDeletePrompt:
         )
 
         assert result.exit_code == 0, result.output
-        mock_client.prompts.delete.assert_called_once_with(prompt_id=_PROMPT_ID)
+        mock_client.prompts.delete.assert_called_once_with(
+            prompt=_PROMPT_ID, space=None
+        )
 
     def test_delete_confirms_yes_calls_sdk(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -573,7 +598,9 @@ class TestDeletePrompt:
         )
 
         assert result.exit_code == 0, result.output
-        mock_client.prompts.delete.assert_called_once_with(prompt_id=_PROMPT_ID)
+        mock_client.prompts.delete.assert_called_once_with(
+            prompt=_PROMPT_ID, space=None
+        )
 
     def test_delete_declines_does_not_call_sdk(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -633,7 +660,8 @@ class TestListVersions:
         )
 
         mock_client.prompts.list_versions.assert_called_once_with(
-            prompt_id=_PROMPT_ID,
+            prompt=_PROMPT_ID,
+            space=None,
             limit=5,
             cursor="tok",
         )
@@ -692,7 +720,7 @@ class TestCreateVersion:
 
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.prompts.create_version.call_args.kwargs
-        assert call_kwargs["prompt_id"] == _PROMPT_ID
+        assert call_kwargs["prompt"] == _PROMPT_ID
         assert call_kwargs["commit_message"] == "v2"
 
     def test_create_version_with_inline_messages_json(
@@ -724,7 +752,7 @@ class TestCreateVersion:
 
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.prompts.create_version.call_args.kwargs
-        assert call_kwargs["prompt_id"] == _PROMPT_ID
+        assert call_kwargs["prompt"] == _PROMPT_ID
         assert call_kwargs["commit_message"] == "v3-big-inline"
         assert len(call_kwargs["messages"]) == 5
 
@@ -788,7 +816,8 @@ class TestGetVersionByLabel:
         )
 
         mock_client.prompts.get_label.assert_called_once_with(
-            prompt_id=_PROMPT_ID,
+            prompt=_PROMPT_ID,
+            space=None,
             label_name="production",
         )
 

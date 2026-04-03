@@ -68,6 +68,7 @@ def list_api_keys(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,

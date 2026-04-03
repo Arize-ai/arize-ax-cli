@@ -1,7 +1,6 @@
 """Experiment management commands."""
 
 from dataclasses import asdict
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -24,7 +23,6 @@ from ax.utils.console import (
 )
 from ax.utils.export import make_export_dir, print_json_array, write_json_array
 from ax.utils.file_io import (
-    _is_stdin_path,
     parse_output_option,
     read_data_file,
 )
@@ -41,11 +39,19 @@ app = typer.Typer(
 @app.command("list")
 @handle_errors
 def list_experiments(
-    dataset_id: Annotated[
+    dataset: Annotated[
         str | None,
         typer.Option(
-            "--dataset-id",
-            help="Filter experiments by dataset ID",
+            "--dataset",
+            help="Filter experiments by dataset name or ID",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
         ),
     ] = None,
     limit: Annotated[
@@ -60,6 +66,7 @@ def list_experiments(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -100,7 +107,8 @@ def list_experiments(
     try:
         with spinner("Fetching experiments"):
             response = client.experiments.list(
-                dataset_id=dataset_id,
+                dataset=dataset,
+                space=space,
                 limit=limit,
                 cursor=cursor,
             )
@@ -117,10 +125,25 @@ def list_experiments(
 @app.command("get")
 @handle_errors
 def get_experiment(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Experiment ID"),
+        typer.Argument(help="Experiment name or ID"),
     ],
+    dataset: Annotated[
+        str | None,
+        typer.Option(
+            "--dataset",
+            help="Dataset name or ID (required if using experiment name instead of ID)",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -146,7 +169,7 @@ def get_experiment(
         ),
     ] = False,
 ) -> None:
-    """Get an experiment by ID."""
+    """Get an experiment by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -157,7 +180,11 @@ def get_experiment(
 
     try:
         with spinner("Fetching experiment"):
-            experiment = client.experiments.get(experiment_id=id)
+            experiment = client.experiments.get(
+                experiment=name_or_id,
+                dataset=dataset,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to get experiment: {e}") from e
     else:
@@ -171,10 +198,25 @@ def get_experiment(
 @app.command("export")
 @handle_errors
 def export_experiment(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Experiment ID"),
+        typer.Argument(help="Experiment name or ID"),
     ],
+    dataset: Annotated[
+        str | None,
+        typer.Option(
+            "--dataset",
+            help="Dataset name or ID (required if using experiment name instead of ID)",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
     output_dir: Annotated[
         str,
         typer.Option(
@@ -224,7 +266,9 @@ def export_experiment(
     try:
         with spinner("Exporting experiment runs"):
             response = client.experiments.list_runs(
-                experiment_id=id,
+                experiment=name_or_id,
+                dataset=dataset,
+                space=space,
                 all=use_all,
             )
     except Exception as e:
@@ -237,7 +281,7 @@ def export_experiment(
     if stdout:
         print_json_array(runs)
     else:
-        export_path = make_export_dir(output_dir, "experiment", id)
+        export_path = make_export_dir(output_dir, "experiment", name_or_id)
         file_path = write_json_array(export_path, "runs.json", runs)
         success(f"Exported {len(runs)} runs to {file_path}")
 
@@ -254,11 +298,11 @@ def create_experiment(
             prompt=True,
         ),
     ],
-    dataset_id: Annotated[
+    dataset: Annotated[
         str,
         typer.Option(
-            "--dataset-id",
-            help="Dataset ID to attach the experiment to",
+            "--dataset",
+            help="Dataset name or ID to attach the experiment to",
             prompt=True,
         ),
     ],
@@ -310,10 +354,6 @@ def create_experiment(
     )
 
     # Read data file
-    if not _is_stdin_path(file) and not Path(file).exists():
-        raise typer.BadParameter(
-            f"File not found: {file}", param_hint="'--file'"
-        )
     df = read_data_file(file)
 
     required_cols = {"example_id", "output"}
@@ -331,7 +371,7 @@ def create_experiment(
         ):
             experiment = client.experiments.create(
                 name=name,
-                dataset_id=dataset_id,
+                dataset=dataset,
                 experiment_runs=df,
                 task_fields=ExperimentTaskFieldNames(
                     example_id="example_id",
@@ -356,10 +396,25 @@ def create_experiment(
 @app.command("delete")
 @handle_errors
 def delete_experiment(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Experiment ID"),
+        typer.Argument(help="Experiment name or ID"),
     ],
+    dataset: Annotated[
+        str | None,
+        typer.Option(
+            "--dataset",
+            help="Dataset name or ID (required if using experiment name instead of ID)",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option(
@@ -385,7 +440,7 @@ def delete_experiment(
         ),
     ] = False,
 ) -> None:
-    """Delete an experiment by ID."""
+    """Delete an experiment by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -400,8 +455,12 @@ def delete_experiment(
     try:
         with spinner(
             "Deleting experiment",
-            success_msg=f"Experiment with ID '{id}' deleted successfully",
+            success_msg=f"Experiment '{name_or_id}' deleted successfully",
         ):
-            client.experiments.delete(experiment_id=id)
+            client.experiments.delete(
+                experiment=name_or_id,
+                dataset=dataset,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to delete experiment: {e}") from e

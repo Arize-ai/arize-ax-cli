@@ -295,42 +295,24 @@ class TestExportSpans:
         )
         assert result.exit_code != 0
 
-    def test_export_resolves_project_name_with_space_id(
+    def test_export_passes_project_to_sdk(
         self,
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """--space-id triggers project name resolution."""
-        proj = MagicMock()
-        proj.name = "my-project"
-        proj.id = "TW9kZWw6MTIz"
-        proj_response = MagicMock()
-        proj_response.projects = [proj]
-        proj_response.next_cursor = None
-        mock_client.projects.list.return_value = proj_response
-
+        """Project arg is forwarded to spans.list as 'project' (SDK handles name-or-ID)."""
         spans_response = MagicMock()
         spans_response.spans = []
         mock_client.spans.list.return_value = spans_response
 
         result = cli_runner.invoke(
             app,
-            [
-                "my-project",
-                "--trace-id",
-                "t1",
-                "--space-id",
-                "space-abc",
-                "--stdout",
-            ],
+            ["TW9kZWw6MTIz", "--trace-id", "t1", "--stdout"],
         )
         assert result.exit_code == 0
-        mock_client.projects.list.assert_called_once_with(
-            space_id="space-abc", limit=1000, cursor=None
-        )
         call_kwargs = mock_client.spans.list.call_args.kwargs
-        assert call_kwargs["project_id"] == "TW9kZWw6MTIz"
+        assert call_kwargs["project"] == "TW9kZWw6MTIz"
 
 
 class TestExportSpansAll:
@@ -355,7 +337,7 @@ class TestExportSpansAll:
 
         result = cli_runner.invoke(
             app,
-            ["my-project", "--all", "--space-id", "space-abc", "--stdout"],
+            ["my-project", "--all", "--space", "space-abc", "--stdout"],
         )
         assert result.exit_code == 0
         mock_client.spans.export_to_df.assert_called_once()
@@ -370,7 +352,7 @@ class TestExportSpansAll:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """--all without --space-id should fail."""
+        """--all without --space should fail."""
         result = cli_runner.invoke(
             app,
             ["my-project", "--all", "--stdout"],
@@ -391,7 +373,7 @@ class TestExportSpansAll:
             [
                 "my-project",
                 "--all",
-                "--space-id",
+                "--space",
                 "space-abc",
                 "--filter",
                 "status_code = 'ERROR'",
@@ -417,7 +399,7 @@ class TestExportSpansAll:
 
         result = cli_runner.invoke(
             app,
-            ["my-project", "--all", "--space-id", "space-abc", "--stdout"],
+            ["my-project", "--all", "--space", "space-abc", "--stdout"],
         )
         assert result.exit_code == 0
         json_start = result.output.index("[")
@@ -446,7 +428,7 @@ class TestExportSpansAll:
                 [
                     "my-project",
                     "--all",
-                    "--space-id",
+                    "--space",
                     "space-abc",
                     "--output-dir",
                     str(tmp_path),
@@ -470,7 +452,7 @@ class TestExportSpansAll:
             [
                 "my-project",
                 "--all",
-                "--space-id",
+                "--space",
                 "space-abc",
                 "--limit",
                 "50",

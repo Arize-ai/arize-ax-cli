@@ -70,11 +70,20 @@ def _build_llm_messages(
 @app.command("list")
 @handle_errors
 def list_prompts(
-    space_id: Annotated[
+    name: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID to filter prompts",
+            "--name",
+            "-n",
+            help="Case-insensitive substring filter on prompt name",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID",
         ),
     ] = None,
     limit: Annotated[
@@ -89,6 +98,7 @@ def list_prompts(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -129,7 +139,8 @@ def list_prompts(
     try:
         with spinner("Fetching prompts"):
             response = client.prompts.list(
-                space_id=space_id,
+                name=name,
+                space=space,
                 limit=limit,
                 cursor=cursor,
             )
@@ -146,10 +157,18 @@ def list_prompts(
 @app.command("get")
 @handle_errors
 def get_prompt(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Prompt ID"),
+        typer.Argument(help="Prompt name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using prompt name instead of ID)",
+        ),
+    ] = None,
     version_id: Annotated[
         str | None,
         typer.Option(
@@ -189,7 +208,7 @@ def get_prompt(
         ),
     ] = False,
 ) -> None:
-    """Get a prompt by ID.
+    """Get a prompt by name or ID.
 
     Optionally resolve a specific version via --version-id or --label.
     If neither is supplied, the latest version is returned.
@@ -204,7 +223,8 @@ def get_prompt(
 
     try:
         prompt = client.prompts.get(
-            prompt_id=id,
+            prompt=name_or_id,
+            space=space,
             version_id=version_id,
             label=label,
         )
@@ -229,11 +249,12 @@ def create_prompt(
             help="Prompt name (must be unique within the space)",
         ),
     ],
-    space_id: Annotated[
+    space: Annotated[
         str,
         typer.Option(
-            "--space-id",
-            help="Space ID to create the prompt in",
+            "--space",
+            "-s",
+            help="Space name or ID to create the prompt in",
         ),
     ],
     provider: Annotated[
@@ -343,7 +364,7 @@ def create_prompt(
             "Creating prompt", success_msg="Prompt created successfully"
         ):
             prompt = client.prompts.create(
-                space_id=space_id,
+                space=space,
                 name=name,
                 commit_message=commit_message,
                 input_variable_format=input_variable_format,
@@ -365,10 +386,18 @@ def create_prompt(
 @app.command("update")
 @handle_errors
 def update_prompt(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Prompt ID"),
+        typer.Argument(help="Prompt name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using prompt name instead of ID)",
+        ),
+    ] = None,
     description: Annotated[
         str | None,
         typer.Option(
@@ -423,7 +452,8 @@ def update_prompt(
             "Updating prompt", success_msg="Prompt updated successfully"
         ):
             prompt = client.prompts.update(
-                prompt_id=id,
+                prompt=name_or_id,
+                space=space,
                 description=description,
             )
     except Exception as e:
@@ -439,10 +469,18 @@ def update_prompt(
 @app.command("delete")
 @handle_errors
 def delete_prompt(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Prompt ID"),
+        typer.Argument(help="Prompt name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using prompt name instead of ID)",
+        ),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option(
@@ -468,7 +506,7 @@ def delete_prompt(
         ),
     ] = False,
 ) -> None:
-    """Delete a prompt by ID.
+    """Delete a prompt by name or ID.
 
     This operation is irreversible and removes all associated versions.
     """
@@ -488,9 +526,12 @@ def delete_prompt(
     try:
         with spinner(
             "Deleting prompt",
-            success_msg=f"Prompt with ID '{id}' deleted successfully",
+            success_msg=f"Prompt '{name_or_id}' deleted successfully",
         ):
-            client.prompts.delete(prompt_id=id)
+            client.prompts.delete(
+                prompt=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to delete prompt: {e}") from e
 
@@ -498,10 +539,18 @@ def delete_prompt(
 @app.command("list-versions")
 @handle_errors
 def list_versions(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Prompt ID"),
+        typer.Argument(help="Prompt name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using prompt name instead of ID)",
+        ),
+    ] = None,
     limit: Annotated[
         int,
         typer.Option(
@@ -514,6 +563,7 @@ def list_versions(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -554,7 +604,8 @@ def list_versions(
     try:
         with spinner("Fetching prompt versions"):
             response = client.prompts.list_versions(
-                prompt_id=id,
+                prompt=name_or_id,
+                space=space,
                 limit=limit,
                 cursor=cursor,
             )
@@ -571,9 +622,9 @@ def list_versions(
 @app.command("create-version")
 @handle_errors
 def create_version(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Prompt ID to create a new version for"),
+        typer.Argument(help="Prompt name or ID to create a new version for"),
     ],
     provider: Annotated[
         LlmProvider,
@@ -604,6 +655,14 @@ def create_version(
             ),
         ),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using prompt name instead of ID)",
+        ),
+    ] = None,
     commit_message: Annotated[
         str,
         typer.Option(
@@ -669,7 +728,8 @@ def create_version(
             success_msg="Prompt version created successfully",
         ):
             version = client.prompts.create_version(
-                prompt_id=id,
+                prompt=name_or_id,
+                space=space,
                 commit_message=commit_message,
                 input_variable_format=input_variable_format,
                 provider=provider,
@@ -689,9 +749,9 @@ def create_version(
 @app.command("get-version-by-label")
 @handle_errors
 def get_version_by_label(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Prompt ID"),
+        typer.Argument(help="Prompt name or ID"),
     ],
     label: Annotated[
         str,
@@ -700,6 +760,14 @@ def get_version_by_label(
             help="Label name to resolve (e.g. 'production', 'staging')",
         ),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using prompt name instead of ID)",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -737,7 +805,8 @@ def get_version_by_label(
     try:
         with spinner("Fetching prompt version by label"):
             version = client.prompts.get_label(
-                prompt_id=id,
+                prompt=name_or_id,
+                space=space,
                 label_name=label,
             )
     except Exception as e:

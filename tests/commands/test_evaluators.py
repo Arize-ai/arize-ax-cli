@@ -45,7 +45,8 @@ class TestListEvaluators:
         result = cli_runner.invoke(app, ["list"])
         assert result.exit_code == 0
         mock_client.evaluators.list.assert_called_once_with(
-            space_id=None,
+            name=None,
+            space=None,
             limit=15,
             cursor=None,
         )
@@ -57,15 +58,37 @@ class TestListEvaluators:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Invoke 'list' with --space-id and verify it is passed to SDK."""
+        """Invoke 'list' with --space and verify it is passed to SDK."""
         mock_client.evaluators.list.return_value = MagicMock(
             model_dump=MagicMock(return_value={"evaluators": []})
         )
 
-        result = cli_runner.invoke(app, ["list", "--space-id", "space-1"])
+        result = cli_runner.invoke(app, ["list", "--space", "space-1"])
         assert result.exit_code == 0
         mock_client.evaluators.list.assert_called_once_with(
-            space_id="space-1",
+            name=None,
+            space="space-1",
+            limit=15,
+            cursor=None,
+        )
+
+    @pytest.mark.unit
+    def test_list_name_filter_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --name filter is forwarded to the SDK."""
+        mock_client.evaluators.list.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"evaluators": []})
+        )
+
+        result = cli_runner.invoke(app, ["list", "--name", "correctness"])
+        assert result.exit_code == 0
+        mock_client.evaluators.list.assert_called_once_with(
+            name="correctness",
+            space=None,
             limit=15,
             cursor=None,
         )
@@ -89,7 +112,8 @@ class TestGetEvaluator:
         result = cli_runner.invoke(app, ["get", "eval-1"])
         assert result.exit_code == 0
         mock_client.evaluators.get.assert_called_once_with(
-            evaluator_id="eval-1",
+            evaluator="eval-1",
+            space=None,
             version_id=None,
         )
 
@@ -110,7 +134,8 @@ class TestGetEvaluator:
         )
         assert result.exit_code == 0
         mock_client.evaluators.get.assert_called_once_with(
-            evaluator_id="eval-1",
+            evaluator="eval-1",
+            space=None,
             version_id="v-42",
         )
 
@@ -135,7 +160,8 @@ class TestUpdateEvaluator:
         )
         assert result.exit_code == 0
         mock_client.evaluators.update.assert_called_once_with(
-            evaluator_id="eval-1",
+            evaluator="eval-1",
+            space=None,
             name="new name",
             description=None,
         )
@@ -157,7 +183,8 @@ class TestUpdateEvaluator:
         )
         assert result.exit_code == 0
         mock_client.evaluators.update.assert_called_once_with(
-            evaluator_id="eval-1",
+            evaluator="eval-1",
+            space=None,
             name=None,
             description="new desc",
         )
@@ -190,7 +217,7 @@ class TestDeleteEvaluator:
         result = cli_runner.invoke(app, ["delete", "eval-1", "--force"])
         assert result.exit_code == 0
         mock_client.evaluators.delete.assert_called_once_with(
-            evaluator_id="eval-1"
+            evaluator="eval-1", space=None
         )
 
     @pytest.mark.unit
@@ -204,7 +231,7 @@ class TestDeleteEvaluator:
         result = cli_runner.invoke(app, ["delete", "eval-1"], input="y\n")
         assert result.exit_code == 0
         mock_client.evaluators.delete.assert_called_once_with(
-            evaluator_id="eval-1"
+            evaluator="eval-1", space=None
         )
 
     @pytest.mark.unit
@@ -238,7 +265,8 @@ class TestListVersions:
         result = cli_runner.invoke(app, ["list-versions", "eval-1"])
         assert result.exit_code == 0
         mock_client.evaluators.list_versions.assert_called_once_with(
-            evaluator_id="eval-1",
+            evaluator="eval-1",
+            space=None,
             limit=15,
             cursor=None,
         )
@@ -293,7 +321,7 @@ class TestCreateEvaluator:
                     "create",
                     "--name",
                     "My Evaluator",
-                    "--space-id",
+                    "--space",
                     "space-1",
                     "--commit-message",
                     "Initial version",
@@ -326,7 +354,7 @@ class TestCreateEvaluator:
         )
         mock_client.evaluators.create.assert_called_once_with(
             name="My Evaluator",
-            space_id="space-1",
+            space="space-1",
             commit_message="Initial version",
             template_config=mock_template_config,
             description=None,
@@ -351,7 +379,7 @@ class TestCreateEvaluator:
                     "create",
                     "--name",
                     "My Evaluator",
-                    "--space-id",
+                    "--space",
                     "space-1",
                     "--commit-message",
                     "Initial version",
@@ -395,7 +423,7 @@ class TestCreateEvaluator:
                     "create",
                     "--name",
                     "My Evaluator",
-                    "--space-id",
+                    "--space",
                     "space-1",
                     "--commit-message",
                     "Initial version",
@@ -488,7 +516,8 @@ class TestCreateVersion:
             data_granularity=None,
         )
         mock_client.evaluators.create_version.assert_called_once_with(
-            evaluator_id="eval-1",
+            evaluator="eval-1",
+            space=None,
             commit_message="v2 update",
             template_config=mock_template_config,
         )

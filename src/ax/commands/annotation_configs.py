@@ -5,8 +5,10 @@ from typing import Annotated
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client.models import (
+from arize._generated.api_client.models.categorical_annotation_value import (
     CategoricalAnnotationValue,
+)
+from arize._generated.api_client.models.optimization_direction import (
     OptimizationDirection,
 )
 from arize.annotation_configs.types import AnnotationConfigType
@@ -36,11 +38,20 @@ app = typer.Typer(
 @app.command("list")
 @handle_errors
 def list_annotation_configs(
-    space_id: Annotated[
+    name: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID to list annotation configs from",
+            "--name",
+            "-n",
+            help="Case-insensitive substring filter on annotation config name",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID",
         ),
     ] = None,
     limit: Annotated[
@@ -55,6 +66,7 @@ def list_annotation_configs(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -95,7 +107,8 @@ def list_annotation_configs(
     try:
         with spinner("Fetching annotation configs"):
             response = client.annotation_configs.list(
-                space_id=space_id,
+                name=name,
+                space=space,
                 limit=limit,
                 cursor=cursor,
             )
@@ -112,10 +125,18 @@ def list_annotation_configs(
 @app.command("get")
 @handle_errors
 def get_annotation_config(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Annotation config ID"),
+        typer.Argument(help="Annotation config name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using annotation config name instead of ID)",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -141,7 +162,7 @@ def get_annotation_config(
         ),
     ] = False,
 ) -> None:
-    """Get an annotation config by ID."""
+    """Get an annotation config by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -152,7 +173,10 @@ def get_annotation_config(
 
     try:
         with spinner("Fetching annotation config"):
-            annotation_config = client.annotation_configs.get(id=id)
+            annotation_config = client.annotation_configs.get(
+                annotation_config=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to get annotation config: {e}") from e
     else:
@@ -175,11 +199,12 @@ def create_annotation_config(
             prompt=True,
         ),
     ],
-    space_id: Annotated[
+    space: Annotated[
         str,
         typer.Option(
-            "--space-id",
-            help="Space ID",
+            "--space",
+            "-s",
+            help="Space name or ID",
             prompt=True,
         ),
     ],
@@ -274,7 +299,7 @@ def create_annotation_config(
         ):
             annotation_config = client.annotation_configs.create(
                 name=name,
-                space_id=space_id,
+                space=space,
                 config_type=annotation_type,
                 minimum_score=min_score,
                 maximum_score=max_score,
@@ -294,10 +319,18 @@ def create_annotation_config(
 @app.command("delete")
 @handle_errors
 def delete_annotation_config(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Annotation config ID"),
+        typer.Argument(help="Annotation config name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using annotation config name instead of ID)",
+        ),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option(
@@ -323,7 +356,7 @@ def delete_annotation_config(
         ),
     ] = False,
 ) -> None:
-    """Delete an annotation config by ID."""
+    """Delete an annotation config by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -338,8 +371,11 @@ def delete_annotation_config(
     try:
         with spinner(
             "Deleting annotation config",
-            success_msg=f"Annotation config with ID '{id}' deleted successfully",
+            success_msg=f"Annotation config '{name_or_id}' deleted successfully",
         ):
-            client.annotation_configs.delete(id=id)
+            client.annotation_configs.delete(
+                annotation_config=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to delete annotation config: {e}") from e

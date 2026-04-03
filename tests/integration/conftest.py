@@ -1,0 +1,95 @@
+"""Integration test configuration and shared fixtures.
+
+Integration tests run against the real Arize API and require:
+  - ARIZE_API_KEY environment variable set to a valid API key
+  - (Optional) ARIZE_TEST_SPACE set to a space name or ID to use as the test target.
+    If not set, the first space returned by ``ax spaces list`` is used.
+
+Run::
+
+    ARIZE_API_KEY=<key> pytest tests/integration/ -m integration -v
+
+Skip integration tests (default, excluded from ``task test``)::
+
+    pytest -m "not integration"
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from typing import Any
+
+import pytest
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Auto-skip integration tests when ARIZE_API_KEY is not set."""
+    if not os.environ.get("ARIZE_API_KEY"):
+        skip = pytest.mark.skip(reason="ARIZE_API_KEY not set")
+        for item in items:
+            if item.get_closest_marker("integration"):
+                item.add_marker(skip)
+
+
+# ---------------------------------------------------------------------------
+# CLI invocation helpers (imported by all integration test files)
+# ---------------------------------------------------------------------------
+
+
+def ax(
+    *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Invoke the ``ax`` CLI and return the completed process."""
+    merged_env = {**os.environ, **(env or {})}
+    return subprocess.run(
+        [sys.executable, "-m", "ax", *args],
+        capture_output=True,
+        text=True,
+        env=merged_env,
+    )
+
+
+def ax_json(*args: str) -> Any:
+    """Run an ``ax`` command with ``--output json`` and parse stdout as JSON."""
+    result = ax(*args, "--output", "json")
+    assert result.returncode == 0, (
+        f"Command failed: ax {' '.join(args)}\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+    return json.loads(result.stdout)
+
+
+# ---------------------------------------------------------------------------
+# Session-scoped fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def api_key() -> str:
+    """Return the API key, skipping the test if not set."""
+    key = os.environ.get("ARIZE_API_KEY", "")
+    if not key:
+        pytest.skip("ARIZE_API_KEY not set")
+    return key
+
+
+@pytest.fixture(scope="session")
+def first_space(api_key: str) -> dict[str, Any]:
+    """Return the first space accessible to the authenticated user."""
+    data = ax_json("spaces", "list", "--limit", "1")
+    spaces = data.get("spaces") or []
+    if not spaces:
+        pytest.skip(
+            "No spaces found for this API key — skipping integration tests"
+        )
+    return spaces[0]
+
+
+@pytest.fixture(scope="session")
+def test_space_id(first_space: dict[str, Any]) -> str:
+    """Return the test space ID, preferring the ARIZE_TEST_SPACE env var."""
+    return os.environ.get("ARIZE_TEST_SPACE") or first_space["id"]

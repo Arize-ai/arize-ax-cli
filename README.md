@@ -57,6 +57,7 @@
   - [Experiments](#experiments)
   - [Projects](#projects)
   - [Prompts](#prompts)
+  - [Skills](#skills)
   - [Spans](#spans)
   - [Tasks](#tasks)
   - [Traces](#traces)
@@ -106,6 +107,7 @@ Official command-line interface for [Arize AI](https://arize.com) - manage your 
 - **AI Integrations**: Configure external LLM providers (OpenAI, Anthropic, AWS Bedrock, and more)
 - **Prompt Management**: Create and version prompts with label management
 - **Spans & Traces**: Query and filter LLM spans and traces
+- **Agent Skills**: Install Arize context skills for AI coding agents (Claude Code, Cursor, Codex, Windsurf)
 - **Multiple Profiles**: Switch between different Arize environments
 - **Flexible Output**: Export to JSON, CSV, Parquet, or display as tables
 - **Shell Completion**: Tab completion for bash, zsh, and fish
@@ -201,7 +203,7 @@ ax projects list
 Export spans from a project:
 
 ```bash
-ax spans export <project> --stdout
+ax spans export <project-id> --stdout
 ```
 
 List traces in a project:
@@ -219,11 +221,11 @@ The Arize CLI uses a flexible configuration system that supports multiple profil
 | Command                        | Description                                                         |
 | ------------------------------ | ------------------------------------------------------------------- |
 | `ax profiles create [name]`    | Create a new configuration profile interactively or from flags/file |
-| `ax profiles update`           | Update fields in an existing profile                                |
+| `ax profiles update [name]`    | Update fields in an existing profile (uses active profile if omitted) |
 | `ax profiles list`             | List all available profiles                                         |
-| `ax profiles show`             | Display the current profile's configuration                         |
+| `ax profiles show [name]`      | Display a profile's configuration (uses active profile if omitted)  |
 | `ax profiles use <profile>`    | Switch to a different profile                                       |
-| `ax profiles validate`         | Check profile for missing or incorrect config                       |
+| `ax profiles validate [name]`  | Check a profile for missing or incorrect config (uses active if omitted) |
 | `ax profiles delete <profile>` | Delete a configuration profile                                      |
 
 ### Configuration Modes
@@ -373,20 +375,25 @@ Use `ax profiles update` to modify specific fields in an existing profile withou
 ax profiles update --api-key ak_new_key
 
 # Update the region in a named profile
-ax profiles update --profile production --region EU
+ax profiles update production --region EU
 
 # Replace an entire profile from a TOML file
-ax profiles update --profile production --from-file ./prod.toml
+ax profiles update production --from-file ./prod.toml
 
 # Load from file and override the API key
-ax profiles update --profile staging --from-file ./staging.toml --api-key ak_override
+ax profiles update staging --from-file ./staging.toml --api-key ak_override
 ```
+
+**Arguments:**
+
+| Argument   | Description                                        |
+| ---------- | -------------------------------------------------- |
+| `[name]`   | Profile to update (uses active profile if omitted) |
 
 **Options:**
 
 | Option              | Description                                                 |
 | ------------------- | ----------------------------------------------------------- |
-| `--profile`, `-p`   | Profile to update (uses active profile if omitted)          |
 | `--from-file`, `-f` | TOML file to load; completely replaces the existing profile |
 | `--api-key`         | Arize API key                                               |
 | `--region`          | Routing region (e.g. `us-east-1b`, `US`, `EU`)              |
@@ -541,8 +548,11 @@ ax profiles update --profile staging --region EU
 # Use a specific profile for a single command
 ax datasets list --profile production
 
-# Delete a profile
+# Delete a profile (prompts for confirmation)
 ax profiles delete staging
+
+# Delete a profile without confirmation
+ax profiles delete staging --force
 ```
 
 ## Shell Autocompletion
@@ -613,10 +623,10 @@ Configure external LLM providers for use within the Arize platform (for evaluati
 
 ```bash
 # List AI integrations
-ax ai-integrations list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+ax ai-integrations list [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
 
 # Get a specific integration
-ax ai-integrations get <integration-id>
+ax ai-integrations get <integration>
 
 # Create an integration (OpenAI example)
 ax ai-integrations create --name "OpenAI Prod" --provider openAI \
@@ -632,10 +642,10 @@ ax ai-integrations create --name "Bedrock" --provider awsBedrock \
   --provider-metadata-json '{"role_arn": "arn:aws:iam::123456789:role/MyRole"}'
 
 # Update an integration
-ax ai-integrations update <integration-id> --name "Renamed" --api-key <new-key>
+ax ai-integrations update <integration> --name "Renamed" --api-key <new-key>
 
 # Delete an integration
-ax ai-integrations delete <integration-id> [--force]
+ax ai-integrations delete <integration> [--force]
 ```
 
 **Supported providers:**
@@ -657,24 +667,24 @@ Manage annotation configs (rubrics for human and automated evaluation):
 
 ```bash
 # List annotation configs
-ax annotation-configs list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+ax annotation-configs list [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
 
 # Get a specific annotation config
-ax annotation-configs get <annotation-config-id>
+ax annotation-configs get <annotation-config>
 
 # Create a freeform annotation config (free-text feedback)
-ax annotation-configs create --name "Quality" --space-id <space-id> --type freeform
+ax annotation-configs create --name "Quality" --space <space> --type freeform
 
 # Create a continuous annotation config (numeric score range)
-ax annotation-configs create --name "Score" --space-id <space-id> --type continuous \
+ax annotation-configs create --name "Score" --space <space> --type continuous \
   --min-score 0 --max-score 1 --optimization-direction maximize
 
 # Create a categorical annotation config (discrete labels)
-ax annotation-configs create --name "Verdict" --space-id <space-id> --type categorical \
+ax annotation-configs create --name "Verdict" --space <space> --type categorical \
   --value good --value neutral --value bad --optimization-direction maximize
 
 # Delete an annotation config
-ax annotation-configs delete <annotation-config-id> [--force]
+ax annotation-configs delete <annotation-config> [--force]
 ```
 
 **Supported annotation config types:**
@@ -736,31 +746,31 @@ Manage your datasets:
 
 ```bash
 # List datasets
-ax datasets list --space-id <space-id> [--limit 15] [--cursor <cursor>]
+ax datasets list [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
 
 # Get dataset metadata
-ax datasets get <dataset-id>
+ax datasets get <dataset>
 
 # Export all examples to a file
-ax datasets export <dataset-id> [--version-id <version-id>] [--output-dir .] [--stdout]
+ax datasets export <dataset> [--version-id <version-id>] [--output-dir .] [--stdout]
 
 # Create a new dataset
-ax datasets create --name "My Dataset" --space-id <space-id> --file data.csv
+ax datasets create --name "My Dataset" --space <space> --file data.csv
 
 # Create a dataset from stdin (pipe or heredoc)
-ax datasets create --name "My Dataset" --space-id <space-id> --file - < data.json
+ax datasets create --name "My Dataset" --space <space> --file - < data.json
 
 # Append examples (inline JSON)
-ax datasets append <dataset-id> --json '[{"question": "...", "answer": "..."}]'
+ax datasets append <dataset> --json '[{"question": "...", "answer": "..."}]'
 
 # Append examples (from file)
-ax datasets append <dataset-id> --file new_examples.csv [--version-id <version-id>]
+ax datasets append <dataset> --file new_examples.csv [--version-id <version-id>]
 
 # Append examples from stdin
-ax datasets append <dataset-id> --file -
+ax datasets append <dataset> --file -
 
 # Delete a dataset
-ax datasets delete <dataset-id> [--force]
+ax datasets delete <dataset> [--force]
 ```
 
 **Supported data file formats:**
@@ -777,18 +787,18 @@ Manage LLM-as-judge evaluators and their versions:
 
 ```bash
 # List evaluators (optionally filtered by space)
-ax evaluators list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+ax evaluators list [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
 
 # Get an evaluator with its latest version
-ax evaluators get <evaluator-id>
+ax evaluators get <evaluator>
 
 # Get an evaluator at a specific version
-ax evaluators get <evaluator-id> --version-id <version-id>
+ax evaluators get <evaluator> --version-id <version-id>
 
 # Create a new evaluator
 ax evaluators create \
   --name "Response Relevance" \
-  --space-id <space-id> \
+  --space <space> \
   --commit-message "Initial version" \
   --template-name relevance \
   --template "Is this response relevant to the query? {{input}} {{output}}" \
@@ -798,7 +808,7 @@ ax evaluators create \
 # Create a classification evaluator (label → numeric score; omit flag for freeform)
 ax evaluators create \
   --name "Relevance classifier" \
-  --space-id <space-id> \
+  --space <space> \
   --commit-message "Initial version" \
   --template-name relevance \
   --template "Classify: {{output}}" \
@@ -809,11 +819,11 @@ ax evaluators create \
   --data-granularity span
 
 # Update evaluator metadata
-ax evaluators update <evaluator-id> --name "New Name"
-ax evaluators update <evaluator-id> --description "Updated description"
+ax evaluators update <evaluator> --name "New Name"
+ax evaluators update <evaluator> --description "Updated description"
 
 # Delete an evaluator (and all its versions)
-ax evaluators delete <evaluator-id> [--force]
+ax evaluators delete <evaluator> [--force]
 
 # List all versions of an evaluator
 ax evaluators list-versions <evaluator-id> [--limit 15] [--cursor <cursor>]
@@ -861,25 +871,25 @@ Run and analyze experiments on your datasets:
 
 ```bash
 # List experiments (optionally filtered by dataset)
-ax experiments list [--dataset-id <dataset-id>] [--limit 15] [--cursor <cursor>]
+ax experiments list [--dataset <dataset>] [--limit 15] [--cursor <cursor>]
 
 # Get a specific experiment
-ax experiments get <experiment-id>
+ax experiments get <experiment>
 
 # Export all runs from an experiment
-ax experiments export <experiment-id> [--output-dir .] [--stdout]
+ax experiments export <experiment> [--output-dir .] [--stdout]
 
 # Create a new experiment from a data file
-ax experiments create --name "My Experiment" --dataset-id <dataset-id> --file runs.csv
+ax experiments create --name "My Experiment" --dataset <dataset> --file runs.csv
 
 # Create an experiment from stdin
-ax experiments create --name "My Experiment" --dataset-id <dataset-id> --file -
+ax experiments create --name "My Experiment" --dataset <dataset> --file -
 
 # List runs for an experiment
-ax experiments list_runs <experiment-id> [--limit 30]
+ax experiments list_runs <experiment> [--limit 30]
 
 # Delete an experiment
-ax experiments delete <experiment-id> [--force]
+ax experiments delete <experiment> [--force]
 ```
 
 > **Note:** The data file for `experiments create` must contain `example_id` and `output` columns. Extra columns are passed through as additional fields.
@@ -899,16 +909,16 @@ Organize your projects:
 
 ```bash
 # List projects
-ax projects list --space-id <space-id> [--limit 15] [--cursor <cursor>]
+ax projects list [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
 
 # Get project metadata
-ax projects get <project-id>
+ax projects get <project>
 
 # Create a new project
-ax projects create --name "My Project" --space-id <space-id>
+ax projects create --name "My Project" --space <space>
 
 # Delete a project
-ax projects delete <project-id> [--force]
+ax projects delete <project> [--force]
 ```
 
 ### Prompts
@@ -917,42 +927,42 @@ Manage versioned prompt templates with label-based deployment:
 
 ```bash
 # List prompts
-ax prompts list [--space-id <space-id>] [--limit 15] [--cursor <cursor>]
+ax prompts list [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
 
 # Get a prompt (latest version by default)
-ax prompts get <prompt-id>
+ax prompts get <prompt>
 
 # Get a specific version by ID or label
-ax prompts get <prompt-id> --version-id <version-id>
-ax prompts get <prompt-id> --label production
+ax prompts get <prompt> --version-id <version-id>
+ax prompts get <prompt> --label production
 
 # Create a prompt with an initial version
 ax prompts create \
   --name "My Prompt" \
-  --space-id <space-id> \
+  --space <space> \
   --provider openAI \
   --input-variable-format f_string \
   --messages messages.json \
   --commit-message "Initial version"
 
 # Update a prompt's description
-ax prompts update <prompt-id> --description "Updated description"
+ax prompts update <prompt> --description "Updated description"
 
 # Delete a prompt (removes all versions)
-ax prompts delete <prompt-id> [--force]
+ax prompts delete <prompt> [--force]
 
 # List versions for a prompt
-ax prompts list-versions <prompt-id> [--limit 15] [--cursor <cursor>]
+ax prompts list-versions <prompt> [--limit 15] [--cursor <cursor>]
 
 # Create a new version
-ax prompts create-version <prompt-id> \
+ax prompts create-version <prompt> \
   --provider openAI \
   --input-variable-format f_string \
   --messages messages_v2.json \
   --commit-message "Improved system prompt"
 
 # Create a new version (inline messages JSON)
-ax prompts create-version <prompt-id> \
+ax prompts create-version <prompt> \
   --provider openAI \
   --input-variable-format f_string \
   --messages '[{"role": "user", "content": "Your prompt here"}]' \
@@ -960,7 +970,7 @@ ax prompts create-version <prompt-id> \
 
 
 # Resolve a label to its version
-ax prompts get-version-by-label <prompt-id> --label production
+ax prompts get-version-by-label <prompt> --label production
 
 # Set labels on a version (replaces all existing labels)
 ax prompts set-version-labels <version-id> --label production --label staging
@@ -994,18 +1004,18 @@ Export LLM spans from a project. Spans are individual units of work (e.g., an LL
 
 ```bash
 # Export all spans (writes to file by default)
-ax spans export <project>
+ax spans export <project-id>
 
 # Export with filter
-ax spans export <project> --filter "status_code = 'ERROR'"
+ax spans export <project-id> --filter "status_code = 'ERROR'"
 
 # Export by trace, span, or session ID
-ax spans export <project> --trace-id <trace-id>
-ax spans export <project> --span-id <span-id>
-ax spans export <project> --session-id <session-id>
+ax spans export <project-id> --trace-id <trace-id>
+ax spans export <project-id> --span-id <span-id>
+ax spans export <project-id> --session-id <session-id>
 
 # Export to stdout
-ax spans export <project> --stdout
+ax spans export <project-id> --stdout
 ```
 
 **Options:**
@@ -1016,7 +1026,7 @@ ax spans export <project> --stdout
 | `--span-id`       | Filter by span ID                                                     |
 | `--session-id`    | Filter by session ID                                                  |
 | `--filter`        | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`) |
-| `--space-id`      | Space ID (required when using a project name instead of ID)           |
+| `--space`      | Space ID (required when using `--all` for Arrow Flight export)        |
 | `--limit`, `-n`   | Maximum number of spans to export (default: 100)                      |
 | `--days`          | Lookback window in days (default: 30)                                 |
 | `--start-time`    | Override start of time window (ISO 8601)                              |
@@ -1029,11 +1039,60 @@ ax spans export <project> --stdout
 **Examples:**
 
 ```bash
-ax spans export <project> --filter "status_code = 'ERROR'"
-ax spans export <project> --filter "latency_ms > 1000"
-ax spans export <project> --trace-id abc123 --filter "latency_ms > 1000"
-ax spans export <project> --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z
+ax spans export <project-id> --filter "status_code = 'ERROR'"
+ax spans export <project-id> --filter "latency_ms > 1000"
+ax spans export <project-id> --trace-id abc123 --filter "latency_ms > 1000"
+ax spans export <project-id> --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z
 ```
+
+### Skills
+
+Install Arize context skills for AI coding agents. Skills are Markdown files that teach agents (Claude Code, Cursor, Codex, Windsurf) about the Arize API, tracing patterns, and CLI usage so they can answer questions and generate correct code without needing to look things up.
+
+```bash
+# Interactive install (detects installed agents, prompts for selection)
+ax skills install
+
+# Install for a specific agent, non-interactively
+ax skills install --agent claude-code --yes
+
+# Install for multiple agents
+ax skills install --agent claude-code --agent cursor --yes
+
+# Install globally (~/.claude/skills/, ~/.cursor/skills/, ~/.codex/skills/, ~/.windsurf/skills/)
+ax skills install --global
+
+# Overwrite existing skills
+ax skills install --agent claude-code --force --yes
+
+# Remove installed skills (checks all known agents)
+ax skills clear
+ax skills clear --yes
+
+# Remove for a specific agent only
+ax skills clear --agent claude-code
+```
+
+**Install locations:**
+
+Skills are installed relative to the current working directory by default, or to `~` when `--global` is used:
+
+| Agent | Project install | Global install |
+|---|---|---|
+| Claude Code | `./.claude/skills/` | `~/.claude/skills/` |
+| Cursor | `./.cursor/skills/` | `~/.cursor/skills/` |
+| Codex | `./.codex/skills/` | `~/.codex/skills/` |
+| Windsurf | `./.windsurf/skills/` | `~/.windsurf/skills/` |
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--agent`, `-a` | Agent to install for (repeatable). Values: `claude-code`, `cursor`, `codex`, `windsurf` |
+| `--global`, `-g` | Install to home directory instead of current project |
+| `--project-dir`, `-d` | Project directory (default: cwd) |
+| `--yes`, `-y` | Skip confirmations. Requires `--agent`. Without `--force`, skips existing skills instead of overwriting |
+| `--force`, `-f` | Overwrite existing skills without prompting |
 
 ### Tasks
 
@@ -1041,7 +1100,7 @@ Manage evaluation tasks and trigger on-demand runs:
 
 ```bash
 # List tasks (optionally filtered by space, project, dataset, or type)
-ax tasks list [--space-id <space-id>] [--project-id <project-name-or-id>] \
+ax tasks list [--name <substring>] [--space <space>] [--project-id <project-name-or-id>] \
   [--dataset-id <dataset-id>] [--task-type template_evaluation|code_evaluation] \
   [--limit 15] [--cursor <cursor>]
 
@@ -1053,7 +1112,7 @@ ax tasks create \
   --name "Relevance Check" \
   --task-type template_evaluation \
   --evaluators '[{"evaluator_id": "<id from ax evaluators list>", "query_filter": null, "column_mappings": null}]' \
-  --project-id <project-name-or-id> [--space-id <space-id>] \
+  --project <project> [--space <space>] \
   --is-continuous
 
 # Create a dataset-based task
@@ -1061,7 +1120,7 @@ ax tasks create \
   --name "Dataset Eval" \
   --task-type template_evaluation \
   --evaluators '[{"evaluator_id": "<evaluator-id>"}]' \
-  --dataset-id <dataset-id> \
+  --dataset <dataset> \
   --experiment-ids <exp-id-1>,<exp-id-2>
 
 # Trigger an on-demand run
@@ -1097,9 +1156,9 @@ ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 | `--name`, `-n` | Task name (must be unique within the space) |
 | `--task-type` | `template_evaluation` or `code_evaluation` |
 | `--evaluators` | JSON array of evaluator configs. Get IDs via `ax evaluators list`. Example: `[{"evaluator_id": "<id>", "query_filter": null, "column_mappings": null}]`. Fields: `evaluator_id` (required), `query_filter` (optional per-evaluator filter), `column_mappings` (optional column name remappings) |
-| `--project-id` | Project name or ID (base64); mutually exclusive with `--dataset-id` |
-| `--space-id` | Space ID (required when `--project-id` is a name instead of a base64 ID) |
-| `--dataset-id` | Dataset global ID (base64); mutually exclusive with `--project-id` |
+| `--project` | Project name or ID; mutually exclusive with `--dataset` |
+| `--space` | Space name or ID (helps resolve project/dataset names) |
+| `--dataset` | Dataset name or ID; mutually exclusive with `--project` |
 | `--experiment-ids` | Comma-separated experiment IDs (required for dataset-based tasks) |
 | `--sampling-rate` | Fraction of data to evaluate (0–1); project tasks only |
 | `--is-continuous` / `--no-continuous` | Run continuously on incoming data |
@@ -1156,7 +1215,7 @@ ax traces list <project-id> --filter "latency_ms > 5000" --limit 50
 ```bash
 ax datasets create \
   --name "Customer Churn Dataset" \
-  --space-id sp_abc123 \
+  --space sp_abc123 \
   --file ./data/churn.csv
 ```
 
@@ -1168,13 +1227,13 @@ Use `-` (or `/dev/stdin`) as the file path to pipe data directly into the CLI. F
 # Pipe from a file
 cat data.json | ax datasets create \
   --name "customer-support-evals" \
-  --space-id "U3BhY2U6OTA1MDoxSmtS" \
+  --space "U3BhY2U6OTA1MDoxSmtS" \
   --file -
 
 # Inline heredoc — useful for scripting or quick one-offs
 ax datasets create \
   --name "customer-support-evals" \
-  --space-id "U3BhY2U6OTA1MDoxSmtS" \
+  --space "U3BhY2U6OTA1MDoxSmtS" \
   --file - <<'EOF'
 [
   {"question": "How do I reset my password?", "ideal_answer": "Go to the login page and click 'Forgot Password'. Enter your email address and we'll send you a reset link within a few minutes.", "category": "Account Management"},
@@ -1186,7 +1245,7 @@ EOF
 ### Exporting Dataset List to JSON
 
 ```bash
-ax datasets list --space-id sp_abc123 --output json > datasets.json
+ax datasets list --space sp_abc123 --output json > datasets.json
 ```
 
 ### Exporting Dataset Examples
@@ -1228,7 +1287,7 @@ ax spans export proj_abc123 --trace-id tr_xyz789 --days 7
 ### Using a Different Profile for a Command
 
 ```bash
-ax datasets list --space-id sp_abc123 --profile production
+ax datasets list --space sp_abc123 --profile production
 ```
 
 ### Exporting Spans
@@ -1263,10 +1322,10 @@ List more datasets using pagination:
 
 ```bash
 # First page
-ax datasets list --space-id sp_abc123 --limit 20
+ax datasets list --space sp_abc123 --limit 20
 
 # Next page (use cursor from previous response)
-ax datasets list --space-id sp_abc123 --limit 20 --cursor <cursor-value>
+ax datasets list --space sp_abc123 --limit 20 --cursor <cursor-value>
 ```
 
 ### Working with Multiple Environments
@@ -1278,16 +1337,16 @@ ax profiles create  # Create "staging" profile
 
 # Switch contexts
 ax profiles use production
-ax datasets list --space-id sp_prod123
+ax datasets list --space sp_prod123
 
 ax profiles use staging
-ax datasets list --space-id sp_stage456
+ax datasets list --space sp_stage456
 ```
 
 ### Filtering Spans by Status
 
 ```bash
-ax spans export <project> --filter "status_code = 'ERROR'" --stdout
+ax spans export <project-id> --filter "status_code = 'ERROR'" --stdout
 ```
 
 ### Listing Traces in a Time Window
@@ -1331,7 +1390,7 @@ Integrate with scripts:
 #!/bin/bash
 
 # Export datasets to JSON
-DATASETS=$(ax datasets list --space-id sp_abc123 --output json)
+DATASETS=$(ax datasets list --space sp_abc123 --output json)
 
 # Process with jq
 echo "$DATASETS" | jq '.data[] | select(.name | contains("test"))'
@@ -1353,7 +1412,7 @@ The CLI respects these environment variables:
 Enable verbose mode to see detailed SDK logs:
 
 ```bash
-ax datasets list --space-id sp_abc123 --verbose
+ax datasets list --space sp_abc123 --verbose
 ```
 
 ## Troubleshooting

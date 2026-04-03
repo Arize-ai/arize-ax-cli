@@ -1,7 +1,6 @@
 """Tests for task CLI commands."""
 
-from collections.abc import Generator
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from typer.testing import CliRunner
@@ -51,15 +50,6 @@ def _make_run_list_response(*runs: MagicMock) -> MagicMock:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def mock_resolve_project_id() -> Generator[MagicMock, None, None]:
-    """Patch resolve_project_id to pass the project argument through unchanged."""
-    with patch(
-        "ax.commands.tasks.resolve_project_id", side_effect=lambda c, p, s: p
-    ) as mock:
-        yield mock
 
 
 # ---------------------------------------------------------------------------
@@ -172,9 +162,10 @@ class TestListTasks:
         result = cli_runner.invoke(app, ["list"])
         assert result.exit_code == 0
         mock_client.tasks.list.assert_called_once_with(
-            space_id=None,
-            project_id=None,
-            dataset_id=None,
+            name=None,
+            space=None,
+            project=None,
+            dataset=None,
             task_type=None,
             limit=15,
             cursor=None,
@@ -186,7 +177,6 @@ class TestListTasks:
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
-        mock_resolve_project_id: MagicMock,
     ) -> None:
         """All filter flags are forwarded to the SDK."""
         mock_client.tasks.list.return_value = _make_task_list_response()
@@ -195,10 +185,10 @@ class TestListTasks:
             app,
             [
                 "list",
-                "--space-id",
+                "--space",
                 "space-1",
-                "--project-id",
-                "proj-1",
+                "--project",
+                "UHJvamVjdDox",
                 "--task-type",
                 "template_evaluation",
                 "--limit",
@@ -209,41 +199,57 @@ class TestListTasks:
         )
         assert result.exit_code == 0
         mock_client.tasks.list.assert_called_once_with(
-            space_id="space-1",
-            project_id="proj-1",
-            dataset_id=None,
+            name=None,
+            space="space-1",
+            project="UHJvamVjdDox",
+            dataset=None,
             task_type="template_evaluation",
             limit=5,
             cursor="cursor-abc",
         )
 
     @pytest.mark.unit
-    def test_project_name_resolved_to_id(
+    def test_project_passed_to_sdk(
         self,
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """A project name is resolved to a base64 ID before filtering."""
-        # Configure projects.list to return a mock project named "my-project"
-        mock_project = MagicMock()
-        mock_project.name = "my-project"
-        mock_project.id = "UHJvamVjdDox"
-        projects_response = MagicMock()
-        projects_response.projects = [mock_project]
-        projects_response.next_cursor = None
-        mock_client.projects.list.return_value = projects_response
+        """--project is forwarded to tasks.list as 'project' (SDK handles name-or-ID)."""
         mock_client.tasks.list.return_value = _make_task_list_response()
 
         result = cli_runner.invoke(
             app,
-            ["list", "--space-id", "space-1", "--project-id", "my-project"],
+            ["list", "--space", "space-1", "--project", "UHJvamVjdDox"],
         )
         assert result.exit_code == 0
         mock_client.tasks.list.assert_called_once_with(
-            space_id="space-1",
-            project_id="UHJvamVjdDox",
-            dataset_id=None,
+            name=None,
+            space="space-1",
+            project="UHJvamVjdDox",
+            dataset=None,
+            task_type=None,
+            limit=15,
+            cursor=None,
+        )
+
+    @pytest.mark.unit
+    def test_name_filter_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--name filter is forwarded to the SDK."""
+        mock_client.tasks.list.return_value = _make_task_list_response()
+
+        result = cli_runner.invoke(app, ["list", "--name", "nightly"])
+        assert result.exit_code == 0
+        mock_client.tasks.list.assert_called_once_with(
+            name="nightly",
+            space=None,
+            project=None,
+            dataset=None,
             task_type=None,
             limit=15,
             cursor=None,
@@ -282,7 +288,7 @@ class TestGetTask:
 
         result = cli_runner.invoke(app, ["get", "task-1"])
         assert result.exit_code == 0
-        mock_client.tasks.get.assert_called_once_with(task_id="task-1")
+        mock_client.tasks.get.assert_called_once_with(task="task-1")
 
     @pytest.mark.unit
     def test_api_error_exits_nonzero(
@@ -313,7 +319,6 @@ class TestCreateTask:
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
-        mock_resolve_project_id: MagicMock,
     ) -> None:
         """Create a project-based task and verify the SDK call arguments."""
         mock_client.tasks.create.return_value = _make_task()
@@ -328,7 +333,7 @@ class TestCreateTask:
                 "template_evaluation",
                 "--evaluators",
                 self._EVALUATORS_JSON,
-                "--project-id",
+                "--project",
                 "proj-1",
             ],
         )
@@ -336,8 +341,8 @@ class TestCreateTask:
         call_kwargs = mock_client.tasks.create.call_args.kwargs
         assert call_kwargs["name"] == "My Task"
         assert call_kwargs["task_type"] == "template_evaluation"
-        assert call_kwargs["project_id"] == "proj-1"
-        assert call_kwargs["dataset_id"] is None
+        assert call_kwargs["project"] == "proj-1"
+        assert call_kwargs["dataset"] is None
         assert len(call_kwargs["evaluators"]) == 1
         assert call_kwargs["evaluators"][0].evaluator_id == "ev-1"
 
@@ -361,7 +366,7 @@ class TestCreateTask:
                 "template_evaluation",
                 "--evaluators",
                 self._EVALUATORS_JSON,
-                "--dataset-id",
+                "--dataset",
                 "ds-1",
                 "--experiment-ids",
                 "exp-1,exp-2",
@@ -369,8 +374,8 @@ class TestCreateTask:
         )
         assert result.exit_code == 0
         call_kwargs = mock_client.tasks.create.call_args.kwargs
-        assert call_kwargs["dataset_id"] == "ds-1"
-        assert call_kwargs["project_id"] is None
+        assert call_kwargs["dataset"] == "ds-1"
+        assert call_kwargs["project"] is None
         assert call_kwargs["experiment_ids"] == ["exp-1", "exp-2"]
 
     @pytest.mark.unit
@@ -380,14 +385,7 @@ class TestCreateTask:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """A project name is resolved to a base64 ID before creating the task."""
-        mock_project = MagicMock()
-        mock_project.name = "my-project"
-        mock_project.id = "UHJvamVjdDox"
-        projects_response = MagicMock()
-        projects_response.projects = [mock_project]
-        projects_response.next_cursor = None
-        mock_client.projects.list.return_value = projects_response
+        """Project name is passed directly to the SDK (SDK handles name-or-ID resolution)."""
         mock_client.tasks.create.return_value = _make_task()
 
         result = cli_runner.invoke(
@@ -400,15 +398,15 @@ class TestCreateTask:
                 "template_evaluation",
                 "--evaluators",
                 self._EVALUATORS_JSON,
-                "--project-id",
+                "--project",
                 "my-project",
-                "--space-id",
+                "--space",
                 "space-1",
             ],
         )
         assert result.exit_code == 0
         call_kwargs = mock_client.tasks.create.call_args.kwargs
-        assert call_kwargs["project_id"] == "UHJvamVjdDox"
+        assert call_kwargs["project"] == "my-project"
 
     @pytest.mark.unit
     def test_requires_project_or_dataset(
@@ -417,7 +415,7 @@ class TestCreateTask:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """'create' without --project-id or --dataset-id exits non-zero."""
+        """'create' without --project or --dataset-id exits non-zero."""
         result = cli_runner.invoke(
             app,
             [
@@ -440,7 +438,7 @@ class TestCreateTask:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Providing both --project-id and --dataset-id exits non-zero."""
+        """Providing both --project and --dataset-id exits non-zero."""
         result = cli_runner.invoke(
             app,
             [
@@ -451,9 +449,9 @@ class TestCreateTask:
                 "template_evaluation",
                 "--evaluators",
                 self._EVALUATORS_JSON,
-                "--project-id",
+                "--project",
                 "proj-1",
-                "--dataset-id",
+                "--dataset",
                 "ds-1",
             ],
         )
@@ -466,7 +464,6 @@ class TestCreateTask:
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
-        mock_resolve_project_id: MagicMock,
     ) -> None:
         """Optional flags (sampling-rate, is-continuous, query-filter) are passed through."""
         mock_client.tasks.create.return_value = _make_task()
@@ -481,7 +478,7 @@ class TestCreateTask:
                 "template_evaluation",
                 "--evaluators",
                 self._EVALUATORS_JSON,
-                "--project-id",
+                "--project",
                 "proj-1",
                 "--sampling-rate",
                 "0.5",
@@ -502,7 +499,6 @@ class TestCreateTask:
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
-        mock_resolve_project_id: MagicMock,
     ) -> None:
         """API failure results in a non-zero exit code."""
         mock_client.tasks.create.side_effect = Exception("conflict")
@@ -516,7 +512,7 @@ class TestCreateTask:
                 "template_evaluation",
                 "--evaluators",
                 self._EVALUATORS_JSON,
-                "--project-id",
+                "--project",
                 "proj-1",
             ],
         )
@@ -544,7 +540,7 @@ class TestTriggerRun:
         result = cli_runner.invoke(app, ["trigger-run", "task-1"])
         assert result.exit_code == 0
         mock_client.tasks.trigger_run.assert_called_once_with(
-            task_id="task-1",
+            task="task-1",
             data_start_time=None,
             data_end_time=None,
             max_spans=None,
@@ -639,7 +635,7 @@ class TestListRuns:
         result = cli_runner.invoke(app, ["list-runs", "task-1"])
         assert result.exit_code == 0
         mock_client.tasks.list_runs.assert_called_once_with(
-            task_id="task-1",
+            task="task-1",
             status=None,
             limit=15,
             cursor=None,
@@ -660,7 +656,7 @@ class TestListRuns:
         )
         assert result.exit_code == 0
         mock_client.tasks.list_runs.assert_called_once_with(
-            task_id="task-1",
+            task="task-1",
             status="completed",
             limit=15,
             cursor=None,

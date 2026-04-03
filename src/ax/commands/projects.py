@@ -33,11 +33,20 @@ app = typer.Typer(
 @app.command("list")
 @handle_errors
 def list_projects(
-    space_id: Annotated[
+    name: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID to list projects from",
+            "--name",
+            "-n",
+            help="Case-insensitive substring filter on project name",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID",
         ),
     ] = None,
     limit: Annotated[
@@ -52,6 +61,7 @@ def list_projects(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -93,7 +103,8 @@ def list_projects(
     try:
         with spinner("Fetching projects"):
             response = client.projects.list(
-                space_id=space_id,
+                name=name,
+                space=space,
                 limit=limit,
                 cursor=cursor,
             )
@@ -119,11 +130,12 @@ def create_project(
             prompt=True,
         ),
     ],
-    space_id: Annotated[
+    space: Annotated[
         str,
         typer.Option(
-            "--space-id",
-            help="Space ID",
+            "--space",
+            "-s",
+            help="Space name or ID",
             prompt=True,
         ),
     ],
@@ -168,7 +180,7 @@ def create_project(
         ):
             project = client.projects.create(
                 name=name,
-                space_id=space_id,
+                space=space,
             )
     except Exception as e:
         raise APIError(f"Failed to create project: {e}") from e
@@ -183,10 +195,18 @@ def create_project(
 @app.command("get")
 @handle_errors
 def get_project(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Project ID"),
+        typer.Argument(help="Project name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using project name instead of ID)",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -212,7 +232,7 @@ def get_project(
         ),
     ] = False,
 ) -> None:
-    """Get a project by ID."""
+    """Get a project by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -223,7 +243,10 @@ def get_project(
 
     try:
         with spinner("Fetching project"):
-            project = client.projects.get(project_id=id)
+            project = client.projects.get(
+                project=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to get project: {e}") from e
     else:
@@ -237,10 +260,18 @@ def get_project(
 @app.command("delete")
 @handle_errors
 def delete_project(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Project ID"),
+        typer.Argument(help="Project name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using project name instead of ID)",
+        ),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option(
@@ -266,7 +297,7 @@ def delete_project(
         ),
     ] = False,
 ) -> None:
-    """Delete a project by ID."""
+    """Delete a project by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -283,8 +314,11 @@ def delete_project(
     try:
         with spinner(
             "Deleting project",
-            success_msg=f"Project with ID '{id}' deleted successfully",
+            success_msg=f"Project '{name_or_id}' deleted successfully",
         ):
-            client.projects.delete(project_id=id)
+            client.projects.delete(
+                project=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to delete project: {e}") from e

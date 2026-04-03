@@ -65,11 +65,20 @@ def _parse_json_option(
 @app.command("list")
 @handle_errors
 def list_ai_integrations(
-    space_id: Annotated[
+    name: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID to filter integrations",
+            "--name",
+            "-n",
+            help="Case-insensitive substring filter on integration name",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID to filter integrations",
         ),
     ] = None,
     limit: Annotated[
@@ -84,6 +93,7 @@ def list_ai_integrations(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -124,7 +134,8 @@ def list_ai_integrations(
     try:
         with spinner("Fetching AI integrations"):
             response = client.ai_integrations.list(
-                space_id=space_id,
+                name=name,
+                space=space,
                 limit=limit,
                 cursor=cursor,
             )
@@ -141,10 +152,18 @@ def list_ai_integrations(
 @app.command("get")
 @handle_errors
 def get_ai_integration(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="AI integration ID"),
+        typer.Argument(help="AI integration name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using integration name instead of ID)",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -170,7 +189,7 @@ def get_ai_integration(
         ),
     ] = False,
 ) -> None:
-    """Get an AI integration by ID."""
+    """Get an AI integration by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -181,7 +200,10 @@ def get_ai_integration(
 
     try:
         with spinner("Fetching AI integration"):
-            integration = client.ai_integrations.get(integration_id=id)
+            integration = client.ai_integrations.get(
+                integration=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to get AI integration: {e}") from e
     else:
@@ -241,7 +263,6 @@ def create_ai_integration(
         bool,
         typer.Option(
             "--enable-default-models",
-            is_flag=True,
             help="Enable the provider's default model list",
         ),
     ] = False,
@@ -249,7 +270,6 @@ def create_ai_integration(
         bool,
         typer.Option(
             "--function-calling-enabled",
-            is_flag=True,
             help="Enable function/tool calling",
         ),
     ] = False,
@@ -364,11 +384,19 @@ def create_ai_integration(
 @app.command("update")
 @handle_errors
 def update_ai_integration(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="AI integration ID"),
+        typer.Argument(help="AI integration name or ID"),
     ],
-    name: Annotated[
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using integration name instead of ID)",
+        ),
+    ] = None,
+    updated_name: Annotated[
         str | None,
         typer.Option(
             "--name",
@@ -490,7 +518,7 @@ def update_ai_integration(
         ),
     ] = False,
 ) -> None:
-    """Update an AI integration by ID.
+    """Update an AI integration by name or ID.
 
     Only the fields you provide are sent to the server.
     At least one option must be specified.
@@ -499,7 +527,7 @@ def update_ai_integration(
     provided = {
         k: v
         for k, v in (
-            ("name", name),
+            ("name", updated_name),
             ("provider", provider),
             ("api_key", api_key),
             ("base_url", base_url),
@@ -546,9 +574,12 @@ def update_ai_integration(
 
     # Build kwargs with only the explicitly provided fields so the SDK's
     # _UNSET sentinel logic correctly skips omitted ones.
-    update_kwargs: dict[str, Any] = {"integration_id": id}
-    if name is not None:
-        update_kwargs["name"] = name
+    update_kwargs: dict[str, Any] = {
+        "integration": name_or_id,
+        "space": space,
+    }
+    if updated_name is not None:
+        update_kwargs["name"] = updated_name
     if provider is not None:
         update_kwargs["provider"] = provider
     if api_key is not None:
@@ -589,10 +620,18 @@ def update_ai_integration(
 @app.command("delete")
 @handle_errors
 def delete_ai_integration(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="AI integration ID"),
+        typer.Argument(help="AI integration name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using integration name instead of ID)",
+        ),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option(
@@ -618,7 +657,7 @@ def delete_ai_integration(
         ),
     ] = False,
 ) -> None:
-    """Delete an AI integration by ID.
+    """Delete an AI integration by name or ID.
 
     This operation is irreversible.
     """
@@ -636,8 +675,11 @@ def delete_ai_integration(
     try:
         with spinner(
             "Deleting AI integration",
-            success_msg=f"AI integration with ID '{id}' deleted successfully",
+            success_msg=f"AI integration '{name_or_id}' deleted successfully",
         ):
-            client.ai_integrations.delete(integration_id=id)
+            client.ai_integrations.delete(
+                integration=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to delete AI integration: {e}") from e

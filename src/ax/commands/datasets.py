@@ -1,11 +1,15 @@
 """Dataset management commands."""
 
+from __future__ import annotations
+
 import json
 from dataclasses import asdict
-from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
+
+if TYPE_CHECKING:
+    import pandas as pd
 from arize import ArizeClient
 
 from ax.config.manager import ConfigManager
@@ -24,7 +28,6 @@ from ax.utils.console import (
 )
 from ax.utils.export import make_export_dir, print_json_array, write_json_array
 from ax.utils.file_io import (
-    _is_stdin_path,
     parse_output_option,
     read_data_file,
 )
@@ -64,11 +67,20 @@ app = typer.Typer(
 @app.command("list")
 @handle_errors
 def list_datasets(
-    space_id: Annotated[
+    name: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID to list datasets from",
+            "--name",
+            "-n",
+            help="Case-insensitive substring filter on dataset name",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID",
         ),
     ] = None,
     limit: Annotated[
@@ -83,6 +95,7 @@ def list_datasets(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -124,7 +137,8 @@ def list_datasets(
     try:
         with spinner("Fetching datasets"):
             response = client.datasets.list(
-                space_id=space_id,
+                name=name,
+                space=space,
                 limit=limit,
                 cursor=cursor,
             )
@@ -141,10 +155,18 @@ def list_datasets(
 @app.command("get")
 @handle_errors
 def get_dataset(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Dataset ID"),
+        typer.Argument(help="Dataset name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -170,7 +192,7 @@ def get_dataset(
         ),
     ] = False,
 ) -> None:
-    """Get a dataset by ID."""
+    """Get a dataset by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -181,7 +203,10 @@ def get_dataset(
 
     try:
         with spinner("Fetching dataset"):
-            dataset = client.datasets.get(dataset_id=id)
+            dataset = client.datasets.get(
+                dataset=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to get dataset: {e}") from e
     else:
@@ -195,10 +220,18 @@ def get_dataset(
 @app.command("export")
 @handle_errors
 def export_dataset(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Dataset ID"),
+        typer.Argument(help="Dataset name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
     version_id: Annotated[
         str | None,
         typer.Option(
@@ -255,7 +288,8 @@ def export_dataset(
     try:
         with spinner("Exporting dataset examples"):
             response = client.datasets.list_examples(
-                dataset_id=id,
+                dataset=name_or_id,
+                space=space,
                 dataset_version_id=version_id,
                 all=use_all,
             )
@@ -269,7 +303,7 @@ def export_dataset(
     if stdout:
         print_json_array(examples)
     else:
-        export_path = make_export_dir(output_dir, "dataset", id)
+        export_path = make_export_dir(output_dir, "dataset", name_or_id)
         file_path = write_json_array(export_path, "examples.json", examples)
         success(f"Exported {len(examples)} examples to {file_path}")
 
@@ -286,22 +320,30 @@ def create_dataset(
             prompt=True,
         ),
     ],
-    space_id: Annotated[
+    space: Annotated[
         str,
         typer.Option(
-            "--space-id",
-            help="Space ID",
+            "--space",
+            "-s",
+            help="Space name or ID",
             prompt=True,
         ),
     ],
     file: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--file",
             "-f",
             help="Data file (CSV, JSON, JSONL, or Parquet), or '-' for stdin",
         ),
-    ],
+    ] = None,
+    json_data: Annotated[
+        str | None,
+        typer.Option(
+            "--json",
+            help='JSON array of examples, e.g. \'[{"question": "...", "answer": "..."}]\'',
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -327,8 +369,14 @@ def create_dataset(
         ),
     ] = False,
 ) -> None:
-    """Create a new dataset from a data file."""
+    """Create a new dataset from a data file or inline JSON."""
     setup_logging(verbose)
+
+    if json_data and file:
+        raise typer.BadParameter("Provide either --json or --file, not both.")
+    if not json_data and not file:
+        raise typer.BadParameter("Provide examples via --json or --file.")
+
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
@@ -336,12 +384,24 @@ def create_dataset(
         output if output else config.output.format
     )
 
-    # Read data file
-    if not _is_stdin_path(file) and not Path(file).exists():
-        raise typer.BadParameter(
-            f"File not found: {file}", param_hint="'--file'"
-        )
-    df = read_data_file(file)
+    if json_data:
+        try:
+            parsed = json.loads(json_data)
+        except json.JSONDecodeError as e:
+            raise typer.BadParameter(f"Invalid JSON: {e}") from e
+
+        if not isinstance(parsed, list):
+            raise typer.BadParameter(
+                f"Expected a JSON array, got {type(parsed).__name__}. "
+                "Wrap examples in brackets: [{...}, ...]"
+            )
+
+        _validate_examples_structure(parsed)
+        examples: list[dict[str, object]] | pd.DataFrame = parsed
+    else:
+        if file is None:
+            raise typer.BadParameter("Provide examples via --json or --file.")
+        examples = read_data_file(file)
 
     try:
         # Create dataset
@@ -351,8 +411,8 @@ def create_dataset(
         ):
             dataset = client.datasets.create(
                 name=name,
-                space_id=space_id,
-                examples=df,
+                space=space,
+                examples=examples,
             )
     except Exception as e:
         raise APIError(f"Failed to create dataset: {e}") from e
@@ -371,10 +431,18 @@ def create_dataset(
 @app.command("append")
 @handle_errors
 def append_examples(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Dataset ID to append examples to"),
+        typer.Argument(help="Dataset name or ID to append examples to"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
     json_data: Annotated[
         str | None,
         typer.Option(
@@ -456,10 +524,6 @@ def append_examples(
         _validate_examples_structure(parsed)
         examples: list[dict[str, object]] = parsed
     else:
-        if not _is_stdin_path(file) and not Path(file).exists():  # type: ignore[arg-type]
-            raise typer.BadParameter(
-                f"File not found: {file}", param_hint="'--file'"
-            )
         df = read_data_file(file)  # type: ignore[arg-type]
         records: list[dict[str, object]] = df.to_dict(orient="records")  # type: ignore[assignment]
         _validate_examples_structure(records)
@@ -471,7 +535,8 @@ def append_examples(
             success_msg=f"Appended {len(examples)} example(s)",
         ):
             dataset = client.datasets.append_examples(
-                dataset_id=id,
+                dataset=name_or_id,
+                space=space,
                 dataset_version_id=version_id or "",
                 examples=examples,
             )
@@ -488,10 +553,18 @@ def append_examples(
 @app.command("delete")
 @handle_errors
 def delete_dataset(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Dataset ID"),
+        typer.Argument(help="Dataset name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option(
@@ -517,7 +590,7 @@ def delete_dataset(
         ),
     ] = False,
 ) -> None:
-    """Delete a dataset by ID."""
+    """Delete a dataset by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -534,8 +607,11 @@ def delete_dataset(
     try:
         with spinner(
             "Deleting dataset",
-            success_msg=f"Dataset with ID '{id}' deleted successfully",
+            success_msg=f"Dataset '{name_or_id}' deleted successfully",
         ):
-            client.datasets.delete(dataset_id=id)
+            client.datasets.delete(
+                dataset=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to delete dataset: {e}") from e

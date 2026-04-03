@@ -21,7 +21,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "arize>=8.8.1, <9",
+    "arize==8.9.2",
     "pydantic>=2.0.0, <3",
     "questionary>=2.0.0, <3",
     "rich>=13.0.0, <14",
@@ -118,10 +118,13 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
+    "ANN401", # Allow Any in test helpers
     "D104",   # Missing docstring in public package
     "DTZ001", # Allow naive datetime usage in tests
     "S101",   # Allow assert statements in tests
     "S108",   # Allow insecure usage of temporary file or directory
+    "S404",   # Allow subprocess import in integration tests
+    "S603",   # Allow subprocess.run with list args in integration tests
     "TRY301", # Allow generic exception catching in tests
 ]
 
@@ -181,12 +184,14 @@ addopts = [
     "--strict-markers", # Error on undefined markers (prevents typos like @pytest.mark.slo instead of @pytest.mark.slow)
     "--tb=short",       # Shorter tracebacks: show only the failure point without full stack
     "--durations=10",   # Show the 10 slowest tests at the end (helps identify performance bottlenecks)
+    "-m", "not integration",  # Exclude integration tests by default (run with task integration-test)
 ]
 # Custom markers that can be used to categorize tests (use with @pytest.mark.marker_name)
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
     "unit: marks tests as unit tests",
+    "e2e: marks tests as end-to-end tests that require network access",
 ]
 
 [tool.coverage.run]
@@ -231,9 +236,10 @@ all = { cmd = "task lint && task type-check && task test", cwd = ".", help = "Ru
 lint = { cmd = "ruff format . && ruff check --fix .", cwd = ".", help = "Run ruff to format and lint the package." }
 type-check = {cmd = "mypy --no-incremental --show-traceback --config-file pyproject.toml .", cwd = ".", help = "Run mypy for type checking."}
 test = {cmd = "pytest --cov .", cwd = ".", help = "Run the test suite with coverage."}
+test-integration = {cmd = "pytest tests/integration/ -m integration -v", cwd = ".", help = "Run integration tests (requires ARIZE_API_KEY)."}
+
 # Exclusive for CI
 ci-format = { cmd = "ruff format --check .", cwd = ".", help = "Run ruff to check formatting of the package during CI." }
 ci-lint = { cmd = "ruff check .", cwd = ".", help = "Run ruff to check linting rules of the package during CI." }
 ci-type-check = {cmd = "mypy --no-incremental --show-traceback --config-file pyproject.toml .", cwd = ".", help = "Run mypy for type checking during CI."}
 ci-test = {cmd = "pytest --cov --cov-report=term-missing --cov-report=html .", cwd = ".", help = "Run the test suite with coverage during CI."}
-

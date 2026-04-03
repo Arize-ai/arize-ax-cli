@@ -42,7 +42,7 @@ def list_spaces(
         int,
         typer.Option(
             "--limit",
-            "-n",
+            "-l",
             help="Maximum number of spaces to return",
         ),
     ] = 15,
@@ -50,6 +50,7 @@ def list_spaces(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -107,9 +108,9 @@ def list_spaces(
 @app.command("get")
 @handle_errors
 def get_space(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Space ID"),
+        typer.Argument(help="Space name or ID"),
     ],
     profile: Annotated[
         str,
@@ -136,7 +137,7 @@ def get_space(
         ),
     ] = False,
 ) -> None:
-    """Get a space by ID."""
+    """Get a space by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -147,7 +148,7 @@ def get_space(
 
     try:
         with spinner("Fetching space"):
-            space = client.spaces.get(space_id=id)
+            space = client.spaces.get(space=name_or_id)
     except Exception as e:
         raise APIError(f"Failed to get space: {e}") from e
     else:
@@ -241,9 +242,9 @@ def create_space(
 @app.command("update")
 @handle_errors
 def update_space(
-    id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Space ID"),
+        typer.Argument(help="Space name or ID"),
     ],
     name: Annotated[
         str | None,
@@ -285,7 +286,7 @@ def update_space(
         ),
     ] = False,
 ) -> None:
-    """Update a space by ID."""
+    """Update a space by name or ID."""
     if name is None and description is None:
         warning("At least one of --name or --description must be provided")
         raise typer.Exit(code=1)
@@ -303,7 +304,7 @@ def update_space(
             "Updating space", success_msg="Space updated successfully"
         ):
             space = client.spaces.update(
-                space_id=id,
+                space=name_or_id,
                 name=name,
                 description=description,
             )

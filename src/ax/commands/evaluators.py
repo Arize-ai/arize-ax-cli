@@ -120,11 +120,20 @@ def _build_template_config(
 @app.command("list")
 @handle_errors
 def list_evaluators(
-    space_id: Annotated[
+    name: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Filter evaluators by space ID",
+            "--name",
+            "-n",
+            help="Case-insensitive substring filter on evaluator name",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID",
         ),
     ] = None,
     limit: Annotated[
@@ -139,6 +148,7 @@ def list_evaluators(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -179,7 +189,8 @@ def list_evaluators(
     try:
         with spinner("Fetching evaluators"):
             response = client.evaluators.list(
-                space_id=space_id,
+                name=name,
+                space=space,
                 limit=limit,
                 cursor=cursor,
             )
@@ -196,10 +207,18 @@ def list_evaluators(
 @app.command("get")
 @handle_errors
 def get_evaluator(
-    evaluator_id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Evaluator ID"),
+        typer.Argument(help="Evaluator name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using evaluator name instead of ID)",
+        ),
+    ] = None,
     version_id: Annotated[
         str | None,
         typer.Option(
@@ -232,7 +251,7 @@ def get_evaluator(
         ),
     ] = False,
 ) -> None:
-    """Get an evaluator by ID, with its resolved version."""
+    """Get an evaluator by name or ID, with its resolved version."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -244,7 +263,8 @@ def get_evaluator(
     try:
         with spinner("Fetching evaluator"):
             evaluator = client.evaluators.get(
-                evaluator_id=evaluator_id,
+                evaluator=name_or_id,
+                space=space,
                 version_id=version_id,
             )
     except Exception as e:
@@ -269,11 +289,12 @@ def create_evaluator(
             prompt=True,
         ),
     ],
-    space_id: Annotated[
+    space: Annotated[
         str,
         typer.Option(
-            "--space-id",
-            help="Space ID to create the evaluator in",
+            "--space",
+            "-s",
+            help="Space name or ID to create the evaluator in",
             prompt=True,
         ),
     ],
@@ -432,7 +453,7 @@ def create_evaluator(
         ):
             evaluator = client.evaluators.create(
                 name=name,
-                space_id=space_id,
+                space=space,
                 commit_message=commit_message,
                 template_config=template_config,
                 description=description,
@@ -450,10 +471,18 @@ def create_evaluator(
 @app.command("update")
 @handle_errors
 def update_evaluator(
-    evaluator_id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Evaluator ID"),
+        typer.Argument(help="Evaluator name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using evaluator name instead of ID)",
+        ),
+    ] = None,
     name: Annotated[
         str | None,
         typer.Option(
@@ -511,7 +540,8 @@ def update_evaluator(
     try:
         with spinner("Updating evaluator"):
             evaluator = client.evaluators.update(
-                evaluator_id=evaluator_id,
+                evaluator=name_or_id,
+                space=space,
                 name=name,
                 description=description,
             )
@@ -528,10 +558,18 @@ def update_evaluator(
 @app.command("delete")
 @handle_errors
 def delete_evaluator(
-    evaluator_id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Evaluator ID"),
+        typer.Argument(help="Evaluator name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using evaluator name instead of ID)",
+        ),
+    ] = None,
     force: Annotated[
         bool,
         typer.Option(
@@ -575,9 +613,12 @@ def delete_evaluator(
     try:
         with spinner(
             "Deleting evaluator",
-            success_msg=f"Evaluator '{evaluator_id}' deleted successfully",
+            success_msg=f"Evaluator '{name_or_id}' deleted successfully",
         ):
-            client.evaluators.delete(evaluator_id=evaluator_id)
+            client.evaluators.delete(
+                evaluator=name_or_id,
+                space=space,
+            )
     except Exception as e:
         raise APIError(f"Failed to delete evaluator: {e}") from e
 
@@ -585,10 +626,18 @@ def delete_evaluator(
 @app.command("list-versions")
 @handle_errors
 def list_versions(
-    evaluator_id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Evaluator ID"),
+        typer.Argument(help="Evaluator name or ID"),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using evaluator name instead of ID)",
+        ),
+    ] = None,
     limit: Annotated[
         int,
         typer.Option(
@@ -601,6 +650,7 @@ def list_versions(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -641,7 +691,8 @@ def list_versions(
     try:
         with spinner("Fetching evaluator versions"):
             response = client.evaluators.list_versions(
-                evaluator_id=evaluator_id,
+                evaluator=name_or_id,
+                space=space,
                 limit=limit,
                 cursor=cursor,
             )
@@ -712,9 +763,9 @@ def get_version(
 @app.command("create-version")
 @handle_errors
 def create_version(
-    evaluator_id: Annotated[
+    name_or_id: Annotated[
         str,
-        typer.Argument(help="Evaluator ID"),
+        typer.Argument(help="Evaluator name or ID"),
     ],
     commit_message: Annotated[
         str,
@@ -809,6 +860,14 @@ def create_version(
             help="Data granularity: span, trace, or session",
         ),
     ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using evaluator name instead of ID)",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -863,7 +922,8 @@ def create_version(
             success_msg="Evaluator version created successfully",
         ):
             version = client.evaluators.create_version(
-                evaluator_id=evaluator_id,
+                evaluator=name_or_id,
+                space=space,
                 commit_message=commit_message,
                 template_config=template_config,
             )

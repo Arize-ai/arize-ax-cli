@@ -24,7 +24,6 @@ from ax.utils.console import (
 )
 from ax.utils.file_io import parse_output_option
 from ax.utils.json_source import load_json
-from ax.utils.projects import resolve_project_id
 
 app = typer.Typer(
     name="tasks",
@@ -72,21 +71,25 @@ def _parse_experiment_ids(value: str | None) -> list[str] | None:
 @app.command("list")
 @handle_errors
 def list_tasks(
-    space_id: Annotated[
-        str | None,
-        typer.Option("--space-id", help="Filter tasks by space ID"),
-    ] = None,
-    project_id: Annotated[
+    name: Annotated[
         str | None,
         typer.Option(
-            "--project-id", help="Filter tasks by project name or ID (base64)"
+            "--name",
+            "-n",
+            help="Case-insensitive substring filter on task name",
         ),
     ] = None,
-    dataset_id: Annotated[
+    project: Annotated[
         str | None,
-        typer.Option(
-            "--dataset-id", help="Filter tasks by dataset global ID (base64)"
-        ),
+        typer.Option("--project", help="Filter tasks by project name or ID"),
+    ] = None,
+    dataset: Annotated[
+        str | None,
+        typer.Option("--dataset", help="Filter tasks by dataset name or ID"),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option("--space", "-s", help="Space name or ID"),
     ] = None,
     task_type: Annotated[
         TaskType | None,
@@ -97,15 +100,27 @@ def list_tasks(
     ] = None,
     limit: Annotated[
         int,
-        typer.Option("--limit", "-l", help="Maximum number of tasks to return"),
+        typer.Option(
+            "--limit",
+            "-l",
+            help="Maximum number of tasks to return",
+        ),
     ] = 15,
     cursor: Annotated[
         str | None,
-        typer.Option("--cursor", help="Pagination cursor for next page"),
+        typer.Option(
+            "--cursor",
+            "-c",
+            help="Pagination cursor for next page",
+        ),
     ] = None,
     profile: Annotated[
         str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
+        typer.Option(
+            "--profile",
+            "-p",
+            help="Configuration profile to use",
+        ),
     ] = "",
     output: Annotated[
         str,
@@ -117,7 +132,11 @@ def list_tasks(
     ] = "",
     verbose: Annotated[
         bool,
-        typer.Option("--verbose", "-v", help="Enable verbose logs"),
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
     ] = False,
 ) -> None:
     """List evaluation tasks."""
@@ -129,15 +148,13 @@ def list_tasks(
         output if output else config.output.format
     )
 
-    if project_id is not None:
-        project_id = resolve_project_id(client, project_id, space_id)
-
     try:
         with spinner("Fetching tasks"):
             response = client.tasks.list(
-                space_id=space_id,
-                project_id=project_id,
-                dataset_id=dataset_id,
+                name=name,
+                space=space,
+                project=project,
+                dataset=dataset,
                 task_type=task_type,
                 limit=limit,
                 cursor=cursor,
@@ -153,7 +170,7 @@ def list_tasks(
 @app.command("get")
 @handle_errors
 def get_task(
-    task_id: Annotated[str, typer.Argument(help="Task global ID (base64)")],
+    task_id: Annotated[str, typer.Argument(help="Task name or ID")],
     profile: Annotated[
         str,
         typer.Option("--profile", "-p", help="Configuration profile to use"),
@@ -171,7 +188,7 @@ def get_task(
         typer.Option("--verbose", "-v", help="Enable verbose logs"),
     ] = False,
 ) -> None:
-    """Get a task by ID."""
+    """Get a task by name or ID."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -182,7 +199,7 @@ def get_task(
 
     try:
         with spinner("Fetching task"):
-            task = client.tasks.get(task_id=task_id)
+            task = client.tasks.get(task=task_id)
     except Exception as e:
         raise APIError(f"Failed to get task: {e}") from e
     else:
@@ -222,25 +239,26 @@ def create_task(
             ),
         ),
     ],
-    project_id: Annotated[
+    project: Annotated[
         str | None,
         typer.Option(
-            "--project-id",
-            help="Project name or ID (base64); mutually exclusive with --dataset-id",
+            "--project",
+            help="Project name or ID; mutually exclusive with --dataset",
         ),
     ] = None,
-    space_id: Annotated[
+    space: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID (required when using a project name instead of ID)",
+            "--space",
+            "-s",
+            help="Space name or ID (required when using a project name)",
         ),
     ] = None,
-    dataset_id: Annotated[
+    dataset: Annotated[
         str | None,
         typer.Option(
-            "--dataset-id",
-            help="Dataset global ID (base64); mutually exclusive with --project-id",
+            "--dataset",
+            help="Dataset name or ID; mutually exclusive with --project",
         ),
     ] = None,
     experiment_ids: Annotated[
@@ -291,18 +309,15 @@ def create_task(
     """Create a new evaluation task."""
     setup_logging(verbose)
 
-    if project_id is None and dataset_id is None:
-        raise UsageError("One of --project-id or --dataset-id must be provided")
-    if project_id is not None and dataset_id is not None:
-        raise UsageError("--project-id and --dataset-id are mutually exclusive")
+    if project is None and dataset is None:
+        raise UsageError("One of --project or --dataset must be provided")
+    if project is not None and dataset is not None:
+        raise UsageError("--project and --dataset are mutually exclusive")
     if sampling_rate is not None and not (0.0 <= sampling_rate <= 1.0):
         raise UsageError("--sampling-rate must be between 0.0 and 1.0")
 
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
-
-    if project_id is not None:
-        project_id = resolve_project_id(client, project_id, space_id)
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -316,8 +331,9 @@ def create_task(
                 name=name,
                 task_type=task_type,
                 evaluators=parsed_evaluators,
-                project_id=project_id,
-                dataset_id=dataset_id,
+                project=project,
+                dataset=dataset,
+                space=space,
                 experiment_ids=_parse_experiment_ids(experiment_ids),
                 sampling_rate=sampling_rate,
                 is_continuous=is_continuous,
@@ -337,7 +353,7 @@ def create_task(
 @app.command("trigger-run")
 @handle_errors
 def trigger_run(
-    task_id: Annotated[str, typer.Argument(help="Task global ID (base64)")],
+    task_id: Annotated[str, typer.Argument(help="Task name or ID")],
     data_start_time: Annotated[
         datetime | None,
         typer.Option(
@@ -423,7 +439,7 @@ def trigger_run(
     try:
         with spinner("Triggering task run", success_msg="Task run triggered"):
             run = client.tasks.trigger_run(
-                task_id=task_id,
+                task=task_id,
                 data_start_time=data_start_time,
                 data_end_time=data_end_time,
                 max_spans=max_spans,
@@ -453,7 +469,7 @@ def trigger_run(
 @app.command("list-runs")
 @handle_errors
 def list_runs(
-    task_id: Annotated[str, typer.Argument(help="Task global ID (base64)")],
+    task_id: Annotated[str, typer.Argument(help="Task name or ID")],
     status: Annotated[
         RunStatus | None,
         typer.Option(
@@ -467,11 +483,19 @@ def list_runs(
     ] = 15,
     cursor: Annotated[
         str | None,
-        typer.Option("--cursor", help="Pagination cursor for next page"),
+        typer.Option(
+            "--cursor",
+            "-c",
+            help="Pagination cursor for next page",
+        ),
     ] = None,
     profile: Annotated[
         str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
+        typer.Option(
+            "--profile",
+            "-p",
+            help="Configuration profile to use",
+        ),
     ] = "",
     output: Annotated[
         str,
@@ -483,7 +507,11 @@ def list_runs(
     ] = "",
     verbose: Annotated[
         bool,
-        typer.Option("--verbose", "-v", help="Enable verbose logs"),
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
     ] = False,
 ) -> None:
     """List runs for a task."""
@@ -498,7 +526,7 @@ def list_runs(
     try:
         with spinner("Fetching task runs"):
             response = client.tasks.list_runs(
-                task_id=task_id,
+                task=task_id,
                 status=status,
                 limit=limit,
                 cursor=cursor,

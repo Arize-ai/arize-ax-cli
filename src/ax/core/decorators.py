@@ -63,6 +63,10 @@ def handle_errors(f: Callable[P, R]) -> Callable[P, R]:
             new_line()
             warning("Operation cancelled by user")
             raise typer.Exit(code=130) from None
+        except typer.Abort:
+            new_line()
+            console.print("Goodbye!")
+            raise typer.Exit(code=0) from None
         except Exception as e:
             # Unexpected errors
             if "--verbose" in sys.argv or "-v" in sys.argv:

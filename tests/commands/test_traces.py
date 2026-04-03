@@ -247,7 +247,7 @@ class TestExportTracesFlight:
                 "export",
                 "my-project",
                 "--all",
-                "--space-id",
+                "--space",
                 "space-abc",
                 "--stdout",
             ],
@@ -265,7 +265,7 @@ class TestExportTracesFlight:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """--all without --space-id should fail."""
+        """--all without --space should fail."""
         result = cli_runner.invoke(
             app,
             ["export", "my-project", "--all", "--stdout"],
@@ -298,7 +298,7 @@ class TestExportTracesFlight:
                 "export",
                 "my-project",
                 "--all",
-                "--space-id",
+                "--space",
                 "space-abc",
                 "--stdout",
             ],
@@ -336,7 +336,7 @@ class TestExportTracesFlight:
                     "export",
                     "my-project",
                     "--all",
-                    "--space-id",
+                    "--space",
                     "space-abc",
                     "--output-dir",
                     str(tmp_path),
@@ -361,7 +361,7 @@ class TestExportTracesFlight:
                 "export",
                 "my-project",
                 "--all",
-                "--space-id",
+                "--space",
                 "space-abc",
                 "--stdout",
             ],

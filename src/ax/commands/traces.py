@@ -4,6 +4,7 @@ import json
 import sys
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -25,7 +26,6 @@ from ax.utils.export import make_export_dir, print_json_array, write_json_array
 from ax.utils.file_io import (
     parse_output_option,
 )
-from ax.utils.projects import resolve_project_id
 
 # Create traces subcommand app
 app = typer.Typer(
@@ -43,11 +43,12 @@ def list_spans(
         str,
         typer.Argument(help="Project name or ID"),
     ],
-    space_id: Annotated[
+    space: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID (required when using a project name instead of ID)",
+            "--space",
+            "-s",
+            help="Space name or ID (required when using a project name)",
         ),
     ] = None,
     start_time: Annotated[
@@ -83,6 +84,7 @@ def list_spans(
         str | None,
         typer.Option(
             "--cursor",
+            "-c",
             help="Pagination cursor for next page",
         ),
     ] = None,
@@ -116,8 +118,6 @@ def list_spans(
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 
-    resolved_id = resolve_project_id(client, project_id, space_id)
-
     output_format, output_file = parse_output_option(
         output if output else config.output.format
     )
@@ -134,7 +134,8 @@ def list_spans(
     try:
         with spinner("Fetching traces"):
             response = client.spans.list(
-                project_id=resolved_id,
+                project=project_id,
+                space=space,
                 start_time=start_dt,
                 end_time=end_dt,
                 filter=effective_filter,
@@ -160,9 +161,11 @@ def _build_trace_id_in_filter(trace_ids: list[str]) -> str:
 @app.command("export")
 @handle_errors
 def export_traces(
-    project: Annotated[
+    project_id: Annotated[
         str,
-        typer.Argument(help="Project name or ID"),
+        typer.Argument(
+            help="Project name or ID (name requires --space; use project name with --all)"
+        ),
     ],
     filter_expr: Annotated[
         str | None,
@@ -171,11 +174,12 @@ def export_traces(
             help="Filter expression applied to initial span lookup (e.g. \"status_code = 'ERROR'\").",
         ),
     ] = None,
-    space_id: Annotated[
+    space: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID (required when using a project name or --all)",
+            "--space",
+            "-s",
+            help="Space name or ID (required when using a project name or --all)",
         ),
     ] = None,
     limit: Annotated[
@@ -250,7 +254,7 @@ def export_traces(
     Phase 1: find spans matching --filter (or all spans) to collect trace IDs.
     Phase 2: fetch every span belonging to those traces.
 
-    Pass --all to use Arrow Flight for both phases (requires --space-id).
+    Pass --all to use Arrow Flight for both phases (requires --space).
     """
     setup_logging(verbose)
 
@@ -260,8 +264,8 @@ def export_traces(
     if not use_all and limit <= 0:
         raise typer.BadParameter("--limit must be a positive integer.")
 
-    if use_all and not space_id:
-        raise typer.BadParameter("--space-id is required when using --all.")
+    if use_all and not space:
+        raise typer.BadParameter("--space is required when using --all.")
 
     if use_all and limit != 50:
         warning("--limit is ignored when --all is set.")
@@ -282,12 +286,17 @@ def export_traces(
             f"--end-time ({end_dt.isoformat()})."
         )
 
+    if not stdout and output_dir == ".":
+        traces_dir = Path.cwd() / ".arize-tmp-traces"
+        traces_dir.mkdir(exist_ok=True)
+        output_dir = str(traces_dir)
+
     try:
         if use_all:
             _export_traces_flight(
                 client=client,
-                project=project,
-                space_id=space_id or "",
+                project=project_id,
+                space=space or "",
                 start_dt=start_dt,
                 end_dt=end_dt,
                 filter_expr=filter_expr,
@@ -297,8 +306,8 @@ def export_traces(
         else:
             _export_traces_rest(
                 client=client,
-                project=project,
-                space_id=space_id,
+                project_id=project_id,
+                space=space,
                 start_dt=start_dt,
                 end_dt=end_dt,
                 filter_expr=filter_expr,
@@ -315,8 +324,8 @@ def export_traces(
 def _export_traces_rest(
     *,
     client: ArizeClient,
-    project: str,
-    space_id: str | None,
+    project_id: str,
+    space: str | None,
     start_dt: datetime,
     end_dt: datetime,
     filter_expr: str | None,
@@ -325,11 +334,10 @@ def _export_traces_rest(
     stdout: bool,
 ) -> None:
     """Two-phase trace export using the REST API."""
-    resolved_id = resolve_project_id(client, project, space_id)
-
     with spinner("Phase 1: finding matching spans"):
         response = client.spans.list(
-            project_id=resolved_id,
+            project=project_id,
+            space=space,
             start_time=start_dt,
             end_time=end_dt,
             filter=filter_expr,
@@ -359,7 +367,8 @@ def _export_traces_rest(
     trace_filter = _build_trace_id_in_filter(trace_ids)
     with spinner("Phase 2: fetching all spans for traces"):
         response2 = client.spans.list(
-            project_id=resolved_id,
+            project=project_id,
+            space=space,
             start_time=start_dt,
             end_time=end_dt,
             filter=trace_filter,
@@ -382,7 +391,7 @@ def _export_traces_flight(
     *,
     client: ArizeClient,
     project: str,
-    space_id: str,
+    space: str,
     start_dt: datetime,
     end_dt: datetime,
     filter_expr: str | None,
@@ -397,7 +406,7 @@ def _export_traces_flight(
 
         with spinner("Phase 1: finding matching spans via Flight"):
             df1 = client.spans.export_to_df(
-                space_id=space_id,
+                space_id=space,
                 project_name=project,
                 start_time=start_dt,
                 end_time=end_dt,
@@ -421,7 +430,7 @@ def _export_traces_flight(
         trace_filter = _build_trace_id_in_filter(trace_ids)
         with spinner("Phase 2: fetching all spans for traces via Flight"):
             df2 = client.spans.export_to_df(
-                space_id=space_id,
+                space_id=space,
                 project_name=project,
                 start_time=start_dt,
                 end_time=end_dt,

@@ -4,6 +4,7 @@ import json
 import sys
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -20,7 +21,6 @@ from ax.utils.console import (
 )
 from ax.utils.datetime_parse import parse_optional_iso8601
 from ax.utils.export import make_export_dir, print_json_array, write_json_array
-from ax.utils.projects import resolve_project_id
 
 # Create spans subcommand app
 app = typer.Typer(
@@ -86,7 +86,7 @@ def _build_span_filter(
 @app.command("export")
 @handle_errors
 def export_spans(
-    project: Annotated[
+    project_id: Annotated[
         str,
         typer.Argument(help="Project name or ID"),
     ],
@@ -118,11 +118,12 @@ def export_spans(
             help='Filter expression (e.g. "status_code = \'ERROR\'", "latency_ms > 1000").',
         ),
     ] = None,
-    space_id: Annotated[
+    space: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID (required when using a project name instead of ID)",
+            "--space",
+            "-s",
+            help="Space ID (required when using --all for Arrow Flight export)",
         ),
     ] = None,
     limit: Annotated[
@@ -201,7 +202,7 @@ def export_spans(
     By default writes to a file under --output-dir; use --stdout to print
     JSON to stdout instead.
 
-    Pass --all to use Arrow Flight for bulk export (requires --space-id).
+    Pass --all to use Arrow Flight for bulk export (requires --space).
     """
     setup_logging(verbose)
 
@@ -211,8 +212,8 @@ def export_spans(
     if not use_all and limit <= 0:
         raise typer.BadParameter("--limit must be a positive integer.")
 
-    if use_all and not space_id:
-        raise typer.BadParameter("--space-id is required when using --all.")
+    if use_all and not space:
+        raise typer.BadParameter("--space is required when using --all.")
 
     if use_all and limit != 100:
         warning("--limit is ignored when --all is set.")
@@ -237,6 +238,11 @@ def export_spans(
             f"--end-time ({end_dt.isoformat()})."
         )
 
+    if not stdout and output_dir == ".":
+        traces_dir = Path.cwd() / ".arize-tmp-traces"
+        traces_dir.mkdir(exist_ok=True)
+        output_dir = str(traces_dir)
+
     try:
         if use_all:
             with spinner("Exporting spans via Arrow Flight"):
@@ -245,8 +251,8 @@ def export_spans(
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", DeprecationWarning)
                     df = client.spans.export_to_df(
-                        space_id=space_id or "",
-                        project_name=project,
+                        space_id=space or "",
+                        project_name=project_id,
                         start_time=start_dt,
                         end_time=end_dt,
                         where=filter_combined or "",
@@ -265,9 +271,9 @@ def export_spans(
                 success(f"Exported {len(records)} spans to {file_path}")
         else:
             with spinner("Exporting spans"):
-                resolved_id = resolve_project_id(client, project, space_id)
                 response = client.spans.list(
-                    project_id=resolved_id,
+                    project=project_id,
+                    space=space,
                     start_time=start_dt,
                     end_time=end_dt,
                     filter=filter_combined,

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.10.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.9.1...arize-ax-cli/v0.10.0) (2026-04-02)
+
+
+### 🎁 New Features
+
+* add --name filter to list commands ([#67517](https://github.com/Arize-ai/arize/issues/67517)) ([27be0b4](https://github.com/Arize-ai/arize/commit/27be0b4ccdc076e54e006319d888133bd7c87dd5))
+
+## [0.9.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.9.0...arize-ax-cli/v0.9.1) (2026-03-31)
+
+
+### ❔ Miscellaneous Chores
+
+* Pin specific version of the SDK, to avoid breaking changes ([#67405](https://github.com/Arize-ai/arize/issues/67405)) ([dc90d0f](https://github.com/Arize-ai/arize/commit/dc90d0f63c90e6464b92eed803c6794959e125d6))
+
+## [0.9.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.8.0...arize-ax-cli/v0.9.0) (2026-03-30)
+
+
+### 🎁 New Features
+
+* **General:** support name-or-ID lookup for get/update/delete commands ([#67198](https://github.com/Arize-ai/arize/issues/67198)) ([85e7a76](https://github.com/Arize-ai/arize/commit/85e7a763c208728f367515140bafe1382aa9b57c))
+* **General:** rename --space-id to --space and --project-id to --project ([#66726](https://github.com/Arize-ai/arize/issues/66726)) ([3791ce7](https://github.com/Arize-ai/arize/commit/3791ce738e77ee3f500e6b62bce73efac719ca74))
+* **skills:** Add agent skills install ([#65808](https://github.com/Arize-ai/arize/issues/65808)) ([1b04b2c](https://github.com/Arize-ai/arize/commit/1b04b2ce9eada229443145111c691b5177834535)), closes [#65807](https://github.com/Arize-ai/arize/issues/65807)
+
+
+### 📚 Documentation
+
+* **cli:** use positional profile name in profiles commands and add force delete option ([#66493](https://github.com/Arize-ai/arize/issues/66493)) ([2f1befc](https://github.com/Arize-ai/arize/commit/2f1befccc5e79393e3055e7cfdb787b4af397881))
+
 ## [0.8.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.7.1...arize-ax-cli/v0.8.0) (2026-03-23)
 
 

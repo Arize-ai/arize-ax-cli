@@ -26,6 +26,76 @@ class TestExperimentCommands:
         assert "list_runs" not in names
         assert "list-runs" not in names
 
+    def test_list_command_registered(self) -> None:
+        """Test that 'list' subcommand exists."""
+        names = [cmd.name for cmd in app.registered_commands]
+        assert "list" in names
+
+    def test_delete_command_registered(self) -> None:
+        """Test that 'delete' subcommand exists."""
+        names = [cmd.name for cmd in app.registered_commands]
+        assert "delete" in names
+
+
+class TestListExperiments:
+    """Tests for the 'ax experiments list' command."""
+
+    def test_calls_client_experiments_list_defaults(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Invoke 'list' with defaults and verify the SDK call."""
+        mock_client.experiments.list.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"experiments": []})
+        )
+
+        result = cli_runner.invoke(app, ["list"])
+        assert result.exit_code == 0
+        mock_client.experiments.list.assert_called_once_with(
+            dataset=None,
+            space=None,
+            limit=15,
+            cursor=None,
+        )
+
+    def test_list_with_dataset_and_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --dataset and --space are forwarded to the SDK."""
+        mock_client.experiments.list.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"experiments": []})
+        )
+
+        result = cli_runner.invoke(
+            app,
+            ["list", "--dataset", "ds-1", "--space", "space-abc"],
+        )
+        assert result.exit_code == 0
+        mock_client.experiments.list.assert_called_once_with(
+            dataset="ds-1",
+            space="space-abc",
+            limit=15,
+            cursor=None,
+        )
+
+    def test_list_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """API failure results in a non-zero exit code."""
+        mock_client.experiments.list.side_effect = Exception(
+            "connection refused"
+        )
+        result = cli_runner.invoke(app, ["list"])
+        assert result.exit_code != 0
+
 
 class TestGetExperiment:
     """Tests for the 'ax experiments get' command."""
@@ -44,8 +114,19 @@ class TestGetExperiment:
         result = cli_runner.invoke(app, ["get", "exp-1"])
         assert result.exit_code == 0
         mock_client.experiments.get.assert_called_once_with(
-            experiment_id="exp-1"
+            experiment="exp-1", dataset=None, space=None
         )
+
+    def test_get_sdk_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """SDK error results in a non-zero exit code."""
+        mock_client.experiments.get.side_effect = Exception("not found")
+        result = cli_runner.invoke(app, ["get", "exp-1"])
+        assert result.exit_code != 0
 
 
 class TestExportExperiment:
@@ -65,7 +146,9 @@ class TestExportExperiment:
         result = cli_runner.invoke(app, ["export", "exp-1", "--stdout"])
         assert result.exit_code == 0
         mock_client.experiments.list_runs.assert_called_once_with(
-            experiment_id="exp-1",
+            experiment="exp-1",
+            dataset=None,
+            space=None,
             all=False,
         )
 
@@ -85,7 +168,9 @@ class TestExportExperiment:
         )
         assert result.exit_code == 0
         mock_client.experiments.list_runs.assert_called_once_with(
-            experiment_id="exp-1",
+            experiment="exp-1",
+            dataset=None,
+            space=None,
             all=True,
         )
 
@@ -114,3 +199,85 @@ class TestExportExperiment:
                 )
                 assert result.exit_code == 0
                 mock_write.assert_called_once()
+
+
+class TestDeleteExperiment:
+    """Tests for the 'ax experiments delete' command."""
+
+    def test_delete_force_skips_confirmation(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--force bypasses the prompt and deletes the experiment."""
+        result = cli_runner.invoke(app, ["delete", "exp-1", "--force"])
+        assert result.exit_code == 0
+        mock_client.experiments.delete.assert_called_once_with(
+            experiment="exp-1",
+            dataset=None,
+            space=None,
+        )
+
+    def test_delete_confirms_yes_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Confirming the prompt proceeds with deletion."""
+        result = cli_runner.invoke(app, ["delete", "exp-1"], input="y\n")
+        assert result.exit_code == 0
+        mock_client.experiments.delete.assert_called_once_with(
+            experiment="exp-1",
+            dataset=None,
+            space=None,
+        )
+
+    def test_delete_declines_does_not_call_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Declining the confirmation leaves the experiment untouched."""
+        result = cli_runner.invoke(app, ["delete", "exp-1"], input="n\n")
+        assert result.exit_code == 0
+        mock_client.experiments.delete.assert_not_called()
+
+    def test_delete_with_dataset_and_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--dataset and --space are forwarded to the SDK."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete",
+                "my-exp",
+                "--force",
+                "--dataset",
+                "ds-1",
+                "--space",
+                "space-abc",
+            ],
+        )
+        assert result.exit_code == 0
+        mock_client.experiments.delete.assert_called_once_with(
+            experiment="my-exp",
+            dataset="ds-1",
+            space="space-abc",
+        )
+
+    def test_delete_sdk_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """API failure results in a non-zero exit code."""
+        mock_client.experiments.delete.side_effect = Exception("not found")
+        result = cli_runner.invoke(app, ["delete", "exp-1", "--force"])
+        assert result.exit_code != 0
