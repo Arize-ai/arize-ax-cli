@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.10.0...arize-ax-cli/v0.11.0) (2026-04-05)
+
+
+### 🎁 New Features
+
+* **annotation-queues:** add annotation-queues command group ([#67516](https://github.com/Arize-ai/arize/issues/67516)) ([24147d5](https://github.com/Arize-ai/arize/commit/24147d5a482d6806f5dd7a07bd83a84bbb8511a6))
+
 ## [0.10.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.9.1...arize-ax-cli/v0.10.0) (2026-04-02)
 
 

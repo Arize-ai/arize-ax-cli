@@ -21,7 +21,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "arize==8.9.2",
+    "arize==8.11.0",
     "pydantic>=2.0.0, <3",
     "questionary>=2.0.0, <3",
     "rich>=13.0.0, <14",
@@ -119,7 +119,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
     "ANN401", # Allow Any in test helpers
+    "D102",   # Missing docstring in public method (not required in tests)
     "D104",   # Missing docstring in public package
+    "D301",   # Use r""" for docstrings with backslashes (not required in tests)
     "DTZ001", # Allow naive datetime usage in tests
     "S101",   # Allow assert statements in tests
     "S108",   # Allow insecure usage of temporary file or directory

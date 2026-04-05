@@ -50,6 +50,7 @@
   - [Global Options](#global-options)
   - [AI Integrations](#ai-integrations)
   - [Annotation Configs](#annotation-configs)
+  - [Annotation Queues](#annotation-queues)
   - [API Keys](#api-keys)
   - [Cache](#cache)
   - [Datasets](#datasets)
@@ -694,6 +695,60 @@ ax annotation-configs delete <annotation-config> [--force]
 | `freeform`    | _(none)_                                                                | —                          |
 | `continuous`  | `--min-score`, `--max-score`                                            | `--optimization-direction` |
 | `categorical` | `--value` (repeat for multiple labels, e.g. `--value good --value bad`) | `--optimization-direction` |
+
+### Annotation Queues
+
+Manage annotation queues for human review and labeling workflows:
+
+```bash
+# List annotation queues
+ax annotation-queues list [--space <space>] [--name <substring>] [--limit 15] [--cursor <cursor>]
+
+# Get a specific annotation queue
+ax annotation-queues get <queue>
+
+# Create an annotation queue (at least one --annotation-config-id required)
+ax annotation-queues create --name "My Queue" --space <space> \
+  --annotation-config-id <config-id>
+
+# Create a queue with annotators and assignment method
+ax annotation-queues create --name "My Queue" --space <space> \
+  --annotation-config-id <config-id> \
+  --annotator-email alice@example.com --annotator-email bob@example.com \
+  --instructions "Please evaluate carefully" \
+  --assignment-method random
+
+# Update a queue (list fields fully replace existing values)
+ax annotation-queues update <queue> [--name <name>] [--instructions <text>] \
+  [--annotation-config-id <id>] [--annotator-email <email>]
+
+# Delete a queue
+ax annotation-queues delete <queue> [--force]
+
+# List records in a queue
+ax annotation-queues list-records <queue> [--space <space>] [--limit 15] [--cursor <cursor>]
+
+# Delete records from a queue
+ax annotation-queues delete-records <queue> --record-id <id> [--record-id <id> ...] [--force]
+
+# Annotate a record (upserted by annotation config name; call again for additional configs)
+ax annotation-queues annotate-record <queue> <record-id> \
+  --annotation-name "quality" [--score 0.9] [--label good] [--text "Looks great"]
+
+# Assign users to a record (replaces all existing assignments)
+ax annotation-queues assign-record <queue> <record-id> \
+  --email alice@example.com [--email bob@example.com]
+
+# Remove all assignments from a record
+ax annotation-queues assign-record <queue> <record-id>
+```
+
+**Assignment methods:**
+
+| Method   | Behavior                                      |
+| -------- | --------------------------------------------- |
+| `all`    | Every annotator is assigned to every record (default) |
+| `random` | Each record is randomly assigned to one annotator |
 
 ### API Keys
 
