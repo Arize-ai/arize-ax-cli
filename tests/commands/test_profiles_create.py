@@ -7,7 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ax.commands.profiles import app
-from ax.config.schema import Config
+from ax.config.schema import AuthConfig, Config
 
 
 @pytest.fixture
@@ -209,6 +209,38 @@ class TestFlags:
         assert result.exit_code == 0, result.output
         mock_cm.save.assert_called_once()
 
+    def test_single_host_and_port_flags_set_routing(
+        self, runner: CliRunner
+    ) -> None:
+        """--single-host and --single-port flags set on-prem routing config."""
+        saved_configs: list[Config] = []
+
+        def capture_save(config: Config, _profile: str) -> None:
+            saved_configs.append(config)
+
+        with patch("ax.commands.profiles.ConfigManager") as mock_cm:
+            mock_cm.list_profiles.return_value = []
+            mock_cm.exists.return_value = False
+            mock_cm.save.side_effect = capture_save
+
+            result = runner.invoke(
+                app,
+                [
+                    "create",
+                    "onprem-profile",
+                    "--api-key",
+                    "onprem-key",
+                    "--single-host",
+                    "arize.yourcompany.com",
+                    "--single-port",
+                    "443",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert saved_configs[0].routing.single_host == "arize.yourcompany.com"
+        assert saved_configs[0].routing.single_port == "443"
+
     def test_env_var_detection_skipped_when_flag_provided(
         self, runner: CliRunner
     ) -> None:
@@ -397,3 +429,44 @@ class TestCreateProfileNameOverwriteAndActive:
 
         assert result.exit_code != 0
         mock_cm.save.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Update command flag tests
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFlags:
+    """Tests for --single-host and --single-port flags on the update command."""
+
+    def test_single_host_and_port_flags_update_routing(
+        self, runner: CliRunner
+    ) -> None:
+        """--single-host and --single-port flags update on-prem routing via merge."""
+        existing_config = Config(auth=AuthConfig(api_key="existing-key"))
+        saved_configs: list[Config] = []
+
+        def capture_save(config: Config, _profile: str) -> None:
+            saved_configs.append(config)
+
+        with patch("ax.commands.profiles.ConfigManager") as mock_cm:
+            mock_cm.get_active_profile.return_value = "onprem-profile"
+            mock_cm.exists.return_value = True
+            mock_cm.load.return_value = existing_config
+            mock_cm.save.side_effect = capture_save
+
+            result = runner.invoke(
+                app,
+                [
+                    "update",
+                    "onprem-profile",
+                    "--single-host",
+                    "arize.yourcompany.com",
+                    "--single-port",
+                    "443",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert saved_configs[0].routing.single_host == "arize.yourcompany.com"
+        assert saved_configs[0].routing.single_port == "443"

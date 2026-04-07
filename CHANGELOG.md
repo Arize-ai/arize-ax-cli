@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.11.0...arize-ax-cli/v0.12.0) (2026-04-07)
+
+
+### 🎁 New Features
+
+* **cli:** add --single-host and --single-port flags for on-prem deployments ([#68107](https://github.com/Arize-ai/arize/issues/68107)) ([24252b2](https://github.com/Arize-ai/arize/commit/24252b2ef2c56a8b0d5e850675e1b39fc95476a4))
+
 ## [0.11.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.10.0...arize-ax-cli/v0.11.0) (2026-04-05)
 
 

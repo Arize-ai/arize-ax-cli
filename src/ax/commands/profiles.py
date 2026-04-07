@@ -78,6 +78,20 @@ def create(
         str | None,
         typer.Option("--region", help="Routing region (e.g. us-east-1b)."),
     ] = None,
+    single_host: Annotated[
+        str | None,
+        typer.Option(
+            "--single-host",
+            help="Single endpoint host for on-prem deployments (e.g. arize.yourcompany.com).",
+        ),
+    ] = None,
+    single_port: Annotated[
+        str | None,
+        typer.Option(
+            "--single-port",
+            help="Single endpoint port for on-prem deployments (e.g. 443).",
+        ),
+    ] = None,
     # --- Output ---
     output_format: Annotated[
         str | None,
@@ -99,10 +113,10 @@ def create(
 
     Creates a new configuration profile with API key, defaults, and
     preferences. Non-interactive CLI flags are limited to --api-key, --region,
-    and --output-format; use --from-file (TOML) or interactive setup for hosts,
-    storage, security, transport, and other sections. Detects existing
-    ARIZE_* environment variables when running interactively (only when
-    neither flags nor --from-file are used).
+    --single-host, --single-port, and --output-format; use --from-file (TOML)
+    or interactive setup for hosts, storage, security, transport, and other
+    sections. Detects existing ARIZE_* environment variables when running
+    interactively (only when neither flags nor --from-file are used).
 
     Precedence (highest to lowest): CLI flags > --from-file (TOML) >
     interactive prompts.
@@ -127,6 +141,8 @@ def create(
         for k, v in {
             "api_key": api_key,
             "region": region,
+            "single_host": single_host,
+            "single_port": single_port,
             "output_format": output_format,
         }.items()
         if v is not None
@@ -239,6 +255,20 @@ def update(
         str | None,
         typer.Option("--region", help="Routing region (e.g. us-east-1b)."),
     ] = None,
+    single_host: Annotated[
+        str | None,
+        typer.Option(
+            "--single-host",
+            help="Single endpoint host for on-prem deployments (e.g. arize.yourcompany.com).",
+        ),
+    ] = None,
+    single_port: Annotated[
+        str | None,
+        typer.Option(
+            "--single-port",
+            help="Single endpoint port for on-prem deployments (e.g. 443).",
+        ),
+    ] = None,
     # --- Output ---
     output_format: Annotated[
         str | None,
@@ -254,11 +284,11 @@ def update(
 ) -> None:
     """Update an existing configuration profile.
 
-    CLI flags are limited to --api-key, --region, and --output-format; use
-    --from-file (TOML) for other fields. With --from-file, the profile is
-    replaced by the file contents; any flags you pass are applied on top (CLI
-    overrides file). With flags only, only the specified fields are updated;
-    all others are preserved.
+    CLI flags are limited to --api-key, --region, --single-host, --single-port,
+    and --output-format; use --from-file (TOML) for other fields. With
+    --from-file, the profile is replaced by the file contents; any flags you
+    pass are applied on top (CLI overrides file). With flags only, only the
+    specified fields are updated; all others are preserved.
     """
     setup_logging(verbose)
 
@@ -275,6 +305,8 @@ def update(
         for k, v in {
             "api_key": api_key,
             "region": region,
+            "single_host": single_host,
+            "single_port": single_port,
             "output_format": output_format,
         }.items()
         if v is not None
