@@ -7,7 +7,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from ax.commands.datasets import _validate_examples_structure, app
+from ax.commands.datasets import (
+    _append_batch_with_retry,
+    _is_rate_limited,
+    _validate_examples_structure,
+    app,
+)
 
 
 class TestDatasetCommands:
@@ -595,3 +600,174 @@ class TestValidateExamplesStructure:
         """Empty, non-dict, and empty-dict examples should raise."""
         with pytest.raises(Exception, match=match):
             _validate_examples_structure(examples)
+
+
+class TestIsRateLimited:
+    """Tests for the _is_rate_limited helper."""
+
+    @pytest.mark.parametrize(
+        "exc_msg,expected",
+        [
+            ("HTTP 429 Too Many Requests", True),
+            ("429", True),
+            ("Too Many Requests", True),
+            ("HTTP 500 Internal Server Error", False),
+            ("connection refused", False),
+        ],
+    )
+    def test_detects_rate_limit_from_exception_message(
+        self, exc_msg: str, expected: bool
+    ) -> None:
+        """Rate limit detection based on exception string content."""
+        assert _is_rate_limited(Exception(exc_msg)) is expected
+
+
+class TestAppendBatchWithRetry:
+    """Tests for the _append_batch_with_retry helper."""
+
+    def test_appends_all_examples_in_batches(self) -> None:
+        """All examples are appended when no errors occur."""
+        client = MagicMock()
+        examples = [{"q": f"question_{i}"} for i in range(5)]
+
+        appended, failed = _append_batch_with_retry(
+            client,
+            examples,
+            dataset="ds-1",
+            space=None,
+            dataset_version_id="",
+            batch_size=2,
+            max_retries=3,
+        )
+
+        assert appended == 5
+        assert failed == 0
+        # 3 batches: [0,1], [2,3], [4]
+        assert client.datasets.append_examples.call_count == 3
+
+    @patch("ax.commands.datasets.time.sleep")
+    def test_retries_on_rate_limit_then_succeeds(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """Rate-limited batch is retried after backoff delay."""
+        client = MagicMock()
+        # First call raises 429, second succeeds
+        client.datasets.append_examples.side_effect = [
+            Exception("HTTP 429 Too Many Requests"),
+            None,
+        ]
+        examples = [{"q": "test"}]
+
+        appended, failed = _append_batch_with_retry(
+            client,
+            examples,
+            dataset="ds-1",
+            space=None,
+            dataset_version_id="",
+            batch_size=10,
+            max_retries=3,
+        )
+
+        assert appended == 1
+        assert failed == 0
+        assert mock_sleep.call_count == 1
+
+    @patch("ax.commands.datasets.time.sleep")
+    def test_falls_back_to_single_row_on_persistent_batch_failure(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """When batch fails after all retries, falls back to single-row inserts."""
+        client = MagicMock()
+        # Batch calls fail, single-row calls succeed
+        client.datasets.append_examples.side_effect = [
+            Exception("500 Server Error"),
+            Exception("500 Server Error"),
+            Exception("500 Server Error"),
+            # Single-row fallback calls succeed
+            None,
+            None,
+        ]
+        examples = [{"q": "a"}, {"q": "b"}]
+
+        appended, failed = _append_batch_with_retry(
+            client,
+            examples,
+            dataset="ds-1",
+            space=None,
+            dataset_version_id="",
+            batch_size=10,
+            max_retries=3,
+        )
+
+        assert appended == 2
+        assert failed == 0
+
+    @patch("ax.commands.datasets.time.sleep")
+    def test_counts_permanently_failed_rows(
+        self, mock_sleep: MagicMock
+    ) -> None:
+        """Rows that fail even as single inserts are counted as failures."""
+        client = MagicMock()
+        # All calls fail
+        client.datasets.append_examples.side_effect = Exception(
+            "permanent error"
+        )
+        examples = [{"q": "a"}]
+
+        appended, failed = _append_batch_with_retry(
+            client,
+            examples,
+            dataset="ds-1",
+            space=None,
+            dataset_version_id="",
+            batch_size=10,
+            max_retries=2,
+        )
+
+        assert appended == 0
+        assert failed == 1
+
+
+class TestAppendWithBatching:
+    """Tests for the append command with batch-size flag."""
+
+    def test_append_large_payload_uses_batching(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Payloads larger than batch-size trigger batched upload."""
+        examples = [{"q": f"question_{i}"} for i in range(5)]
+        result = cli_runner.invoke(
+            app,
+            [
+                "append",
+                "ds-1",
+                "--json",
+                json.dumps(examples),
+                "--batch-size",
+                "2",
+            ],
+        )
+        assert result.exit_code == 0
+        # 3 batch calls: [0,1], [2,3], [4]
+        assert mock_client.datasets.append_examples.call_count == 3
+
+    def test_append_small_payload_uses_single_call(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Payloads within batch-size are sent in one call."""
+        mock_client.datasets.append_examples.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1"})
+        )
+        examples = [{"q": "test"}]
+        result = cli_runner.invoke(
+            app,
+            ["append", "ds-1", "--json", json.dumps(examples)],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.append_examples.assert_called_once()
