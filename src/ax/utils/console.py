@@ -85,9 +85,13 @@ def error(message: str) -> None:
     console.print(f"[red]✗ Error:[/red] {message}")
 
 
-def warning(message: str) -> None:
+def warning(message: str, show_symbol: bool = True) -> None:
     """Print warning message."""
-    console.print(f"[yellow]⚠ {message}[/yellow]")
+    msg = "[yellow]"
+    if show_symbol:
+        msg += "⚠ "
+    msg += f"{message}[/yellow]"
+    console.print(msg)
 
 
 def info(message: str) -> None:

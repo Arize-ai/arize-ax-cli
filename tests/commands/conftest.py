@@ -31,6 +31,7 @@ def mock_client() -> MagicMock:
     client.spans = MagicMock()
     client.projects = MagicMock()
     client.tasks = MagicMock()
+    client.spaces = MagicMock()
     return client
 
 
@@ -75,6 +76,10 @@ def patch_config_and_client(
         ),
         patch(
             "ax.commands.tasks.ArizeClient",
+            return_value=mock_client,
+        ),
+        patch(
+            "ax.commands.spaces.ArizeClient",
             return_value=mock_client,
         ),
     ):

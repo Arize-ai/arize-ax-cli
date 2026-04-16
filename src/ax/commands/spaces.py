@@ -11,6 +11,7 @@ from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
 from ax.utils.console import (
+    info,
     setup_logging,
     spinner,
     warning,
@@ -316,3 +317,70 @@ def update_space(
             format_type=output_format,
             output_file=output_file,
         )
+
+
+@app.command("delete")
+@handle_errors
+def delete_space(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Space name or ID"),
+    ],
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Skip confirmation prompt",
+        ),
+    ] = False,
+    profile: Annotated[
+        str,
+        typer.Option(
+            "--profile",
+            "-p",
+            help="Configuration profile to use",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Delete a space and all resources within it."""
+    setup_logging(verbose)
+    config = ConfigManager.load(profile, expand_env_vars=True)
+    client = ArizeClient(**asdict(config.to_sdk_config()))
+
+    if not force:
+        warning("This action is irreversible and will permanently delete:")
+        warning(
+            "  \u2022 The space and all of its contents",
+            show_symbol=False,
+        )
+        warning(
+            "  \u2022 All models, monitors, and dashboards",
+            show_symbol=False,
+        )
+        warning(
+            "  \u2022 All datasets, custom metrics, and experiments",
+            show_symbol=False,
+        )
+
+        confirmation = typer.prompt("\nTo confirm, type the space name or ID")
+        if confirmation != name_or_id:
+            info("Space not deleted")
+            raise typer.Exit()
+
+    try:
+        with spinner(
+            "Deleting space",
+            success_msg=f"Space '{name_or_id}' deleted successfully",
+        ):
+            client.spaces.delete(space=name_or_id)
+    except Exception as e:
+        raise APIError(f"Failed to delete space: {e}") from e

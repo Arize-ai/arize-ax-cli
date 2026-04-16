@@ -21,7 +21,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "arize==8.11.0",
+    "arize>=8.13.0",
     "pydantic>=2.0.0, <3",
     "questionary>=2.0.0, <3",
     "rich>=13.0.0, <14",
@@ -63,7 +63,7 @@ only-packages = true
 packages = ["src/ax"]
 
 [tool.hatch.build.targets.sdist]
-exclude = ["tests", "docs"]
+exclude = ["tests", "docs", "AGENTS.md", "DEVELOPMENT.md"]
 
 [tool.ruff]
 target-version = "py310"

@@ -717,6 +717,17 @@ task lint
 # This runs: ruff format . && ruff check --fix .
 ```
 
+### Pre-commit Hooks (optional)
+
+Install pre-commit hooks to run ruff and mypy automatically on every commit:
+
+```bash
+# From the repo root
+pre-commit install
+```
+
+For manual checks outside of a commit, use the task commands (`task lint`, `task type-check`).
+
 ### Type Checking
 
 We use [mypy](https://mypy-lang.org/) for static type checking.

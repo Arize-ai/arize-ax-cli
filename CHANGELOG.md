@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.12.0...arize-ax-cli/v0.13.0) (2026-04-16)
+
+
+### 🎁 New Features
+
+* **cli:** add `spaces delete` command with confirmation prompt ([#68721](https://github.com/Arize-ai/arize/issues/68721)) ([d36f5b0](https://github.com/Arize-ai/arize/commit/d36f5b05ef879f717e2b57d055491e20ff1686a3))
+
 ## [0.12.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.11.0...arize-ax-cli/v0.12.0) (2026-04-07)
 
 
