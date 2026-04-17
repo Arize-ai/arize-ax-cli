@@ -340,10 +340,10 @@ class TestCreateProfileNameOverwriteAndActive:
         # User declined — config should not be saved
         mock_cm.save.assert_not_called()
 
-    def test_set_active_profile_called_for_non_default(
+    def test_set_active_profile_called_after_create(
         self, runner: CliRunner
     ) -> None:
-        """set_active_profile is called when a non-default profile is created."""
+        """set_active_profile is called after a profile is created."""
         with patch("ax.commands.profiles.ConfigManager") as mock_cm:
             mock_cm.list_profiles.return_value = []
             mock_cm.exists.return_value = False
@@ -360,30 +360,6 @@ class TestCreateProfileNameOverwriteAndActive:
 
         assert result.exit_code == 0, result.output
         mock_cm.set_active_profile.assert_called_once_with("my-profile")
-
-    def test_set_active_profile_not_called_for_default(
-        self, runner: CliRunner, tmp_path: Path
-    ) -> None:
-        """set_active_profile is NOT called when the profile name is 'default'."""
-        toml_file = tmp_path / "c.toml"
-        toml_file.write_bytes(b'[auth]\napi_key = "k"\n')
-
-        with patch("ax.commands.profiles.ConfigManager") as mock_cm:
-            mock_cm.list_profiles.return_value = []
-            mock_cm.exists.return_value = False
-
-            # No positional arg → defaults to "default"
-            result = runner.invoke(
-                app,
-                [
-                    "create",
-                    "--from-file",
-                    str(toml_file),
-                ],
-            )
-
-        assert result.exit_code == 0, result.output
-        mock_cm.set_active_profile.assert_not_called()
 
     def test_flags_on_existing_profile_raises_error(
         self, runner: CliRunner

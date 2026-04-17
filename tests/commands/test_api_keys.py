@@ -213,6 +213,47 @@ class TestCreateApiKey:
         call_kwargs = mock_client.api_keys.create.call_args.kwargs
         assert call_kwargs["name"] == "Prod Key"
         assert call_kwargs["key_type"] == "user"
+        assert call_kwargs["space"] is None
+
+    def test_create_with_space_passes_to_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --space is forwarded to the SDK as space=."""
+        mock_client.api_keys.create.return_value = _make_api_key_created()
+
+        result = _invoke(
+            [
+                "api-keys",
+                "create",
+                "--name",
+                "Svc Key",
+                "--key-type",
+                "service",
+                "--space",
+                "my-space",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            mock_client.api_keys.create.call_args.kwargs["space"] == "my-space"
+        )
+
+    def test_create_space_id_flag_no_longer_accepted(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--space-id should no longer be accepted (renamed to --space)."""
+        result = _invoke(
+            ["api-keys", "create", "--name", "Key", "--space-id", "sp-123"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create.assert_not_called()
 
     def test_create_displays_save_warning(
         self, mock_config: MagicMock, mock_client: MagicMock

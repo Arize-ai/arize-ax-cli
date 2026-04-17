@@ -162,11 +162,12 @@ def create_api_key(
             ),
         ),
     ] = None,
-    space_id: Annotated[
+    space: Annotated[
         str | None,
         typer.Option(
-            "--space-id",
-            help="Space ID (required when --key-type is 'service')",
+            "--space",
+            "-s",
+            help="Space name or ID (required when --key-type is 'service')",
         ),
     ] = None,
     profile: Annotated[
@@ -200,9 +201,9 @@ def create_api_key(
 
     \b
     - user:    Authenticates as you with your full permissions.
-               --space-id must NOT be set.
+               --space must NOT be set.
     - service: Scoped to a specific space with limited roles.
-               --space-id is REQUIRED.
+               --space is REQUIRED.
 
     The raw key value is printed once after creation. Save it securely —
     it will not be shown again.
@@ -226,7 +227,7 @@ def create_api_key(
                 description=description,
                 key_type=key_type.value,
                 expires_at=expires_at_dt,
-                space_id=space_id,
+                space=space,
             )
     except Exception as e:
         raise APIError(f"Failed to create API key: {e}") from e

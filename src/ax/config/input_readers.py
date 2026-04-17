@@ -17,7 +17,7 @@ from ax.config.schema import (
     SecurityConfig,
     TransportConfig,
 )
-from ax.utils.console import prompt
+from ax.utils.console import console, prompt
 
 INSERT_VALUE = "Insert value"
 USE_ENV_VAR = "Use environment variable"
@@ -90,6 +90,15 @@ def read_int_field(
 
 def read_api_key() -> str:
     """Read the API key from user input or environment variable."""
+    console.print(
+        "\n[bold]Where to find your API key[/bold]\n"
+        "  Visit [cyan]https://app.arize.com[/cyan] and go to [bold]Settings[/bold].\n"
+        "  Two key types are available:\n"
+        "  • [bold green]Service key[/bold green] [dim](recommended)[/dim] — "
+        "space-scoped and not tied to a personal account, safer for programmatic use. "
+        "Make sure to copy the key for the correct space.\n"
+        "  • [bold]User key[/bold] — grants the same access you already have as a user\n"
+    )
     return read_str_field(
         "API Key",
         example="ak-123...",

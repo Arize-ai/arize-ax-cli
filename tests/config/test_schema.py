@@ -15,16 +15,17 @@ from ax.config.schema import (
     SecurityConfig,
     StorageConfig,
     TransportConfig,
+    UpdateConfig,
 )
 
 
 class TestProfileConfig:
     """Tests for ProfileConfig model."""
 
-    def test_default_profile_name(self) -> None:
-        """Test that default profile name is 'default'."""
+    def test_default_profile_name_is_empty(self) -> None:
+        """Test that profile name defaults to empty string."""
         profile = ProfileConfig()
-        assert profile.name == "default"
+        assert profile.name == ""
 
     def test_custom_profile_name(self) -> None:
         """Test creating profile with custom name."""
@@ -273,7 +274,7 @@ class TestConfig:
         """Test creating minimal valid config."""
         config = Config(auth=AuthConfig(api_key="ak-test123"))
         assert config.auth.api_key == "ak-test123"
-        assert config.profile.name == "default"
+        assert config.profile.name == ""
         assert config.routing.region == ""
         assert config.output.format == "table"
 
@@ -359,3 +360,23 @@ class TestConfig:
         sdk_config = config.to_sdk_config()
 
         assert sdk_config.region == Region.UNSET
+
+
+class TestUpdateConfig:
+    """Tests for UpdateConfig model."""
+
+    def test_update_config_defaults(self) -> None:
+        """UpdateConfig is present on Config with correct defaults."""
+        config = Config(auth=AuthConfig(api_key="test-key"))
+        assert isinstance(config.update, UpdateConfig)
+        assert config.update.check_interval_hours == 6.0
+        assert config.update.enabled is True
+
+    def test_update_config_custom_values(self) -> None:
+        """UpdateConfig accepts custom interval and disabled flag."""
+        config = Config(
+            auth=AuthConfig(api_key="test-key"),
+            update=UpdateConfig(check_interval_hours=12.0, enabled=False),
+        )
+        assert config.update.check_interval_hours == 12.0
+        assert config.update.enabled is False

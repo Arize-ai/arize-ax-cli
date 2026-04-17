@@ -18,7 +18,8 @@ class TestProfilesValidate:
     ) -> None:
         """Validate on a valid profile should report it's valid."""
         config = Config(auth=AuthConfig(api_key="ak-test123"))
-        ConfigManager.save(config, "default")
+        ConfigManager.save(config, "test")
+        ConfigManager.ACTIVE_PROFILE_FILE.write_text("test")
 
         runner = CliRunner()
         result = runner.invoke(app, ["profiles", "validate"])
@@ -42,8 +43,9 @@ class TestProfilesValidate:
     ) -> None:
         """Validate on an invalid profile should show validation errors and a hint."""
         bad_data = {"auth": {"api_key": ""}}  # empty key is invalid
-        with open(ConfigManager.DEFAULT_CONFIG_FILE, "wb") as f:
+        with open(ConfigManager.PROFILES_DIR / "test.toml", "wb") as f:
             tomli_w.dump(bad_data, f)
+        ConfigManager.ACTIVE_PROFILE_FILE.write_text("test")
 
         runner = CliRunner()
         result = runner.invoke(app, ["profiles", "validate"])

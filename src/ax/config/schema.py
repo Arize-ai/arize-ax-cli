@@ -17,7 +17,7 @@ def _str_to_bool(value: bool | str) -> bool:
 class ProfileConfig(BaseModel):
     """Profile metadata."""
 
-    name: str = Field(default="default", description="Profile name")
+    name: str = Field(default="", description="Profile name")
 
 
 class AuthConfig(BaseModel):
@@ -221,6 +221,20 @@ class OutputConfig(BaseModel):
     format: Literal["table", "json", "csv", "parquet"] = Field(default="table")
 
 
+class UpdateConfig(BaseModel):
+    """Update check configuration."""
+
+    check_interval_hours: float = Field(
+        default=6.0,
+        gt=0,
+        description="Hours between PyPI version checks",
+    )
+    enabled: bool = Field(
+        default=True,
+        description="Enable background update checks",
+    )
+
+
 class Config(BaseModel):
     """Root configuration model."""
 
@@ -231,6 +245,7 @@ class Config(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
+    update: UpdateConfig = Field(default_factory=UpdateConfig)
 
     model_config = {"extra": "ignore"}
 

@@ -130,3 +130,33 @@ class TestMainCLIBehavior:
         """An unrecognised command name exits with a non-zero code."""
         result = runner.invoke(app, ["nonexistent-command"])
         assert result.exit_code != 0
+
+    def test_upgrade_warning_shown_after_subcommand(self) -> None:
+        """result_callback prints upgrade warning when newer version is available."""
+        with (
+            patch(
+                "ax.utils.upgrade_check.should_upgrade",
+                return_value=True,
+            ),
+            patch("ax.cli._start_upgrade_check"),
+            patch("ax.commands.spaces.ArizeClient"),
+            patch("ax.config.manager.ConfigManager.load"),
+        ):
+            result = runner.invoke(app, ["spaces", "list"])
+        assert "New version of ax available" in result.output
+
+    def test_upgrade_warning_suppressed_for_upgrade_command(self) -> None:
+        """result_callback does not print warning after 'ax upgrade' runs."""
+        with (
+            patch(
+                "ax.utils.upgrade_check.should_upgrade",
+                return_value=True,
+            ),
+            patch("ax.cli._start_upgrade_check"),
+            patch(
+                "ax.utils.upgrade_check.fetch_pypi_version",
+                return_value="9.9.9",
+            ),
+        ):
+            result = runner.invoke(app, ["upgrade", "--help"])
+        assert "New version of ax available" not in result.output

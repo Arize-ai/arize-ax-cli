@@ -4,6 +4,10 @@ Integration tests run against the real Arize API and require:
   - ARIZE_API_KEY environment variable set to a valid API key
   - (Optional) ARIZE_TEST_SPACE set to a space name or ID to use as the test target.
     If not set, the first space returned by ``ax spaces list`` is used.
+  - (Optional) ARIZE_TEST_USER_ID set to a user global ID (base64-encoded).
+    Required for role binding lifecycle tests.
+  - (Optional) ARIZE_TEST_ROLE_ID set to a role global ID (base64-encoded).
+    Required for role binding lifecycle tests.
 
 Run::
 
@@ -93,3 +97,31 @@ def first_space(api_key: str) -> dict[str, Any]:
 def test_space_id(first_space: dict[str, Any]) -> str:
     """Return the test space ID, preferring the ARIZE_TEST_SPACE env var."""
     return os.environ.get("ARIZE_TEST_SPACE") or first_space["id"]
+
+
+@pytest.fixture(scope="session")
+def first_project(test_space_id: str) -> dict[str, Any]:
+    """Return the first project in the test space."""
+    data = ax_json("projects", "list", "--space", test_space_id, "--limit", "1")
+    projects = data.get("projects") or []
+    if not projects:
+        pytest.skip("No projects found in the test space — skipping")
+    return projects[0]
+
+
+@pytest.fixture(scope="session")
+def test_user_id() -> str:
+    """Return the test user ID from ARIZE_TEST_USER_ID, skipping if not set."""
+    user_id = os.environ.get("ARIZE_TEST_USER_ID", "")
+    if not user_id:
+        pytest.skip("ARIZE_TEST_USER_ID not set")
+    return user_id
+
+
+@pytest.fixture(scope="session")
+def test_role_id() -> str:
+    """Return the test role ID from ARIZE_TEST_ROLE_ID, skipping if not set."""
+    role_id = os.environ.get("ARIZE_TEST_ROLE_ID", "")
+    if not role_id:
+        pytest.skip("ARIZE_TEST_ROLE_ID not set")
+    return role_id

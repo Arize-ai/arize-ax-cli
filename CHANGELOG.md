@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.14.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.13.0...arize-ax-cli/v0.14.0) (2026-04-17)
+
+
+### 🎁 New Features
+
+* **cli:** implement background update check and upgrade command ([#68835](https://github.com/Arize-ai/arize/issues/68835)) ([a607303](https://github.com/Arize-ai/arize/commit/a607303de5096563d07eee2e268a56fed4bfc691))
+* **config:** enhance profile management and add exception handling tests ([#68936](https://github.com/Arize-ai/arize/issues/68936)) ([26855ad](https://github.com/Arize-ai/arize/commit/26855adcabf9b2ea1fecb9385efb685a823d5bcc))
+* **config:** handle empty default profile, allow deleting default, and enforce load errors ([#68860](https://github.com/Arize-ai/arize/issues/68860)) ([bc1887b](https://github.com/Arize-ai/arize/commit/bc1887b04b74017d5899ca7224051d9e55adbd6d))
+* **organizations:** add organizations CLI commands ([#68774](https://github.com/Arize-ai/arize/issues/68774)) ([179b1de](https://github.com/Arize-ai/arize/commit/179b1de72ddf4326cea85d883809c21b2c9c4417)), closes [#66090](https://github.com/Arize-ai/arize/issues/66090)
+* **resource-restrictions-and-role-bindings:** add resource-restrictions and role-bindings commands ([#68633](https://github.com/Arize-ai/arize/issues/68633)) ([ebaa13b](https://github.com/Arize-ai/arize/commit/ebaa13b6714db9e98895c15ccaba8ba17f1804ef))
+* **roles:** add roles CRUD commands ([#67233](https://github.com/Arize-ai/arize/issues/67233)) ([a88d94c](https://github.com/Arize-ai/arize/commit/a88d94ca625fba97cff528bd2fdecec7a01534ba)), closes [#66234](https://github.com/Arize-ai/arize/issues/66234)
+* show API key hint during profile create ([#68884](https://github.com/Arize-ai/arize/issues/68884)) ([5036b1d](https://github.com/Arize-ai/arize/commit/5036b1da6fe1fadbca71a1bdfb59ee95e6744978))
+
+
+### 🐛 Bug Fixes
+
+* --space flag gaps (experiments create + api-keys) ([#68887](https://github.com/Arize-ai/arize/issues/68887)) ([d8dcd39](https://github.com/Arize-ai/arize/commit/d8dcd39b37b57163e6daeb9854355c667bef06e9))
+
 ## [0.13.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.12.0...arize-ax-cli/v0.13.0) (2026-04-16)
 
 

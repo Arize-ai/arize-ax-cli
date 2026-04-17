@@ -47,11 +47,6 @@ def mock_config_dir(temp_config_dir: Path) -> Generator[Path, None, None]:
         ),
         patch.object(
             ConfigManager,
-            "DEFAULT_CONFIG_FILE",
-            temp_config_dir / "config.toml",
-        ),
-        patch.object(
-            ConfigManager,
             "ACTIVE_PROFILE_FILE",
             temp_config_dir / ".active_profile",
         ),

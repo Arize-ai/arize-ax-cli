@@ -58,6 +58,7 @@
   - [Experiments](#experiments)
   - [Projects](#projects)
   - [Prompts](#prompts)
+  - [Roles](#roles)
   - [Skills](#skills)
   - [Spans](#spans)
   - [Tasks](#tasks)
@@ -107,8 +108,9 @@ Official command-line interface for [Arize AI](https://arize.com) - manage your 
 - **API Key Management**: Create, refresh, and revoke API keys
 - **AI Integrations**: Configure external LLM providers (OpenAI, Anthropic, AWS Bedrock, and more)
 - **Prompt Management**: Create and version prompts with label management
-- **Spans & Traces**: Query and filter LLM spans and traces
+- **Role Management**: Create, update, and delete custom roles with granular permissions
 - **Agent Skills**: Install Arize context skills for AI coding agents (Claude Code, Cursor, Codex, Windsurf)
+- **Spans & Traces**: Query and filter LLM spans and traces
 - **Multiple Profiles**: Switch between different Arize environments
 - **Flexible Output**: Export to JSON, CSV, Parquet, or display as tables
 - **Shell Completion**: Tab completion for bash, zsh, and fish
@@ -1053,52 +1055,38 @@ ax prompts remove-version-label <version-id> --label staging
 | `mustache` | `{{variable_name}}` |
 | `none`     | No variable parsing |
 
-### Spans
+### Roles
 
-Export LLM spans from a project. Spans are individual units of work (e.g., an LLM call, a tool call) within a trace. By default spans are written to a JSON file; use `--stdout` to print to stdout instead.
-
-```bash
-# Export all spans (writes to file by default)
-ax spans export <project-id>
-
-# Export with filter
-ax spans export <project-id> --filter "status_code = 'ERROR'"
-
-# Export by trace, span, or session ID
-ax spans export <project-id> --trace-id <trace-id>
-ax spans export <project-id> --span-id <span-id>
-ax spans export <project-id> --session-id <session-id>
-
-# Export to stdout
-ax spans export <project-id> --stdout
-```
-
-**Options:**
-
-| Option            | Description                                                           |
-| ----------------- | --------------------------------------------------------------------- |
-| `--trace-id`      | Filter by trace ID                                                    |
-| `--span-id`       | Filter by span ID                                                     |
-| `--session-id`    | Filter by session ID                                                  |
-| `--filter`        | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`) |
-| `--space`      | Space ID (required when using `--all` for Arrow Flight export)        |
-| `--limit`, `-n`   | Maximum number of spans to export (default: 100)                      |
-| `--days`          | Lookback window in days (default: 30)                                 |
-| `--start-time`    | Override start of time window (ISO 8601)                              |
-| `--end-time`      | Override end of time window (ISO 8601)                                |
-| `--output-dir`    | Output directory (default: current directory)                         |
-| `--stdout`        | Print JSON to stdout instead of saving to file                        |
-| `--profile`, `-p` | Configuration profile to use                                          |
-| `--verbose`, `-v` | Enable verbose logs                                                   |
-
-**Examples:**
+Manage custom roles with granular permissions:
 
 ```bash
-ax spans export <project-id> --filter "status_code = 'ERROR'"
-ax spans export <project-id> --filter "latency_ms > 1000"
-ax spans export <project-id> --trace-id abc123 --filter "latency_ms > 1000"
-ax spans export <project-id> --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z
+# List all roles (predefined and custom)
+ax roles list [--limit 15] [--cursor <cursor>]
+
+# List only custom roles
+ax roles list --is-custom
+
+# List only system-defined predefined roles
+ax roles list --is-predefined
+
+# Get a role by name or ID
+ax roles get <role-name-or-id>
+
+# Create a custom role (at least one permission required)
+ax roles create --name "Data Analyst" --permissions DATASET_READ,PROJECT_READ
+
+# Create with description
+ax roles create --name "Data Analyst" --permissions DATASET_READ --description "Read-only data access"
+
+# Update a role (at least one field required; --permissions fully replaces existing permissions)
+ax roles update <role-id> --name "Senior Analyst"
+ax roles update <role-id> --permissions DATASET_READ,DATASET_CREATE
+
+# Delete a role by name or ID (pass --force to skip confirmation)
+ax roles delete <role-name-or-id> [--force]
 ```
+
+> **Note:** Permission values are uppercase identifiers such as `PROJECT_READ`, `DATASET_CREATE`, `ANNOTATION_CONFIG_READ`, etc. Predefined (system-managed) roles cannot be created, updated, or deleted.
 
 ### Skills
 
@@ -1148,6 +1136,53 @@ Skills are installed relative to the current working directory by default, or to
 | `--project-dir`, `-d` | Project directory (default: cwd) |
 | `--yes`, `-y` | Skip confirmations. Requires `--agent`. Without `--force`, skips existing skills instead of overwriting |
 | `--force`, `-f` | Overwrite existing skills without prompting |
+
+### Spans
+
+Export LLM spans from a project. Spans are individual units of work (e.g., an LLM call, a tool call) within a trace. By default spans are written to a JSON file; use `--stdout` to print to stdout instead.
+
+```bash
+# Export all spans (writes to file by default)
+ax spans export <project-id>
+
+# Export with filter
+ax spans export <project-id> --filter "status_code = 'ERROR'"
+
+# Export by trace, span, or session ID
+ax spans export <project-id> --trace-id <trace-id>
+ax spans export <project-id> --span-id <span-id>
+ax spans export <project-id> --session-id <session-id>
+
+# Export to stdout
+ax spans export <project-id> --stdout
+```
+
+**Options:**
+
+| Option            | Description                                                           |
+| ----------------- | --------------------------------------------------------------------- |
+| `--trace-id`      | Filter by trace ID                                                    |
+| `--span-id`       | Filter by span ID                                                     |
+| `--session-id`    | Filter by session ID                                                  |
+| `--filter`        | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`) |
+| `--space`      | Space ID (required when using `--all` for Arrow Flight export)        |
+| `--limit`, `-n`   | Maximum number of spans to export (default: 100)                      |
+| `--days`          | Lookback window in days (default: 30)                                 |
+| `--start-time`    | Override start of time window (ISO 8601)                              |
+| `--end-time`      | Override end of time window (ISO 8601)                                |
+| `--output-dir`    | Output directory (default: current directory)                         |
+| `--stdout`        | Print JSON to stdout instead of saving to file                        |
+| `--profile`, `-p` | Configuration profile to use                                          |
+| `--verbose`, `-v` | Enable verbose logs                                                   |
+
+**Examples:**
+
+```bash
+ax spans export <project-id> --filter "status_code = 'ERROR'"
+ax spans export <project-id> --filter "latency_ms > 1000"
+ax spans export <project-id> --trace-id abc123 --filter "latency_ms > 1000"
+ax spans export <project-id> --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z
+```
 
 ### Tasks
 

@@ -1,13 +1,14 @@
 """Main CLI entry point using Typer."""
 
 import logging
+import threading
 from typing import Annotated
 
 import typer
 from arize.logging import configure_logging
 
 from ax.ascii_art import WELCOME_BANNER
-from ax.utils.console import console, text
+from ax.utils.console import console, new_line, text, warning
 from ax.version import __version__
 
 # TODO(Kiko): Ensure that every command has @handle_errors decorator
@@ -32,6 +33,22 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+def _start_upgrade_check() -> threading.Thread | None:
+    """Start background update check using profile config if available."""
+    from ax.config.manager import ConfigManager
+    from ax.core.exceptions import ConfigError
+    from ax.utils.upgrade_check import start_background_check
+
+    try:
+        config = ConfigManager.load("")
+        return start_background_check(
+            enabled=config.update.enabled,
+            interval_hours=config.update.check_interval_hours,
+        )
+    except ConfigError:
+        return None
+
+
 # This function gets called when `ax COMMAND` is executed, including `ax profiles create`
 # which means we can't require config to be present at this point
 @app.callback()
@@ -51,8 +68,28 @@ def main(
 
     Use 'ax COMMAND --help' for more information on a command.
     """
-    # Suppress SDK logs by default; subcommands opt in via --verbose
     configure_logging(level=logging.CRITICAL, structured=False)
+    upgrade_thread = _start_upgrade_check()
+
+    invoked = ctx.invoked_subcommand
+
+    def _after_command() -> None:
+        if invoked == "upgrade":
+            return
+        if upgrade_thread is not None:
+            from ax.utils.upgrade_check import PYPI_TIMEOUT
+
+            upgrade_thread.join(timeout=PYPI_TIMEOUT)
+        from ax.utils.upgrade_check import should_upgrade
+
+        if should_upgrade():
+            new_line()
+            warning(
+                "New version of ax available. This CLI is still in pre-release, you should upgrade.",
+            )
+            warning("To upgrade, run: 'ax upgrade'", show_symbol=False)
+
+    ctx.call_on_close(_after_command)
 
     if ctx.invoked_subcommand is None:
         console.print(WELCOME_BANNER)

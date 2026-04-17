@@ -26,32 +26,18 @@ class TestConfigManager:
         profiles = ConfigManager.list_profiles()
         assert profiles == []
 
-    def test_list_profiles_with_default(self, mock_config_dir: Path) -> None:
-        """Test listing profiles when default exists."""
-        ConfigManager.DEFAULT_CONFIG_FILE.touch()
-        profiles = ConfigManager.list_profiles()
-        assert profiles == ["default"]
-
     def test_list_profiles_with_multiple(self, mock_config_dir: Path) -> None:
         """Test listing profiles with multiple profiles."""
-        ConfigManager.DEFAULT_CONFIG_FILE.touch()
         (ConfigManager.PROFILES_DIR / "dev.toml").touch()
         (ConfigManager.PROFILES_DIR / "prod.toml").touch()
         profiles = ConfigManager.list_profiles()
-        assert sorted(profiles) == ["default", "dev", "prod"]
+        assert sorted(profiles) == ["dev", "prod"]
 
     def test_exists_returns_false_for_missing(
         self, mock_config_dir: Path
     ) -> None:
         """Test exists returns False for missing profile."""
         assert not ConfigManager.exists("nonexistent")
-
-    def test_exists_returns_true_for_default(
-        self, mock_config_dir: Path
-    ) -> None:
-        """Test exists returns True for existing default profile."""
-        ConfigManager.DEFAULT_CONFIG_FILE.touch()
-        assert ConfigManager.exists("default")
 
     def test_exists_returns_true_for_named_profile(
         self, mock_config_dir: Path
@@ -60,24 +46,38 @@ class TestConfigManager:
         (ConfigManager.PROFILES_DIR / "prod.toml").touch()
         assert ConfigManager.exists("prod")
 
-    def test_get_active_profile_default_when_no_file(
+    def test_get_active_profile_returns_empty_when_no_file(
         self, mock_config_dir: Path
     ) -> None:
-        """Test get_active_profile returns default when no file exists."""
-        assert ConfigManager.get_active_profile() == "default"
+        """Test get_active_profile returns empty string when no file exists."""
+        assert ConfigManager.get_active_profile() == ""
 
     def test_get_active_profile_from_file(self, mock_config_dir: Path) -> None:
         """Test get_active_profile reads from file."""
         ConfigManager.ACTIVE_PROFILE_FILE.write_text("production")
         assert ConfigManager.get_active_profile() == "production"
 
-    def test_get_active_profile_handles_exception(
+    def test_get_active_profile_raises_on_os_error(
         self, mock_config_dir: Path
     ) -> None:
-        """Test get_active_profile returns default on exception."""
-        # Create a directory instead of a file to cause an error
+        """Test get_active_profile raises ConfigError on OSError (e.g. path is a directory)."""
         ConfigManager.ACTIVE_PROFILE_FILE.mkdir()
-        assert ConfigManager.get_active_profile() == "default"
+        with pytest.raises(
+            ConfigError, match="Failed to read active profile file"
+        ):
+            ConfigManager.get_active_profile()
+
+    def test_get_active_profile_returns_empty_on_non_os_error(
+        self, mock_config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test get_active_profile returns empty string on non-OSError exceptions."""
+        ConfigManager.ACTIVE_PROFILE_FILE.write_text("production")
+
+        def raise_runtime_error(*_: object, **__: object) -> str:
+            raise RuntimeError("unexpected")
+
+        monkeypatch.setattr(Path, "read_text", raise_runtime_error)
+        assert ConfigManager.get_active_profile() == ""
 
     def test_set_active_profile(self, mock_config_dir: Path) -> None:
         """Test setting active profile."""
@@ -101,14 +101,6 @@ class TestConfigManager:
         ConfigManager.delete_profile("dev")
         assert not profile_file.exists()
 
-    def test_delete_profile_raises_for_default(
-        self, mock_config_dir: Path
-    ) -> None:
-        """Test delete_profile raises error for default profile."""
-        ConfigManager.DEFAULT_CONFIG_FILE.touch()
-        with pytest.raises(ConfigError, match="Cannot delete the default"):
-            ConfigManager.delete_profile("default")
-
     def test_delete_profile_raises_for_active(
         self, mock_config_dir: Path
     ) -> None:
@@ -126,8 +118,8 @@ class TestConfigManager:
             routing=RoutingConfig(region="us-east-1b"),
         )
 
-        ConfigManager.save(config, profile="default")
-        loaded_config = ConfigManager.load(profile="default")
+        ConfigManager.save(config, profile="test")
+        loaded_config = ConfigManager.load(profile="test")
 
         assert loaded_config.auth.api_key == "ak-test123"
         assert loaded_config.routing.region == "us-east-1b"
@@ -144,6 +136,13 @@ class TestConfigManager:
 
         assert loaded_config.profile.name == "correct_name"
 
+    def test_load_raises_when_no_active_profile_configured(
+        self, mock_config_dir: Path
+    ) -> None:
+        """Test load raises error when no active profile is configured."""
+        with pytest.raises(ConfigError, match="No active profile configured"):
+            ConfigManager.load()
+
     def test_load_raises_for_missing_config(
         self, mock_config_dir: Path
     ) -> None:
@@ -158,11 +157,11 @@ class TestConfigManager:
         import tomli_w
 
         bad_data = {"auth": {"api_key": ""}}  # empty API key is invalid
-        with open(ConfigManager.DEFAULT_CONFIG_FILE, "wb") as f:
+        with open(ConfigManager.PROFILES_DIR / "test.toml", "wb") as f:
             tomli_w.dump(bad_data, f)
 
         with pytest.raises(ConfigError, match="ax profiles create"):
-            ConfigManager.load(profile="default")
+            ConfigManager.load(profile="test")
 
     def test_load_ignores_extra_fields_in_config_file(
         self, mock_config_dir: Path
@@ -174,10 +173,10 @@ class TestConfigManager:
             "auth": {"api_key": "ak-test123"},
             "unknown_future_section": {"foo": "bar"},
         }
-        with open(ConfigManager.DEFAULT_CONFIG_FILE, "wb") as f:
+        with open(ConfigManager.PROFILES_DIR / "test.toml", "wb") as f:
             tomli_w.dump(data, f)
 
-        loaded = ConfigManager.load(profile="default")
+        loaded = ConfigManager.load(profile="test")
         assert loaded.auth.api_key == "ak-test123"
 
     def test_load_uses_active_profile_when_empty(
@@ -185,10 +184,21 @@ class TestConfigManager:
     ) -> None:
         """Test load uses active profile when profile param is empty."""
         config = Config(auth=AuthConfig(api_key="ak-test123"))
-        ConfigManager.save(config, profile="default")
-        ConfigManager.ACTIVE_PROFILE_FILE.write_text("default")
+        ConfigManager.save(config, profile="test")
+        ConfigManager.ACTIVE_PROFILE_FILE.write_text("test")
 
         loaded_config = ConfigManager.load(profile="")
+        assert loaded_config.auth.api_key == "ak-test123"
+
+    def test_load_with_no_args_uses_active_profile(
+        self, mock_config_dir: Path
+    ) -> None:
+        """Test load() with no args uses the active profile."""
+        config = Config(auth=AuthConfig(api_key="ak-test123"))
+        ConfigManager.save(config, profile="test")
+        ConfigManager.ACTIVE_PROFILE_FILE.write_text("test")
+
+        loaded_config = ConfigManager.load()
         assert loaded_config.auth.api_key == "ak-test123"
 
     def test_load_expands_env_vars(self, mock_config_dir: Path) -> None:
@@ -196,9 +206,9 @@ class TestConfigManager:
         os.environ["TEST_API_KEY"] = "ak-from-env"
 
         config = Config(auth=AuthConfig(api_key="${TEST_API_KEY}"))
-        ConfigManager.save(config, profile="default")
+        ConfigManager.save(config, profile="test")
 
-        loaded_config = ConfigManager.load(profile="default")
+        loaded_config = ConfigManager.load(profile="test")
         assert loaded_config.auth.api_key == "ak-from-env"
 
         # Cleanup
@@ -209,10 +219,10 @@ class TestConfigManager:
     ) -> None:
         """Test load without env var expansion."""
         config = Config(auth=AuthConfig(api_key="${TEST_API_KEY}"))
-        ConfigManager.save(config, profile="default")
+        ConfigManager.save(config, profile="test")
 
         loaded_config = ConfigManager.load(
-            profile="default", expand_env_vars=False
+            profile="test", expand_env_vars=False
         )
         assert loaded_config.auth.api_key == "${TEST_API_KEY}"
 
@@ -223,21 +233,16 @@ class TestConfigManager:
             routing=RoutingConfig(region=""),  # Empty string
         )
 
-        ConfigManager.save(config, profile="default")
+        ConfigManager.save(config, profile="test")
 
         # Read the raw TOML to verify empty strings are not saved
         import tomllib
 
-        with open(ConfigManager.DEFAULT_CONFIG_FILE, "rb") as f:
+        with open(ConfigManager.PROFILES_DIR / "test.toml", "rb") as f:
             data = tomllib.load(f)
 
         # Empty string should not be present in saved file
         assert "region" not in data.get("routing", {})
-
-    def test_get_config_path_default(self, mock_config_dir: Path) -> None:
-        """Test _get_config_path returns correct path for default."""
-        path = ConfigManager._get_config_path("default")
-        assert path == ConfigManager.DEFAULT_CONFIG_FILE
 
     def test_get_config_path_named_profile(self, mock_config_dir: Path) -> None:
         """Test _get_config_path returns correct path for named profile."""

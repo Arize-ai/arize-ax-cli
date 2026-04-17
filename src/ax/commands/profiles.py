@@ -53,11 +53,7 @@ def create(
     profile_name: Annotated[
         str,
         typer.Argument(
-            help=(
-                "Profile name. If omitted: with no existing profiles the name "
-                "is 'default' (no prompt); with existing profiles you are "
-                "prompted for a name."
-            ),
+            help=("Profile name"),
         ),
     ] = "",
     from_file: Annotated[
@@ -128,7 +124,6 @@ def create(
         emphasis("Create a new configuration profile")
         text(f"existing profiles: {', '.join(existing_profiles)}\n")
     else:
-        profile = "default"
         new_line()
         text(WELCOME_BANNER)
         new_line()
@@ -151,11 +146,15 @@ def create(
     # --- Resolve profile name ---
     if profile_name:
         profile = profile_name
-    elif existing_profiles:
-        profile = typer.prompt("profile name")
-        new_line()
     else:
-        profile = "default"
+        default_exists = ConfigManager.exists("default")
+        # If this is the first profile, we can offer "default" as the default name;
+        # otherwise require explicit name to avoid confusion.
+        if default_exists:
+            profile = typer.prompt("profile name")
+        else:
+            profile = typer.prompt("profile name", default="default")
+        new_line()
 
     # Validate profile name (alphanumeric, hyphens, and underscores)
     if not re.match(r"^[A-Za-z0-9_-]+$", profile):
@@ -176,7 +175,7 @@ def create(
             )
         if not confirm(
             f"Profile '{profile}' already exists. Overwrite?",
-            default=False,
+            default=True,
         ):
             info("Configuration unchanged")
             raise typer.Exit()
@@ -219,13 +218,14 @@ def create(
     # --- Save and finalize ---
     ConfigManager.save(config, profile)
 
-    if profile != "default":
-        ConfigManager.set_active_profile(profile)
-
     new_line()
     success(f"Configuration saved to profile '{profile}'")
+
+    ConfigManager.set_active_profile(profile)
+    success(f"Active profile set to '{profile}'")
+
     new_line()
-    text_dimmed("You're ready to go! Try: ax datasets list")
+    text_dimmed("You're ready to go! Try: ax spaces list")
 
 
 @app.command("update")
@@ -295,8 +295,13 @@ def update(
     profile = profile_arg or ConfigManager.get_active_profile()
 
     if not ConfigManager.exists(profile):
+        if profile:
+            raise ConfigError(
+                f"Profile '{profile}' does not exist.\n"
+                "Run 'ax profiles create' to create one."
+            )
         raise ConfigError(
-            f"Profile '{profile}' does not exist. "
+            "No active profile configured.\n"
             "Run 'ax profiles create' to create one."
         )
 
@@ -584,8 +589,13 @@ def validate_profile(
     profile = profile_arg or ConfigManager.get_active_profile()
 
     if not ConfigManager.exists(profile):
+        if profile:
+            raise ConfigError(
+                f"Profile '{profile}' does not exist.\n"
+                "Run 'ax profiles create' to create one."
+            )
         raise ConfigError(
-            f"Profile '{profile}' does not exist.\n"
+            "No active profile configured.\n"
             "Run 'ax profiles create' to create one."
         )
 
@@ -624,9 +634,10 @@ def delete_profile(
 ) -> None:
     """Delete a configuration profile.
 
-    Cannot delete the default profile or currently active profile.
+    Cannot delete the currently active profile.
     """
     setup_logging(verbose)
+
     if not force and not confirm(
         f"Delete profile '{profile}'?",
         default=False,

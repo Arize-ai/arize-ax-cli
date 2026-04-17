@@ -315,6 +315,14 @@ def create_experiment(
             prompt=True,
         ),
     ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -372,6 +380,7 @@ def create_experiment(
             experiment = client.experiments.create(
                 name=name,
                 dataset=dataset,
+                space=space,
                 experiment_runs=df,
                 task_fields=ExperimentTaskFieldNames(
                     example_id="example_id",

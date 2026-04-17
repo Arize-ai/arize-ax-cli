@@ -20,7 +20,6 @@ class ConfigManager:
 
     CONFIG_DIR = Path.home() / ".arize"
     PROFILES_DIR = CONFIG_DIR / "profiles"
-    DEFAULT_CONFIG_FILE = CONFIG_DIR / "config.toml"
     ACTIVE_PROFILE_FILE = CONFIG_DIR / ".active_profile"
 
     @classmethod
@@ -30,7 +29,7 @@ class ConfigManager:
         Returns:
             List of profile names
         """
-        profiles = ["default"] if cls.DEFAULT_CONFIG_FILE.exists() else []
+        profiles: list[str] = []
 
         if cls.PROFILES_DIR.exists():
             profiles.extend(
@@ -56,16 +55,20 @@ class ConfigManager:
         """Get the currently active profile.
 
         Returns:
-            Active profile name (defaults to "default")
+            Active profile name
         """
         # Check active profile file
         if cls.ACTIVE_PROFILE_FILE.exists():
             try:
                 return cls.ACTIVE_PROFILE_FILE.read_text().strip()
+            except OSError as e:
+                raise ConfigError(
+                    f"Failed to read active profile file: {e}"
+                ) from e
             except Exception:
-                return "default"
+                return ""
 
-        return "default"
+        return ""
 
     @classmethod
     def set_active_profile(cls, profile: str) -> None:
@@ -82,7 +85,12 @@ class ConfigManager:
                 f"Profile '{profile}' does not exist.\n"
                 f"Available profiles: {', '.join(cls.list_profiles())}"
             )
-        cls.ACTIVE_PROFILE_FILE.write_text(profile)
+        try:
+            cls.ACTIVE_PROFILE_FILE.write_text(profile)
+        except OSError as e:
+            raise ConfigError(
+                f"Failed to write active profile file: {e}"
+            ) from e
 
     @classmethod
     def delete_profile(cls, profile: str) -> None:
@@ -92,16 +100,13 @@ class ConfigManager:
             profile: Profile name to delete
 
         Raises:
-            ConfigError: If profile does not exist or trying to delete default or active profile
+            ConfigError: If profile does not exist or active profile
         """
-        if profile not in cls.list_profiles():
+        if not cls.exists(profile):
             raise ConfigError(
                 f"Profile '{profile}' does not exist.\n"
                 f"Available profiles: {', '.join(cls.list_profiles())}"
             )
-
-        if profile == "default":
-            raise ConfigError("Cannot delete the default profile")
 
         if profile == cls.get_active_profile():
             raise ConfigError(
@@ -112,13 +117,13 @@ class ConfigManager:
         cls._get_config_path(profile).unlink()
 
     @classmethod
-    def load(cls, profile: str, expand_env_vars: bool = True) -> Config:
+    def load(cls, profile: str = "", expand_env_vars: bool = True) -> Config:
         """Load configuration from file with env var expansion.
 
         Expands ${VAR} and ${VAR:default} references in string values.
 
         Args:
-            profile: Profile name. If empty, uses active profile or default.
+            profile: Profile name. If empty, uses active profile.
             expand_env_vars: Whether to expand environment variable references
 
         Returns:
@@ -129,6 +134,11 @@ class ConfigManager:
         """
         if not profile:
             profile = cls.get_active_profile()
+            if not profile:
+                raise ConfigError(
+                    "No active profile configured.\n\n"
+                    "Run 'ax profiles create' to create a configuration.\n"
+                )
 
         config_path = cls._get_config_path(profile)
 
@@ -164,7 +174,7 @@ class ConfigManager:
             raise ConfigError(f"Failed to load config: {e}") from e
 
     @classmethod
-    def save(cls, config: Config, profile: str = "default") -> None:
+    def save(cls, config: Config, profile: str) -> None:
         """Save configuration to file.
 
         Args:
@@ -206,8 +216,6 @@ class ConfigManager:
         Returns:
             Path to config file
         """
-        if profile == "default":
-            return cls.DEFAULT_CONFIG_FILE
         return cls.PROFILES_DIR / f"{profile}.toml"
 
 

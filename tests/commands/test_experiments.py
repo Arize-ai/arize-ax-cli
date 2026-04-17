@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 from typer.testing import CliRunner
 
 from ax.commands.experiments import app
@@ -281,3 +282,82 @@ class TestDeleteExperiment:
         mock_client.experiments.delete.side_effect = Exception("not found")
         result = cli_runner.invoke(app, ["delete", "exp-1", "--force"])
         assert result.exit_code != 0
+
+
+class TestCreateExperiment:
+    """Tests for the 'ax experiments create' command."""
+
+    _RUNS_DF = pd.DataFrame([{"example_id": "ex-1", "output": "Paris"}])
+
+    def test_create_command_registered(self) -> None:
+        """Test that 'create' subcommand exists."""
+        names = [cmd.name for cmd in app.registered_commands]
+        assert "create" in names
+
+    def test_create_with_space_passes_to_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--space is forwarded to client.experiments.create."""
+        mock_client.experiments.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "exp-1", "name": "my-exp"})
+        )
+
+        with patch(
+            "ax.commands.experiments.read_data_file",
+            return_value=self._RUNS_DF,
+        ):
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create",
+                    "--name",
+                    "my-exp",
+                    "--dataset",
+                    "ds-1",
+                    "--file",
+                    "runs.json",
+                    "--space",
+                    "space-abc",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_client.experiments.create.assert_called_once()
+        call_kwargs = mock_client.experiments.create.call_args.kwargs
+        assert call_kwargs["space"] == "space-abc"
+        assert call_kwargs["dataset"] == "ds-1"
+
+    def test_create_without_space_passes_none(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """space=None is passed when --space is omitted."""
+        mock_client.experiments.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "exp-1", "name": "my-exp"})
+        )
+
+        with patch(
+            "ax.commands.experiments.read_data_file",
+            return_value=self._RUNS_DF,
+        ):
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create",
+                    "--name",
+                    "my-exp",
+                    "--dataset",
+                    "ds-id-123",
+                    "--file",
+                    "runs.json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.experiments.create.call_args.kwargs
+        assert call_kwargs["space"] is None
