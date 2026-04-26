@@ -21,7 +21,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "arize==8.16.0",
+    "arize==8.18.0",
     "pydantic>=2.0.0, <3",
     "questionary>=2.0.0, <3",
     "rich>=13.0.0, <14",

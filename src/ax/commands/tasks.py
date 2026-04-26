@@ -429,6 +429,13 @@ def trigger_run(
     setup_logging(verbose)
     if not wait and (poll_interval != 5.0 or timeout != 600.0):
         warning("--poll-interval and --timeout have no effect without --wait")
+    if experiment_ids and (
+        data_start_time is not None or data_end_time is not None
+    ):
+        warning(
+            "--data-start-time and --data-end-time are ignored when --experiment-ids is provided; "
+            "experiment tasks fetch data directly from the experiment, not a time-based scan"
+        )
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
 

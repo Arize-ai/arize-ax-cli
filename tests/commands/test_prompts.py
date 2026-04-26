@@ -367,7 +367,7 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "openAI",
+                "open_ai",
                 "--input-variable-format",
                 "f_string",
                 "--messages",
@@ -383,7 +383,7 @@ class TestCreatePrompt:
         call_kwargs = mock_client.prompts.create.call_args.kwargs
         assert call_kwargs["name"] == "My Prompt"
         assert call_kwargs["space"] == "sp_abc"
-        assert call_kwargs["provider"] == LlmProvider.OPENAI
+        assert call_kwargs["provider"] == LlmProvider.OPEN_AI
         assert (
             call_kwargs["input_variable_format"] == InputVariableFormat.F_STRING
         )
@@ -418,7 +418,7 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "openAI",
+                "open_ai",
                 "--input-variable-format",
                 "f_string",
                 "--messages",
@@ -464,7 +464,7 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "openAI",
+                "open_ai",
                 "--input-variable-format",
                 "f_string",
                 "--messages",
@@ -499,7 +499,7 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "openAI",
+                "open_ai",
                 "--input-variable-format",
                 "f_string",
                 "--messages",
@@ -706,7 +706,7 @@ class TestCreateVersion:
                 "create-version",
                 _PROMPT_ID,
                 "--provider",
-                "openAI",
+                "open_ai",
                 "--input-variable-format",
                 "f_string",
                 "--messages",
@@ -738,7 +738,7 @@ class TestCreateVersion:
                 "create-version",
                 _PROMPT_ID,
                 "--provider",
-                "openAI",
+                "open_ai",
                 "--input-variable-format",
                 "f_string",
                 "--messages",
@@ -775,7 +775,7 @@ class TestCreateVersion:
                 "create-version",
                 _PROMPT_ID,
                 "--provider",
-                "openAI",
+                "open_ai",
                 "--input-variable-format",
                 "f_string",
                 "--messages",

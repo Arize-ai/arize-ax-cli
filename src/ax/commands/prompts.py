@@ -263,7 +263,7 @@ def create_prompt(
             "--provider",
             help=(
                 "LLM provider "
-                "(openAI, azureOpenAI, awsBedrock, vertexAI, custom)"
+                "(open_ai, azure_open_ai, aws_bedrock, vertex_ai, anthropic, custom)"
             ),
         ),
     ],
@@ -632,7 +632,7 @@ def create_version(
             "--provider",
             help=(
                 "LLM provider "
-                "(openAI, azureOpenAI, awsBedrock, vertexAI, custom)"
+                "(open_ai, azure_open_ai, aws_bedrock, vertex_ai, anthropic, custom)"
             ),
         ),
     ],

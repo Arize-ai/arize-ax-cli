@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 from arize import ArizeClient
+from arize._generated.api_client import OptimizationDirection
 from arize._generated.api_client.models.evaluator_llm_config import (
     EvaluatorLlmConfig,
 )
@@ -55,16 +56,6 @@ def _parse_optional_classification_choices(
     return result
 
 
-def _parse_optional_direction(source: str | None) -> str | None:
-    """Return API direction value or None."""
-    if source is None or not source.strip():
-        return None
-    normalized = source.strip().lower()
-    if normalized not in ("maximize", "minimize"):
-        raise UsageError("--direction must be 'maximize' or 'minimize'")
-    return normalized
-
-
 def _parse_optional_data_granularity(source: str | None) -> str | None:
     """Return API data_granularity value or None."""
     if source is None or not source.strip():
@@ -85,7 +76,7 @@ def _build_template_config(
     invocation_params_str: str,
     provider_params_str: str,
     classification_choices_str: str | None = None,
-    direction: str | None = None,
+    direction: OptimizationDirection | None = None,
     data_granularity: str | None = None,
 ) -> TemplateConfig:
     r"""Build a TemplateConfig from individual CLI option values."""
@@ -112,7 +103,7 @@ def _build_template_config(
         classification_choices=_parse_optional_classification_choices(
             classification_choices_str
         ),
-        direction=_parse_optional_direction(direction),
+        direction=direction,
         data_granularity=_parse_optional_data_granularity(data_granularity),
     )
 
@@ -385,10 +376,10 @@ def create_evaluator(
         ),
     ] = None,
     direction: Annotated[
-        str | None,
+        OptimizationDirection | None,
         typer.Option(
             "--direction",
-            help="Optimization direction: maximize or minimize",
+            help="Optimization direction: maximize or minimize or none",
         ),
     ] = None,
     data_granularity: Annotated[
@@ -847,10 +838,10 @@ def create_version(
         ),
     ] = None,
     direction: Annotated[
-        str | None,
+        OptimizationDirection | None,
         typer.Option(
             "--direction",
-            help="Optimization direction: maximize or minimize",
+            help="Optimization direction: maximize or minimize or none",
         ),
     ] = None,
     data_granularity: Annotated[

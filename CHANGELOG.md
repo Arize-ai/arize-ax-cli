@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.14.0...arize-ax-cli/v0.15.0) (2026-04-26)
+
+
+### 🎁 New Features
+
+* update optimization direction enum to include none ([#67047](https://github.com/Arize-ai/arize/issues/67047)) ([b948295](https://github.com/Arize-ai/arize/commit/b948295822a80a6c28a8fa2afa3a60e0176111b1))
+
+
+### 🐛 Bug Fixes
+
+* **ax-cli:** update LlmProvider enum values to snake_case (follows [#68525](https://github.com/Arize-ai/arize/issues/68525)) ([#69410](https://github.com/Arize-ai/arize/issues/69410)) ([138f31d](https://github.com/Arize-ai/arize/commit/138f31d841a793a6cc6a9bf3b4fd844784f28d13))
+* **onlinetasksrunner:** populate DatasetId from experiment for CLI-triggered evals ([#68775](https://github.com/Arize-ai/arize/issues/68775)) ([2118121](https://github.com/Arize-ai/arize/commit/21181211c6b11b64d5254201bd5c5daa40698bd9)), closes [#68756](https://github.com/Arize-ai/arize/issues/68756)
+
 ## [0.14.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.13.0...arize-ax-cli/v0.14.0) (2026-04-17)
 
 

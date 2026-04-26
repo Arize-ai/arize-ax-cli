@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from arize._generated.api_client import OptimizationDirection
 from typer.testing import CliRunner
 
 from ax.commands.evaluators import app
@@ -684,11 +685,11 @@ class TestBuildTemplateConfig:
             invocation_params_str="{}",
             provider_params_str="{}",
             classification_choices_str='{"relevant": 1, "irrelevant": 0}',
-            direction="minimize",
+            direction=OptimizationDirection.MINIMIZE,
             data_granularity="trace",
         )
         assert cfg.classification_choices == {"relevant": 1, "irrelevant": 0}
-        assert cfg.direction == "minimize"
+        assert cfg.direction == OptimizationDirection.MINIMIZE
         assert cfg.data_granularity == "trace"
 
     @pytest.mark.unit
@@ -715,27 +716,31 @@ class TestBuildTemplateConfig:
             )
 
     @pytest.mark.unit
-    def test_invalid_direction_raises_usage_error(self) -> None:
-        """Direction must be maximize or minimize."""
-        from ax.commands.evaluators import _build_template_config
-        from ax.core.exceptions import UsageError
-
-        with pytest.raises(
-            UsageError, match="--direction must be 'maximize' or 'minimize'"
-        ):
-            _build_template_config(
-                template_name="test",
-                template="template",
-                ai_integration_id="integ-1",
-                model_name="gpt-4o",
-                include_explanations=True,
-                use_function_calling=True,
-                invocation_params_str="{}",
-                provider_params_str="{}",
-                classification_choices_str=None,
-                direction="sideways",
-                data_granularity=None,
-            )
+    def test_invalid_direction_rejected_by_cli(self) -> None:
+        """Invalid direction values are rejected by the CLI."""
+        result = CliRunner().invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "test",
+                "--template-name",
+                "col",
+                "--template",
+                "Hello",
+                "--ai-integration-id",
+                "integ-1",
+                "--model-name",
+                "gpt-4o",
+                "--invocation-params",
+                "{}",
+                "--provider-params",
+                "{}",
+                "--direction",
+                "sideways",
+            ],
+        )
+        assert result.exit_code != 0
 
     @pytest.mark.unit
     def test_invalid_data_granularity_raises_usage_error(self) -> None:
@@ -786,12 +791,11 @@ class TestBuildTemplateConfig:
             )
 
     @pytest.mark.unit
-    def test_direction_normalized_to_lowercase(self) -> None:
-        """Mixed-case direction values are accepted and normalized."""
-        from ax.commands.evaluators import _parse_optional_direction
-
-        assert _parse_optional_direction("Maximize") == "maximize"
-        assert _parse_optional_direction("MINIMIZE") == "minimize"
+    def test_direction_enum_values(self) -> None:
+        """OptimizationDirection enum has the expected values."""
+        assert OptimizationDirection.MAXIMIZE == "maximize"
+        assert OptimizationDirection.MINIMIZE == "minimize"
+        assert OptimizationDirection.NONE == "none"
 
     @pytest.mark.unit
     def test_data_granularity_normalized_to_lowercase(self) -> None:
