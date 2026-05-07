@@ -6,7 +6,7 @@ from typing import Annotated
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client.models.api_key_status import ApiKeyStatus
+from arize.api_keys.types import ApiKeyStatus
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors

@@ -257,7 +257,10 @@ def export_experiment(
 ) -> None:
     """Export runs from an experiment to a file.
 
-    Pass --all to use Arrow Flight for bulk export.
+    Pass --all to use Arrow Flight for bulk export (recommended for large experiments).
+
+    Failed runs (where the task raised an exception) are included in the export
+    with output=null and an 'error' field containing the exception message.
     """
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
@@ -277,6 +280,13 @@ def export_experiment(
     runs = getattr(response, "experiment_runs", None) or []
     if not runs:
         warning("No runs found in experiment")
+
+    failed = [r for r in runs if getattr(r, "output", None) is None]
+    if failed:
+        warning(
+            f"{len(failed)} run(s) failed (output=null). "
+            "Check the 'error' field in the export for details."
+        )
 
     if stdout:
         print_json_array(runs)

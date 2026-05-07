@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.17.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.17.0...arize-ax-cli/v0.17.1) (2026-05-07)
+
+
+### 🐛 Bug Fixes
+
+* **sdk:** respect request_verify for REST API commands ([#69838](https://github.com/Arize-ai/arize/issues/69838)) ([31b8f3c](https://github.com/Arize-ai/arize/commit/31b8f3c4915f5b5e6fb6cd5ba695501a0ff84e63))
+* use kwargs-building pattern for annotation-queues update command ([#69708](https://github.com/Arize-ai/arize/issues/69708)) ([1b2ab35](https://github.com/Arize-ai/arize/commit/1b2ab3513b4b83cae6d51714db1265d9952e9255))
+
+## [0.17.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.16.0...arize-ax-cli/v0.17.0) (2026-05-01)
+
+
+### 🎁 New Features
+
+* **evaluators:** add code evaluator support to ax evaluators create ([#69652](https://github.com/Arize-ai/arize/issues/69652)) ([0771f19](https://github.com/Arize-ai/arize/commit/0771f19da0ed793e66a44d88eea32a24c6b34a38))
+
+## [0.16.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.15.0...arize-ax-cli/v0.16.0) (2026-04-29)
+
+
+### 🎁 New Features
+
+* **tasks:** add ax tasks update and ax tasks delete commands ([#69117](https://github.com/Arize-ai/arize/issues/69117)) ([ac367cf](https://github.com/Arize-ai/arize/commit/ac367cf9152615f72ab34be91f2aca85b45ac2db))
+* **types:** use public SDK types instead of _generated imports ([#69711](https://github.com/Arize-ai/arize/issues/69711)) ([029f151](https://github.com/Arize-ai/arize/commit/029f15199fbb7c78983ba5a79d6e44142c5e62ae))
+
+
+### 🐛 Bug Fixes
+
+* surface failed experiment run errors in export command ([#69698](https://github.com/Arize-ai/arize/issues/69698)) ([2c41178](https://github.com/Arize-ai/arize/commit/2c411784bde5af4eb43c2ef5e0d5368f5269082d))
+
+
+### ❔ Miscellaneous Chores
+
+* **deps-dev:** bump pytest from 8.4.2 to 9.0.3 in /sdk/python/arize-ax-cli ([#69533](https://github.com/Arize-ai/arize/issues/69533)) ([a56443d](https://github.com/Arize-ai/arize/commit/a56443dc42e6efc7dcfc120dac78b2253ea308e0))
+* **deps-dev:** bump pytest from 8.4.2 to 9.0.3 in /sdk/python/arize-ax-cli ([#69878](https://github.com/Arize-ai/arize/issues/69878)) ([335afa0](https://github.com/Arize-ai/arize/commit/335afa044e0069ec5148c8cb9308436a66d6ce35))
+
 ## [0.15.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.14.0...arize-ax-cli/v0.15.0) (2026-04-26)
 
 

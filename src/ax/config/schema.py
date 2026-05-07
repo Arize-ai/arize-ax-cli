@@ -249,6 +249,11 @@ class Config(BaseModel):
 
     model_config = {"extra": "ignore"}
 
+    @property
+    def request_verify(self) -> bool:
+        """Return security.request_verify as a bool."""
+        return _str_to_bool(self.security.request_verify)
+
     def to_sdk_config(self) -> SDKConfiguration:
         """Convert CLI config to SDK config.
 
@@ -284,5 +289,5 @@ class Config(BaseModel):
             max_http_payload_size_mb=int(
                 self.transport.max_http_payload_size_mb
             ),
-            request_verify=_str_to_bool(self.security.request_verify),
+            request_verify=self.request_verify,
         )

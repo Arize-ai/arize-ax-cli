@@ -5,13 +5,11 @@ from typing import Annotated
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client.models.categorical_annotation_value import (
+from arize.annotation_configs.types import (
+    AnnotationConfigType,
     CategoricalAnnotationValue,
-)
-from arize._generated.api_client.models.optimization_direction import (
     OptimizationDirection,
 )
-from arize.annotation_configs.types import AnnotationConfigType
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors

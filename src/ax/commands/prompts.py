@@ -5,11 +5,7 @@ from typing import Annotated, Any
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client.models.input_variable_format import (
-    InputVariableFormat,
-)
-from arize._generated.api_client.models.llm_message import LLMMessage
-from arize._generated.api_client.models.llm_provider import LlmProvider
+from arize.prompts.types import InputVariableFormat, LLMMessage, LlmProvider
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors

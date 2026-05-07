@@ -21,7 +21,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "arize==8.18.0",
+    "arize==8.22.3",
     "pydantic>=2.0.0, <3",
     "questionary>=2.0.0, <3",
     "rich>=13.0.0, <14",
@@ -36,7 +36,7 @@ dev = [
     "mypy==1.19.1",
     "pandas-stubs>=2.2.0",
     "pytest-cov==6.0.0",
-    "pytest==8.4.2",
+    "pytest==9.0.3",
     "ruff==0.14.9",
     "taskipy>=1.14.1, <2",
 ]

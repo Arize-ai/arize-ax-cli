@@ -9,8 +9,7 @@ import re
 import sys
 from dataclasses import dataclass
 
-from arize._generated.api_client.exceptions import ApiException
-from arize._generated.api_client.models.problem import Problem
+from arize import ApiException, Problem
 
 # Map gRPC codes to HTTP status
 grpc_to_http = {

@@ -5,10 +5,7 @@ from typing import Annotated
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client.models.annotation_input import AnnotationInput
-from arize._generated.api_client.models.assignment_method import (
-    AssignmentMethod,
-)
+from arize.annotation_queues.types import AnnotationInput, AssignmentMethod
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
@@ -328,23 +325,23 @@ def update_annotation_queue(
         str | None,
         typer.Option(
             "--instructions",
-            help="New instructions for annotators (pass empty string to clear)",
+            help='New instructions for annotators. Pass "" (empty string) to clear.',
         ),
     ] = None,
     annotation_config_ids: Annotated[
-        list[str],
+        list[str] | None,
         typer.Option(
             "--annotation-config-id",
             help="Full replacement list of annotation config IDs (repeat for multiple)",
         ),
-    ] = [],  # noqa: B006
+    ] = None,
     annotator_emails: Annotated[
-        list[str],
+        list[str] | None,
         typer.Option(
             "--annotator-email",
             help="Full replacement list of annotator emails (repeat for multiple)",
         ),
-    ] = [],  # noqa: B006
+    ] = None,
     profile: Annotated[
         str,
         typer.Option(
@@ -372,6 +369,7 @@ def update_annotation_queue(
 ) -> None:
     """Update an annotation queue.
 
+    Only the fields you provide are updated. Omitted fields are left unchanged.
     List fields (--annotation-config-id, --annotator-email) fully replace
     existing values when provided.
     """
@@ -388,15 +386,15 @@ def update_annotation_queue(
             "Updating annotation queue",
             success_msg="Annotation queue updated successfully",
         ):
+            # None (flag omitted) → SDK excludes → unchanged.
+            # Empty list (flag with no values) → SDK sends [] → clears the field.
             queue = client.annotation_queues.update(
                 annotation_queue=name_or_id,
                 space=space,
                 name=name,
                 instructions=instructions,
-                annotation_config_ids=annotation_config_ids
-                if annotation_config_ids
-                else None,
-                annotator_emails=annotator_emails if annotator_emails else None,
+                annotation_config_ids=annotation_config_ids,
+                annotator_emails=annotator_emails,
             )
     except Exception as e:
         raise APIError(f"Failed to update annotation queue: {e}") from e

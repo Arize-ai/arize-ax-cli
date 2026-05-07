@@ -4,14 +4,12 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
-from arize._generated.api_client.models.ai_integration_auth_type import (
+from arize.ai_integrations.types import (
     AiIntegrationAuthType,
-)
-from arize._generated.api_client.models.ai_integration_provider import (
     AiIntegrationProvider,
-)
-from arize._generated.api_client.models.ai_integration_scoping import (
     AiIntegrationScoping,
+    AwsProviderMetadata,
+    AwsProviderMetadataKind,
 )
 from typer.testing import CliRunner, Result
 
@@ -362,9 +360,10 @@ class TestCreateAiIntegration:
         )
 
         call_kwargs = mock_client.ai_integrations.create.call_args.kwargs
-        assert call_kwargs["provider_metadata"] == {
-            "role_arn": "arn:aws:iam::123:role/MyRole"
-        }
+        assert call_kwargs["provider_metadata"] == AwsProviderMetadata(
+            kind=AwsProviderMetadataKind.AWS,
+            role_arn="arn:aws:iam::123:role/MyRole",
+        )
 
     def test_create_invalid_provider_metadata_json_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock

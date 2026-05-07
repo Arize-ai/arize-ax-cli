@@ -5,7 +5,7 @@ from typing import Annotated
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client.models.permission import Permission
+from arize.roles.types import Permission
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors

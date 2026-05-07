@@ -852,8 +852,8 @@ ax evaluators get <evaluator>
 # Get an evaluator at a specific version
 ax evaluators get <evaluator> --version-id <version-id>
 
-# Create a new evaluator
-ax evaluators create \
+# Create a new template evaluator
+ax evaluators create-template-evaluator \
   --name "Response Relevance" \
   --space <space> \
   --commit-message "Initial version" \
@@ -863,7 +863,7 @@ ax evaluators create \
   --model-name gpt-4o
 
 # Create a classification evaluator (label → numeric score; omit flag for freeform)
-ax evaluators create \
+ax evaluators create-template-evaluator \
   --name "Relevance classifier" \
   --space <space> \
   --commit-message "Initial version" \
@@ -888,16 +888,16 @@ ax evaluators list-versions <evaluator-id> [--limit 15] [--cursor <cursor>]
 # Get a specific version by ID
 ax evaluators get-version <version-id>
 
-# Create a new version of an existing evaluator
-ax evaluators create-version <evaluator-id> \
+# Create a new template version of an existing evaluator
+ax evaluators create-template-evaluator-version <evaluator-id> \
   --commit-message "Improved prompt" \
   --template-name relevance \
   --template "Rate the relevance of the response: {{input}} {{output}}" \
   --ai-integration-id <integration-id> \
   --model-name gpt-4o
 
-# Same optional template fields as create (e.g. classification choices)
-ax evaluators create-version <evaluator-id> \
+# Same optional template fields apply (e.g. classification choices)
+ax evaluators create-template-evaluator-version <evaluator-id> \
   --commit-message "Add rails" \
   --template-name relevance \
   --template "Classify: {{output}}" \
@@ -920,6 +920,60 @@ ax evaluators create-version <evaluator-id> \
 | `--provider-params` | JSON object of provider-specific parameters |
 | `--classification-choices` | JSON object mapping labels to numeric scores (e.g. `'{"relevant":1,"irrelevant":0}'`); omit for freeform output |
 | `--direction` | `maximize` or `minimize` (optimization direction for scores) |
+| `--data-granularity` | `span`, `trace`, or `session` |
+
+#### Code evaluators
+
+`create-code-evaluator` and `create-code-evaluator-version` accept `--code-type managed` for
+built-in checks (regex, JSON parse, keyword matches, exact match) or
+`--code-type custom` for user-supplied Python.
+
+```bash
+# Managed built-in: regex check
+ax evaluators create-code-evaluator \
+  --name "Regex Check" \
+  --space <space> \
+  --commit-message "Initial version" \
+  --code-type managed \
+  --code-name regex_match \
+  --managed-evaluator MatchesRegex \
+  --variables '["output"]' \
+  --static-params '[{"name":"pattern","type":"REGEX","default_value":"^yes"}]'
+
+# Custom Python, loading source from a file (use @ prefix)
+ax evaluators create-code-evaluator \
+  --name "Custom Eval" \
+  --space <space> \
+  --commit-message "Initial version" \
+  --code-type custom \
+  --code-name my_eval \
+  --code @./evaluator.py \
+  --imports @./imports.py \
+  --variables '["input","output"]'
+
+# Inline custom code is also supported in create-code-evaluator-version
+ax evaluators create-code-evaluator-version <evaluator-id> \
+  --commit-message "v2" \
+  --code-type custom \
+  --code-name my_eval \
+  --code 'class MyEval:
+      def evaluate(self, output):
+          return 1 if "yes" in output else 0' \
+  --variables '["output"]'
+```
+
+**Code configuration options:**
+
+| Option | Description |
+| --- | --- |
+| `--code-type` | `managed` (built-in) or `custom` (user Python) |
+| `--code-name` | Eval column name |
+| `--managed-evaluator` | Built-in evaluator (`--code-type managed`): `MatchesRegex`, `JSONParseable`, `ContainsAnyKeyword`, `ContainsAllKeywords`, `ExactMatch` |
+| `--code` | Python source for `--code-type custom`. Inline source, or `@path/to/file.py` to load from disk |
+| `--imports` | Optional Python import block for `--code-type custom`. Inline or `@path/to/file.py` |
+| `--variables` | JSON array of variable names (span attributes / columns). Accepts inline JSON or a file path |
+| `--static-params` | JSON array of static parameters. Each item: `{name, type: STRING\|STRING_ARRAY\|REGEX, default_value: <string or array of strings>}` |
+| `--query-filter` | Optional filter query applied to the chosen granularity |
 | `--data-granularity` | `span`, `trace`, or `session` |
 
 ### Experiments
@@ -1213,6 +1267,17 @@ ax tasks create \
   --dataset <dataset> \
   --experiment-ids <exp-id-1>,<exp-id-2>
 
+# Update mutable fields on a task (provide at least one field)
+ax tasks update <task> --name "New Name"
+ax tasks update <task> --sampling-rate 0.25
+ax tasks update <task> --is-continuous
+ax tasks update <task> --query-filter "attributes.env = 'prod'"
+ax tasks update <task> --query-filter ""    # clear the task-level query filter
+ax tasks update <task> --evaluators '[{"evaluator_id": "<id>"}]'
+
+# Delete a task (irreversible; prompts unless --force is passed)
+ax tasks delete <task> [--space <space>] [--force]
+
 # Trigger an on-demand run
 ax tasks trigger-run <task-id>
 
@@ -1253,6 +1318,24 @@ ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 | `--sampling-rate` | Fraction of data to evaluate (0–1); project tasks only |
 | `--is-continuous` / `--no-continuous` | Run continuously on incoming data |
 | `--query-filter` | Task-level filter applied to all evaluators |
+
+**`update` options:** (must provide at least one field)
+
+| Option | Description |
+| --- | --- |
+| `--name`, `-n` | New task display name |
+| `--sampling-rate` | Sampling rate between 0 and 1 (project tasks only) |
+| `--is-continuous` / `--no-continuous` | Whether the task runs continuously (project tasks only) |
+| `--query-filter` | Task-level query filter. Pass `""` to clear the existing filter |
+| `--evaluators` | JSON array replacing the full evaluator list; same shape as `ax tasks create --evaluators` |
+| `--space`, `-s` | Space name or ID (helps resolve task by name) |
+
+**`delete` options:**
+
+| Option | Description |
+| --- | --- |
+| `--space`, `-s` | Space name or ID (helps resolve task by name) |
+| `--force`, `-f` | Skip the interactive confirmation prompt |
 
 **`trigger-run` options:**
 

@@ -5,11 +5,20 @@ from typing import Annotated
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client import OptimizationDirection
-from arize._generated.api_client.models.evaluator_llm_config import (
-    EvaluatorLlmConfig,
+from arize._generated.api_client.models.invocation_params import (
+    InvocationParams,
 )
-from arize._generated.api_client.models.template_config import TemplateConfig
+from arize._generated.api_client.models.provider_params import ProviderParams
+from arize.evaluators.types import (
+    CodeConfig,
+    CustomCodeConfig,
+    EvaluatorLlmConfig,
+    ManagedCodeConfig,
+    ManagedCodeEvaluator,
+    OptimizationDirection,
+    StaticParam,
+    TemplateConfig,
+)
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
@@ -24,6 +33,7 @@ from ax.utils.console import (
 )
 from ax.utils.file_io import parse_output_option
 from ax.utils.json_source import load_json
+from ax.utils.text_source import load_text_source
 
 app = typer.Typer(
     name="evaluators",
@@ -88,11 +98,19 @@ def _build_template_config(
     if not isinstance(provider_params, dict):
         raise UsageError("--provider-params must be a JSON object")
 
+    typed_invocation_params = InvocationParams.from_dict(invocation_params)
+    if typed_invocation_params is None:
+        raise UsageError("--invocation-params is missing or invalid")
+
+    typed_provider_params = ProviderParams.from_dict(provider_params)
+    if typed_provider_params is None:
+        raise UsageError("--provider-params is missing or invalid")
+
     llm_config = EvaluatorLlmConfig(
         ai_integration_id=ai_integration_id,
         model_name=model_name,
-        invocation_parameters=invocation_params,
-        provider_parameters=provider_params,
+        invocation_parameters=typed_invocation_params,
+        provider_parameters=typed_provider_params,
     )
     return TemplateConfig(
         name=template_name,
@@ -106,6 +124,93 @@ def _build_template_config(
         direction=direction,
         data_granularity=_parse_optional_data_granularity(data_granularity),
     )
+
+
+def _parse_variables(source: str) -> list[str]:
+    """Parse the --variables option into a list of strings."""
+    parsed = load_json(source)
+    if not isinstance(parsed, list) or not all(
+        isinstance(v, str) for v in parsed
+    ):
+        raise UsageError("--variables must be a JSON array of strings")
+    return parsed  # type: ignore[return-value]
+
+
+def _parse_static_params(source: str | None) -> list[StaticParam] | None:
+    """Parse the --static-params option into a list of StaticParam objects.
+
+    Each item must be an object with ``name``, ``type``, and ``default_value``
+    (string for ``STRING``/``REGEX``; array of strings for ``STRING_ARRAY``).
+    Returns ``None`` when the option is omitted.
+    """
+    if source is None or not source.strip():
+        return None
+    parsed = load_json(source)
+    if not isinstance(parsed, list):
+        raise UsageError("--static-params must be a JSON array of objects")
+    try:
+        params = [StaticParam.from_dict(item) for item in parsed]
+    except Exception as exc:
+        raise UsageError(f"Failed to parse --static-params: {exc}") from exc
+    none_indices = [i for i, p in enumerate(params) if p is None]
+    if none_indices:
+        raise UsageError(
+            f"Failed to parse --static-params at index(es): {none_indices}"
+        )
+    return params  # type: ignore[return-value]
+
+
+def _build_managed_code_config(
+    *,
+    code_name: str,
+    managed_evaluator: ManagedCodeEvaluator,
+    variables: str,
+    static_params: str | None,
+    query_filter: str | None,
+    data_granularity: str | None,
+) -> CodeConfig:
+    """Build a CodeConfig wrapping a ManagedCodeConfig from CLI option values."""
+    managed = ManagedCodeConfig(
+        type="managed",
+        name=code_name,
+        managed_evaluator=managed_evaluator,
+        variables=_parse_variables(variables),
+        static_params=_parse_static_params(static_params),
+        query_filter=query_filter if query_filter else None,
+        data_granularity=_parse_optional_data_granularity(data_granularity),
+    )
+    return CodeConfig(managed)
+
+
+def _build_custom_code_config(
+    *,
+    code_name: str,
+    code: str,
+    imports: str | None,
+    variables: str,
+    static_params: str | None,
+    query_filter: str | None,
+    data_granularity: str | None,
+) -> CodeConfig:
+    """Build a CodeConfig wrapping a CustomCodeConfig from CLI option values."""
+    custom = CustomCodeConfig(
+        type="custom",
+        name=code_name,
+        code=load_text_source(code, "--code"),
+        imports=(
+            load_text_source(imports, "--imports")
+            if imports is not None
+            else None
+        ),
+        variables=_parse_variables(variables),
+        static_params=_parse_static_params(static_params),
+        query_filter=query_filter if query_filter else None,
+        data_granularity=_parse_optional_data_granularity(data_granularity),
+    )
+    return CodeConfig(custom)
+
+
+_CODE_TYPES = ("managed", "custom")
 
 
 @app.command("list")
@@ -268,9 +373,9 @@ def get_evaluator(
         )
 
 
-@app.command("create")
+@app.command("create-template-evaluator")
 @handle_errors
-def create_evaluator(
+def template_create_evaluator(
     name: Annotated[
         str,
         typer.Option(
@@ -414,7 +519,7 @@ def create_evaluator(
         ),
     ] = False,
 ) -> None:
-    """Create a new evaluator with an initial version."""
+    """Create a new LLM template evaluator with an initial version."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -442,11 +547,224 @@ def create_evaluator(
             "Creating evaluator",
             success_msg="Evaluator created successfully",
         ):
-            evaluator = client.evaluators.create(
+            evaluator = client.evaluators.create_template_evaluator(
                 name=name,
                 space=space,
                 commit_message=commit_message,
                 template_config=template_config,
+                description=description,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to create evaluator: {e}") from e
+    else:
+        output_data(
+            evaluator,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@app.command("create-code-evaluator")
+@handle_errors
+def code_create_evaluator(
+    name: Annotated[
+        str,
+        typer.Option(
+            "--name",
+            "-n",
+            help="Evaluator name (must be unique within the space)",
+            prompt=True,
+        ),
+    ],
+    space: Annotated[
+        str,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID to create the evaluator in",
+            prompt=True,
+        ),
+    ],
+    commit_message: Annotated[
+        str,
+        typer.Option(
+            "--commit-message",
+            help="Commit message for the initial version",
+            prompt=True,
+        ),
+    ],
+    code_type: Annotated[
+        str,
+        typer.Option(
+            "--code-type",
+            help="Code evaluator kind: managed (built-in) or custom (user Python)",
+            prompt=True,
+        ),
+    ],
+    code_name: Annotated[
+        str,
+        typer.Option(
+            "--code-name",
+            help="Eval column name (alphanumeric, spaces, hyphens, underscores)",
+            prompt=True,
+        ),
+    ],
+    variables: Annotated[
+        str,
+        typer.Option(
+            "--variables",
+            help=(
+                "JSON array of span attribute names to pass into the evaluator "
+                "(e.g. '[\"output\"]'). Accepts inline JSON or a @file path."
+            ),
+            prompt=True,
+        ),
+    ],
+    managed_evaluator: Annotated[
+        ManagedCodeEvaluator | None,
+        typer.Option(
+            "--managed-evaluator",
+            help=(
+                "Built-in managed evaluator (--code-type managed): "
+                "MatchesRegex, JSONParseable, ContainsAnyKeyword, "
+                "ContainsAllKeywords, or ExactMatch"
+            ),
+        ),
+    ] = None,
+    code: Annotated[
+        str | None,
+        typer.Option(
+            "--code",
+            help=(
+                "Python source for --code-type custom. Pass source inline, "
+                "or prefix with '@' to load from a file "
+                "(e.g. --code @./evaluator.py)."
+            ),
+        ),
+    ] = None,
+    imports: Annotated[
+        str | None,
+        typer.Option(
+            "--imports",
+            help=(
+                "Optional Python import block for --code-type custom. "
+                "Inline or '@path/to/imports.py'."
+            ),
+        ),
+    ] = None,
+    static_params: Annotated[
+        str | None,
+        typer.Option(
+            "--static-params",
+            help=(
+                "JSON array of static parameters. Each item: "
+                "{name, type: STRING|STRING_ARRAY|REGEX, "
+                "default_value: <string or array of strings>}. "
+                "Accepts inline JSON or a @file path."
+            ),
+        ),
+    ] = None,
+    query_filter: Annotated[
+        str | None,
+        typer.Option(
+            "--query-filter",
+            help="Optional filter query applied before evaluation",
+        ),
+    ] = None,
+    data_granularity: Annotated[
+        str | None,
+        typer.Option(
+            "--data-granularity",
+            help="Data granularity: span, trace, or session",
+        ),
+    ] = None,
+    description: Annotated[
+        str | None,
+        typer.Option(
+            "--description",
+            help="Optional evaluator description",
+        ),
+    ] = None,
+    profile: Annotated[
+        str,
+        typer.Option(
+            "--profile",
+            "-p",
+            help="Configuration profile to use",
+        ),
+    ] = "",
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Create a new code evaluator with an initial version.
+
+    Use ``--code-type managed`` for built-in evaluators (requires
+    ``--managed-evaluator`` and ``--variables``) or ``--code-type custom``
+    for user-supplied Python (requires ``--code`` and ``--variables``).
+    """
+    setup_logging(verbose)
+    normalized_code_type = code_type.strip().lower()
+    if normalized_code_type not in _CODE_TYPES:
+        raise UsageError(
+            f"--code-type must be one of {', '.join(_CODE_TYPES)}; "
+            f"got '{code_type}'"
+        )
+
+    if normalized_code_type == "managed":
+        if managed_evaluator is None:
+            raise UsageError("--code-type managed requires --managed-evaluator")
+        code_config = _build_managed_code_config(
+            code_name=code_name,
+            managed_evaluator=managed_evaluator,
+            variables=variables,
+            static_params=static_params,
+            query_filter=query_filter,
+            data_granularity=data_granularity,
+        )
+    else:  # custom
+        if not code:
+            raise UsageError("--code-type custom requires --code")
+        code_config = _build_custom_code_config(
+            code_name=code_name,
+            code=code,
+            imports=imports,
+            variables=variables,
+            static_params=static_params,
+            query_filter=query_filter,
+            data_granularity=data_granularity,
+        )
+
+    config = ConfigManager.load(profile, expand_env_vars=True)
+    client = ArizeClient(**asdict(config.to_sdk_config()))
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Creating evaluator",
+            success_msg="Evaluator created successfully",
+        ):
+            evaluator = client.evaluators.create_code_evaluator(
+                name=name,
+                space=space,
+                commit_message=commit_message,
+                code_config=code_config,
                 description=description,
             )
     except Exception as e:
@@ -751,9 +1069,9 @@ def get_version(
         )
 
 
-@app.command("create-version")
+@app.command("create-template-evaluator-version")
 @handle_errors
-def create_version(
+def template_create_version(
     name_or_id: Annotated[
         str,
         typer.Argument(help="Evaluator name or ID"),
@@ -884,7 +1202,7 @@ def create_version(
         ),
     ] = False,
 ) -> None:
-    """Create a new version of an existing evaluator."""
+    """Create a new template version of an existing evaluator."""
     setup_logging(verbose)
     config = ConfigManager.load(profile, expand_env_vars=True)
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -912,11 +1230,209 @@ def create_version(
             "Creating evaluator version",
             success_msg="Evaluator version created successfully",
         ):
-            version = client.evaluators.create_version(
+            version = client.evaluators.create_template_version(
                 evaluator=name_or_id,
                 space=space,
                 commit_message=commit_message,
                 template_config=template_config,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to create evaluator version: {e}") from e
+    else:
+        output_data(
+            version,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@app.command("create-code-evaluator-version")
+@handle_errors
+def code_create_version(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Evaluator name or ID"),
+    ],
+    commit_message: Annotated[
+        str,
+        typer.Option(
+            "--commit-message",
+            help="Commit message describing the changes in this version",
+            prompt=True,
+        ),
+    ],
+    code_type: Annotated[
+        str,
+        typer.Option(
+            "--code-type",
+            help="Code evaluator kind: managed (built-in) or custom (user Python)",
+            prompt=True,
+        ),
+    ],
+    code_name: Annotated[
+        str,
+        typer.Option(
+            "--code-name",
+            help="Eval column name (alphanumeric, spaces, hyphens, underscores)",
+            prompt=True,
+        ),
+    ],
+    variables: Annotated[
+        str,
+        typer.Option(
+            "--variables",
+            help=(
+                "JSON array of span attribute names to pass into the evaluator "
+                "(e.g. '[\"output\"]'). Accepts inline JSON or a @file path."
+            ),
+            prompt=True,
+        ),
+    ],
+    managed_evaluator: Annotated[
+        ManagedCodeEvaluator | None,
+        typer.Option(
+            "--managed-evaluator",
+            help=(
+                "Built-in managed evaluator (--code-type managed): "
+                "MatchesRegex, JSONParseable, ContainsAnyKeyword, "
+                "ContainsAllKeywords, or ExactMatch"
+            ),
+        ),
+    ] = None,
+    code: Annotated[
+        str | None,
+        typer.Option(
+            "--code",
+            help=(
+                "Python source for --code-type custom. Pass source inline, "
+                "or prefix with '@' to load from a file "
+                "(e.g. --code @./evaluator.py)."
+            ),
+        ),
+    ] = None,
+    imports: Annotated[
+        str | None,
+        typer.Option(
+            "--imports",
+            help=(
+                "Optional Python import block for --code-type custom. "
+                "Inline or '@path/to/imports.py'."
+            ),
+        ),
+    ] = None,
+    static_params: Annotated[
+        str | None,
+        typer.Option(
+            "--static-params",
+            help=(
+                "JSON array of static parameters. Each item: "
+                "{name, type: STRING|STRING_ARRAY|REGEX, "
+                "default_value: <string or array of strings>}. "
+                "Accepts inline JSON or a @file path."
+            ),
+        ),
+    ] = None,
+    query_filter: Annotated[
+        str | None,
+        typer.Option(
+            "--query-filter",
+            help="Optional filter query applied before evaluation",
+        ),
+    ] = None,
+    data_granularity: Annotated[
+        str | None,
+        typer.Option(
+            "--data-granularity",
+            help="Data granularity: span, trace, or session",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using evaluator name instead of ID)",
+        ),
+    ] = None,
+    profile: Annotated[
+        str,
+        typer.Option(
+            "--profile",
+            "-p",
+            help="Configuration profile to use",
+        ),
+    ] = "",
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Create a new code version of an existing evaluator.
+
+    Use ``--code-type managed`` for built-in evaluators or
+    ``--code-type custom`` for user-supplied Python.
+    """
+    setup_logging(verbose)
+    normalized_code_type = code_type.strip().lower()
+    if normalized_code_type not in _CODE_TYPES:
+        raise UsageError(
+            f"--code-type must be one of {', '.join(_CODE_TYPES)}; "
+            f"got '{code_type}'"
+        )
+
+    if normalized_code_type == "managed":
+        if managed_evaluator is None:
+            raise UsageError("--code-type managed requires --managed-evaluator")
+        code_config = _build_managed_code_config(
+            code_name=code_name,
+            managed_evaluator=managed_evaluator,
+            variables=variables,
+            static_params=static_params,
+            query_filter=query_filter,
+            data_granularity=data_granularity,
+        )
+    else:  # custom
+        if not code:
+            raise UsageError("--code-type custom requires --code")
+        code_config = _build_custom_code_config(
+            code_name=code_name,
+            code=code,
+            imports=imports,
+            variables=variables,
+            static_params=static_params,
+            query_filter=query_filter,
+            data_granularity=data_granularity,
+        )
+
+    config = ConfigManager.load(profile, expand_env_vars=True)
+    client = ArizeClient(**asdict(config.to_sdk_config()))
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Creating evaluator version",
+            success_msg="Evaluator version created successfully",
+        ):
+            version = client.evaluators.create_code_version(
+                evaluator=name_or_id,
+                space=space,
+                commit_message=commit_message,
+                code_config=code_config,
             )
     except Exception as e:
         raise APIError(f"Failed to create evaluator version: {e}") from e

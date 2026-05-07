@@ -6,10 +6,8 @@ from typing import Annotated, Any
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client.models.tasks_create_request_evaluators_inner import (
-    TasksCreateRequestEvaluatorsInner,
-)
 from arize.tasks.client import RunStatus, TaskType
+from arize.tasks.types import TasksCreateRequestEvaluatorsInner
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
@@ -343,6 +341,166 @@ def create_task(
         raise APIError(f"Failed to create task: {e}") from e
     else:
         output_data(task, format_type=output_format, output_file=output_file)
+
+
+@app.command("update")
+@handle_errors
+def update_task(
+    task: Annotated[str, typer.Argument(help="Task name or ID")],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required when resolving task by name)",
+        ),
+    ] = None,
+    new_name: Annotated[
+        str | None,
+        typer.Option("--name", "-n", help="New task display name"),
+    ] = None,
+    sampling_rate: Annotated[
+        float | None,
+        typer.Option(
+            "--sampling-rate",
+            help="Sampling rate between 0 and 1 (project tasks only)",
+        ),
+    ] = None,
+    is_continuous: Annotated[
+        bool | None,
+        typer.Option(
+            "--is-continuous/--no-continuous",
+            help="Whether the task runs continuously (project tasks only)",
+        ),
+    ] = None,
+    query_filter: Annotated[
+        str | None,
+        typer.Option(
+            "--query-filter",
+            help=(
+                "Task-level query filter. Pass an empty string with "
+                '`--query-filter ""` to clear the existing filter.'
+            ),
+        ),
+    ] = None,
+    evaluators: Annotated[
+        str | None,
+        typer.Option(
+            "--evaluators",
+            help=(
+                "JSON array replacing the full evaluator list. Same shape as "
+                "`ax tasks create --evaluators`. Find IDs with `ax evaluators list`."
+            ),
+        ),
+    ] = None,
+    profile: Annotated[
+        str,
+        typer.Option("--profile", "-p", help="Configuration profile to use"),
+    ] = "",
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logs"),
+    ] = False,
+) -> None:
+    """Update mutable fields on an evaluation task."""
+    setup_logging(verbose)
+
+    config = ConfigManager.load(profile, expand_env_vars=True)
+    client = ArizeClient(**asdict(config.to_sdk_config()))
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    update_kwargs: dict[str, Any] = {"task": task}
+    if space is not None:
+        update_kwargs["space"] = space
+
+    has_field = False
+    if new_name is not None:
+        update_kwargs["name"] = new_name
+        has_field = True
+    if sampling_rate is not None:
+        if not (0.0 <= sampling_rate <= 1.0):
+            raise UsageError("--sampling-rate must be between 0.0 and 1.0")
+        update_kwargs["sampling_rate"] = sampling_rate
+        has_field = True
+    if is_continuous is not None:
+        update_kwargs["is_continuous"] = is_continuous
+        has_field = True
+    if query_filter is not None:
+        update_kwargs["query_filter"] = (
+            None if query_filter == "" else query_filter
+        )
+        has_field = True
+    if evaluators is not None:
+        update_kwargs["evaluators"] = _build_evaluators(load_json(evaluators))
+        has_field = True
+
+    if not has_field:
+        raise UsageError(
+            "Provide at least one field to update (see --help for available options).",
+        )
+
+    try:
+        with spinner("Updating task", success_msg="Task updated"):
+            updated = client.tasks.update(**update_kwargs)
+    except Exception as e:
+        raise APIError(f"Failed to update task: {e}") from e
+    else:
+        output_data(updated, format_type=output_format, output_file=output_file)
+
+
+@app.command("delete")
+@handle_errors
+def delete_task(
+    task: Annotated[str, typer.Argument(help="Task name or ID")],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required when resolving task by name)",
+        ),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", "-f", help="Skip confirmation prompt"),
+    ] = False,
+    profile: Annotated[
+        str,
+        typer.Option("--profile", "-p", help="Configuration profile to use"),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logs"),
+    ] = False,
+) -> None:
+    """Delete an evaluation task (irreversible)."""
+    setup_logging(verbose)
+
+    if not force:
+        warning("This will permanently delete the task and its configuration")
+        if not confirm("Are you sure?", default=False):
+            info("Task not deleted")
+            raise typer.Exit()
+
+    config = ConfigManager.load(profile, expand_env_vars=True)
+    client = ArizeClient(**asdict(config.to_sdk_config()))
+
+    try:
+        with spinner("Deleting task", success_msg="Task deleted"):
+            client.tasks.delete(task=task, space=space)
+    except Exception as e:
+        raise APIError(f"Failed to delete task: {e}") from e
 
 
 # ---------------------------------------------------------------------------

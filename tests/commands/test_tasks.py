@@ -67,6 +67,8 @@ class TestTaskCommands:
             "list",
             "get",
             "create",
+            "update",
+            "delete",
             "trigger-run",
             "list-runs",
             "get-run",
@@ -516,6 +518,209 @@ class TestCreateTask:
                 "proj-1",
             ],
         )
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax tasks update
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateTask:
+    """Tests for the 'ax tasks update' command."""
+
+    @pytest.mark.unit
+    def test_update_name(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--name is forwarded to client.tasks.update."""
+        mock_client.tasks.update.return_value = _make_task(name="new-name")
+
+        result = cli_runner.invoke(
+            app,
+            ["update", "task-1", "--name", "new-name"],
+        )
+        assert result.exit_code == 0
+        mock_client.tasks.update.assert_called_once_with(
+            task="task-1",
+            name="new-name",
+        )
+
+    @pytest.mark.unit
+    def test_update_sampling_rate(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        mock_client.tasks.update.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            ["update", "tid", "--sampling-rate", "0.5"],
+        )
+        assert result.exit_code == 0
+        mock_client.tasks.update.assert_called_once_with(
+            task="tid",
+            sampling_rate=pytest.approx(0.5),
+        )
+
+    @pytest.mark.unit
+    def test_update_evaluators(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        mock_client.tasks.update.return_value = _make_task()
+        json_arg = '[{"evaluator_id": "ev-1"}]'
+
+        result = cli_runner.invoke(
+            app,
+            ["update", "tid", "--evaluators", json_arg],
+        )
+        assert result.exit_code == 0
+        call_kw = mock_client.tasks.update.call_args.kwargs
+        assert call_kw["task"] == "tid"
+        assert len(call_kw["evaluators"]) == 1
+        assert call_kw["evaluators"][0].evaluator_id == "ev-1"
+
+    @pytest.mark.unit
+    def test_clear_query_filter_with_empty_string(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Passing `--query-filter ""` clears the task-level query filter."""
+        mock_client.tasks.update.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            ["update", "tid", "--query-filter", ""],
+        )
+        assert result.exit_code == 0
+        mock_client.tasks.update.assert_called_once_with(
+            task="tid",
+            query_filter=None,
+        )
+
+    @pytest.mark.unit
+    def test_query_filter_non_empty_passes_through(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """A non-empty `--query-filter` is forwarded to the SDK verbatim."""
+        mock_client.tasks.update.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            ["update", "tid", "--query-filter", "score > 0.8"],
+        )
+        assert result.exit_code == 0
+        mock_client.tasks.update.assert_called_once_with(
+            task="tid",
+            query_filter="score > 0.8",
+        )
+
+    @pytest.mark.unit
+    def test_usage_error_when_no_fields(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        result = cli_runner.invoke(app, ["update", "tid"])
+        assert result.exit_code != 0
+        mock_client.tasks.update.assert_not_called()
+
+    @pytest.mark.unit
+    def test_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        mock_client.tasks.update.side_effect = Exception("boom")
+        result = cli_runner.invoke(
+            app,
+            ["update", "tid", "--name", "x"],
+        )
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax tasks delete
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteTask:
+    """Tests for the 'ax tasks delete' command."""
+
+    @pytest.mark.unit
+    def test_delete_with_force(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        result = cli_runner.invoke(
+            app,
+            ["delete", "task-1", "--force"],
+        )
+        assert result.exit_code == 0
+        mock_client.tasks.delete.assert_called_once_with(
+            task="task-1",
+            space=None,
+        )
+
+    @pytest.mark.unit
+    def test_delete_confirmation_yes(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        result = cli_runner.invoke(
+            app,
+            ["delete", "task-1"],
+            input="y\n",
+        )
+        assert result.exit_code == 0
+        mock_client.tasks.delete.assert_called_once_with(
+            task="task-1",
+            space=None,
+        )
+
+    @pytest.mark.unit
+    def test_delete_confirmation_no(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        result = cli_runner.invoke(
+            app,
+            ["delete", "task-1"],
+            input="n\n",
+        )
+        assert result.exit_code == 0
+        mock_client.tasks.delete.assert_not_called()
+
+    @pytest.mark.unit
+    def test_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        mock_client.tasks.delete.side_effect = Exception("gone")
+        result = cli_runner.invoke(app, ["delete", "tid", "--force"])
         assert result.exit_code != 0
 
 

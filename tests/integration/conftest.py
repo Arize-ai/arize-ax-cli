@@ -8,6 +8,8 @@ Integration tests run against the real Arize API and require:
     Required for role binding lifecycle tests.
   - (Optional) ARIZE_TEST_ROLE_ID set to a role global ID (base64-encoded).
     Required for role binding lifecycle tests.
+  - (Optional) ARIZE_TEST_EVALUATOR_ID set to an evaluator global ID
+    (base64-encoded). Required for task lifecycle tests.
 
 Run::
 
@@ -125,3 +127,12 @@ def test_role_id() -> str:
     if not role_id:
         pytest.skip("ARIZE_TEST_ROLE_ID not set")
     return role_id
+
+
+@pytest.fixture(scope="session")
+def test_evaluator_id() -> str:
+    """Return the test evaluator ID from ARIZE_TEST_EVALUATOR_ID, skipping if not set."""
+    evaluator_id = os.environ.get("ARIZE_TEST_EVALUATOR_ID", "")
+    if not evaluator_id:
+        pytest.skip("ARIZE_TEST_EVALUATOR_ID not set")
+    return evaluator_id

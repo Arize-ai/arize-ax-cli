@@ -6,13 +6,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from arize._generated.api_client.models import LLMMessage
-from arize._generated.api_client.models.input_variable_format import (
+from arize.prompts.types import (
     InputVariableFormat,
+    LLMMessage,
+    LlmProvider,
+    MessageRole,
+    ToolCallType,
 )
-from arize._generated.api_client.models.llm_provider import LlmProvider
-from arize._generated.api_client.models.message_role import MessageRole
-from arize._generated.api_client.models.tool_call_type import ToolCallType
 from typer.testing import CliRunner, Result
 
 from ax.cli import app

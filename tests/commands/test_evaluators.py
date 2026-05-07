@@ -1,9 +1,10 @@
 """Tests for evaluator CLI commands."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from arize._generated.api_client import OptimizationDirection
+from arize.evaluators.types import OptimizationDirection
 from typer.testing import CliRunner
 
 from ax.commands.evaluators import app
@@ -18,12 +19,14 @@ class TestEvaluatorCommands:
         for expected in (
             "list",
             "get",
-            "create",
+            "create-template-evaluator",
+            "create-code-evaluator",
             "update",
             "delete",
             "list-versions",
             "get-version",
-            "create-version",
+            "create-template-evaluator-version",
+            "create-code-evaluator-version",
         ):
             assert expected in names
 
@@ -295,19 +298,19 @@ class TestGetVersion:
         )
 
 
-class TestCreateEvaluator:
-    """Tests for the 'ax evaluators create' command."""
+class TestTemplateCreateEvaluator:
+    """Tests for the 'ax evaluators template-create' command."""
 
     @pytest.mark.unit
-    def test_calls_client_create_evaluator(
+    def test_calls_client_create_template(
         self,
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Invoke 'create' with required args and verify SDK call."""
-        mock_client.evaluators.create.return_value = MagicMock(
-            model_dump=MagicMock(return_value={"id": "eval-new"})
+        """Invoke 'template-create' with required args and verify SDK call."""
+        mock_client.evaluators.create_template_evaluator.return_value = (
+            MagicMock(model_dump=MagicMock(return_value={"id": "eval-new"}))
         )
 
         with patch(
@@ -319,7 +322,7 @@ class TestCreateEvaluator:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create",
+                    "create-template-evaluator",
                     "--name",
                     "My Evaluator",
                     "--space",
@@ -353,7 +356,7 @@ class TestCreateEvaluator:
             direction=None,
             data_granularity=None,
         )
-        mock_client.evaluators.create.assert_called_once_with(
+        mock_client.evaluators.create_template_evaluator.assert_called_once_with(
             name="My Evaluator",
             space="space-1",
             commit_message="Initial version",
@@ -362,22 +365,22 @@ class TestCreateEvaluator:
         )
 
     @pytest.mark.unit
-    def test_create_with_description(
+    def test_template_create_with_description(
         self,
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Invoke 'create' with --description and verify it is passed to SDK."""
-        mock_client.evaluators.create.return_value = MagicMock(
-            model_dump=MagicMock(return_value={"id": "eval-new"})
+        """Invoke 'template-create' with --description and verify it is passed to SDK."""
+        mock_client.evaluators.create_template_evaluator.return_value = (
+            MagicMock(model_dump=MagicMock(return_value={"id": "eval-new"}))
         )
 
         with patch("ax.commands.evaluators._build_template_config"):
             result = cli_runner.invoke(
                 app,
                 [
-                    "create",
+                    "create-template-evaluator",
                     "--name",
                     "My Evaluator",
                     "--space",
@@ -398,20 +401,20 @@ class TestCreateEvaluator:
             )
 
         assert result.exit_code == 0
-        mock_client.evaluators.create.assert_called_once()
-        _, kwargs = mock_client.evaluators.create.call_args
+        mock_client.evaluators.create_template_evaluator.assert_called_once()
+        _, kwargs = mock_client.evaluators.create_template_evaluator.call_args
         assert kwargs["description"] == "Evaluates relevance"
 
     @pytest.mark.unit
-    def test_create_passes_classification_choices_to_build(
+    def test_template_create_passes_classification_choices_to_build(
         self,
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
         """--classification-choices and related flags reach _build_template_config."""
-        mock_client.evaluators.create.return_value = MagicMock(
-            model_dump=MagicMock(return_value={"id": "eval-new"})
+        mock_client.evaluators.create_template_evaluator.return_value = (
+            MagicMock(model_dump=MagicMock(return_value={"id": "eval-new"}))
         )
 
         with patch(
@@ -421,7 +424,7 @@ class TestCreateEvaluator:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create",
+                    "create-template-evaluator",
                     "--name",
                     "My Evaluator",
                     "--space",
@@ -461,18 +464,18 @@ class TestCreateEvaluator:
         )
 
 
-class TestCreateVersion:
-    """Tests for the 'ax evaluators create-version' command."""
+class TestTemplateCreateVersion:
+    """Tests for the 'ax evaluators template-create-version' command."""
 
     @pytest.mark.unit
-    def test_calls_client_create_version(
+    def test_calls_client_create_template_version(
         self,
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Invoke 'create-version' with required args and verify SDK call."""
-        mock_client.evaluators.create_version.return_value = MagicMock(
+        """Invoke 'template-create-version' with required args and verify SDK call."""
+        mock_client.evaluators.create_template_version.return_value = MagicMock(
             model_dump=MagicMock(return_value={"id": "v-2"})
         )
 
@@ -485,7 +488,7 @@ class TestCreateVersion:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-version",
+                    "create-template-evaluator-version",
                     "eval-1",
                     "--commit-message",
                     "v2 update",
@@ -516,7 +519,7 @@ class TestCreateVersion:
             direction=None,
             data_granularity=None,
         )
-        mock_client.evaluators.create_version.assert_called_once_with(
+        mock_client.evaluators.create_template_version.assert_called_once_with(
             evaluator="eval-1",
             space=None,
             commit_message="v2 update",
@@ -524,14 +527,14 @@ class TestCreateVersion:
         )
 
     @pytest.mark.unit
-    def test_create_version_passes_classification_choices_to_build(
+    def test_template_create_version_passes_classification_choices(
         self,
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """New template flags are forwarded on create-version."""
-        mock_client.evaluators.create_version.return_value = MagicMock(
+        """New template flags are forwarded on template-create-version."""
+        mock_client.evaluators.create_template_version.return_value = MagicMock(
             model_dump=MagicMock(return_value={"id": "v-2"})
         )
 
@@ -542,7 +545,7 @@ class TestCreateVersion:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-version",
+                    "create-template-evaluator-version",
                     "eval-1",
                     "--commit-message",
                     "v2",
@@ -721,7 +724,7 @@ class TestBuildTemplateConfig:
         result = CliRunner().invoke(
             app,
             [
-                "create",
+                "create-template-evaluator",
                 "--name",
                 "test",
                 "--template-name",
@@ -805,3 +808,388 @@ class TestBuildTemplateConfig:
         assert _parse_optional_data_granularity("Span") == "span"
         assert _parse_optional_data_granularity("TRACE") == "trace"
         assert _parse_optional_data_granularity("Session") == "session"
+
+
+class TestParseStaticParams:
+    """Tests for the _parse_static_params helper."""
+
+    @pytest.mark.unit
+    def test_returns_none_when_omitted(self) -> None:
+        """None input yields None (no static params)."""
+        from ax.commands.evaluators import _parse_static_params
+
+        assert _parse_static_params(None) is None
+        assert _parse_static_params("") is None
+
+    @pytest.mark.unit
+    def test_parses_string_default_value(self) -> None:
+        """Items with a string default_value parse into StaticParam."""
+        from ax.commands.evaluators import _parse_static_params
+
+        result = _parse_static_params(
+            '[{"name": "pattern", "type": "REGEX", "default_value": "^yes"}]'
+        )
+        assert result is not None
+        assert len(result) == 1
+        assert result[0].name == "pattern"
+        assert result[0].type == "REGEX"
+
+    @pytest.mark.unit
+    def test_parses_array_default_value(self) -> None:
+        """Items with a string-array default_value parse (STRING_ARRAY type)."""
+        from ax.commands.evaluators import _parse_static_params
+
+        result = _parse_static_params(
+            '[{"name": "keywords", "type": "STRING_ARRAY", '
+            '"default_value": ["a", "b"]}]'
+        )
+        assert result is not None
+        assert result[0].type == "STRING_ARRAY"
+
+    @pytest.mark.unit
+    def test_non_list_raises(self) -> None:
+        """Non-list input raises UsageError."""
+        from ax.commands.evaluators import _parse_static_params
+        from ax.core.exceptions import UsageError
+
+        with pytest.raises(UsageError, match="JSON array"):
+            _parse_static_params('{"name": "x"}')
+
+
+class TestParseVariables:
+    """Tests for the _parse_variables helper."""
+
+    @pytest.mark.unit
+    def test_valid_list_of_strings(self) -> None:
+        """Valid JSON list of strings round-trips."""
+        from ax.commands.evaluators import _parse_variables
+
+        assert _parse_variables('["a", "b"]') == ["a", "b"]
+
+    @pytest.mark.unit
+    def test_non_list_raises(self) -> None:
+        """Non-list JSON raises UsageError."""
+        from ax.commands.evaluators import _parse_variables
+        from ax.core.exceptions import UsageError
+
+        with pytest.raises(UsageError, match="array of strings"):
+            _parse_variables('{"a": 1}')
+
+    @pytest.mark.unit
+    def test_list_with_non_string_raises(self) -> None:
+        """List containing non-string entries raises UsageError."""
+        from ax.commands.evaluators import _parse_variables
+        from ax.core.exceptions import UsageError
+
+        with pytest.raises(UsageError, match="array of strings"):
+            _parse_variables('["a", 2]')
+
+
+class TestCodeCreateManagedEvaluator:
+    """Tests for 'ax evaluators code-create --code-type managed'."""
+
+    @pytest.mark.unit
+    def test_builds_managed_code_config_and_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Managed variant dispatches _build_managed_code_config and passes code_config."""
+        mock_client.evaluators.create_code_evaluator.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "eval-new"})
+        )
+
+        with patch(
+            "ax.commands.evaluators._build_managed_code_config"
+        ) as mock_build:
+            mock_code_config = MagicMock()
+            mock_build.return_value = mock_code_config
+
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create-code-evaluator",
+                    "--name",
+                    "Regex Check",
+                    "--space",
+                    "space-1",
+                    "--commit-message",
+                    "Initial version",
+                    "--code-type",
+                    "managed",
+                    "--code-name",
+                    "regex_match",
+                    "--managed-evaluator",
+                    "MatchesRegex",
+                    "--variables",
+                    '["output"]',
+                    "--static-params",
+                    '[{"name":"pattern","type":"REGEX","default_value":"^yes"}]',
+                    "--data-granularity",
+                    "span",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_build.assert_called_once()
+        mock_client.evaluators.create_code_evaluator.assert_called_once_with(
+            name="Regex Check",
+            space="space-1",
+            commit_message="Initial version",
+            code_config=mock_code_config,
+            description=None,
+        )
+
+    @pytest.mark.unit
+    def test_managed_missing_managed_evaluator_raises(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Managed variant without --managed-evaluator is rejected."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-code-evaluator",
+                "--name",
+                "x",
+                "--space",
+                "space-1",
+                "--commit-message",
+                "init",
+                "--code-type",
+                "managed",
+                "--code-name",
+                "ev",
+                "--variables",
+                '["output"]',
+            ],
+        )
+        assert result.exit_code != 0
+        assert "--managed-evaluator" in result.output
+
+
+class TestCodeCreateCustomEvaluator:
+    """Tests for 'ax evaluators code-create --code-type custom'."""
+
+    @pytest.mark.unit
+    def test_inline_code_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Inline --code is forwarded to _build_custom_code_config."""
+        mock_client.evaluators.create_code_evaluator.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "eval-new"})
+        )
+
+        with patch(
+            "ax.commands.evaluators._build_custom_code_config"
+        ) as mock_build:
+            mock_code_config = MagicMock()
+            mock_build.return_value = mock_code_config
+
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create-code-evaluator",
+                    "--name",
+                    "Custom Eval",
+                    "--space",
+                    "space-1",
+                    "--commit-message",
+                    "init",
+                    "--code-type",
+                    "custom",
+                    "--code-name",
+                    "my_eval",
+                    "--code",
+                    "class MyEval: pass",
+                    "--variables",
+                    '["input","output"]',
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_build.assert_called_once()
+        _, kwargs = mock_build.call_args
+        assert kwargs["code"] == "class MyEval: pass"
+        assert kwargs["imports"] is None
+        mock_client.evaluators.create_code_evaluator.assert_called_once_with(
+            name="Custom Eval",
+            space="space-1",
+            commit_message="init",
+            code_config=mock_code_config,
+            description=None,
+        )
+
+    @pytest.mark.unit
+    def test_code_and_imports_from_at_path_files(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """--code @file.py and --imports @file.py are resolved into CustomCodeConfig."""
+        mock_client.evaluators.create_code_evaluator.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "eval-new"})
+        )
+
+        code_file = tmp_path / "ev.py"
+        code_file.write_text("class LoadedEval: ...\n", encoding="utf-8")
+        imports_file = tmp_path / "imp.py"
+        imports_file.write_text("import re\n", encoding="utf-8")
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-code-evaluator",
+                "--name",
+                "Custom Eval",
+                "--space",
+                "space-1",
+                "--commit-message",
+                "init",
+                "--code-type",
+                "custom",
+                "--code-name",
+                "my_eval",
+                "--code",
+                f"@{code_file}",
+                "--imports",
+                f"@{imports_file}",
+                "--variables",
+                '["output"]',
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.evaluators.create_code_evaluator.assert_called_once()
+        _, kwargs = mock_client.evaluators.create_code_evaluator.call_args
+        code_config = kwargs["code_config"]
+        inner = code_config.actual_instance
+        assert inner.type == "custom"
+        assert inner.code == "class LoadedEval: ...\n"
+        assert inner.imports == "import re\n"
+
+    @pytest.mark.unit
+    def test_custom_missing_code_raises(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Custom variant without --code is rejected."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-code-evaluator",
+                "--name",
+                "x",
+                "--space",
+                "space-1",
+                "--commit-message",
+                "init",
+                "--code-type",
+                "custom",
+                "--code-name",
+                "ev",
+                "--variables",
+                '["output"]',
+            ],
+        )
+        assert result.exit_code != 0
+        assert "--code" in result.output
+
+
+class TestCodeCreateVersionKinds:
+    """Tests for 'ax evaluators code-create-version'."""
+
+    @pytest.mark.unit
+    def test_managed_version_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Managed code-create-version forwards code_config to create_code_version."""
+        mock_client.evaluators.create_code_version.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "v-2"})
+        )
+
+        with patch(
+            "ax.commands.evaluators._build_managed_code_config"
+        ) as mock_build:
+            mock_code_config = MagicMock()
+            mock_build.return_value = mock_code_config
+
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create-code-evaluator-version",
+                    "eval-1",
+                    "--commit-message",
+                    "v2",
+                    "--code-type",
+                    "managed",
+                    "--code-name",
+                    "regex",
+                    "--managed-evaluator",
+                    "JSONParseable",
+                    "--variables",
+                    '["output"]',
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_build.assert_called_once()
+        mock_client.evaluators.create_code_version.assert_called_once_with(
+            evaluator="eval-1",
+            space=None,
+            commit_message="v2",
+            code_config=mock_code_config,
+        )
+
+    @pytest.mark.unit
+    def test_custom_version_at_path_code(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """Custom code-create-version resolves --code @path/to/file.py."""
+        mock_client.evaluators.create_code_version.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "v-2"})
+        )
+
+        code_file = tmp_path / "ev.py"
+        code_file.write_text("class V2Eval: ...\n", encoding="utf-8")
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-code-evaluator-version",
+                "eval-1",
+                "--commit-message",
+                "v2",
+                "--code-type",
+                "custom",
+                "--code-name",
+                "my_eval",
+                "--code",
+                f"@{code_file}",
+                "--variables",
+                '["output"]',
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.evaluators.create_code_version.assert_called_once()
+        _, kwargs = mock_client.evaluators.create_code_version.call_args
+        code_config = kwargs["code_config"]
+        assert code_config.actual_instance.code == "class V2Eval: ...\n"

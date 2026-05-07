@@ -2,7 +2,6 @@
 
 import shutil
 import tempfile
-import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Annotated
@@ -12,8 +11,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
-from ax.core.exceptions import FileIOError, UsageError
+from ax.core.exceptions import ConfigError, FileIOError, UsageError
 from ax.utils.console import (
     emphasis,
     info,
@@ -23,6 +23,7 @@ from ax.utils.console import (
     text_dimmed,
     warning,
 )
+from ax.utils.http import download_url
 
 # NOTE: Downloads from `main` by default. This is intentional for now — the repo
 # is internal and skills are just Markdown files. A future improvement would pin
@@ -145,14 +146,10 @@ def _select_skills(yes: bool, available: list[str]) -> list[str]:
     return result
 
 
-def _download_zip(tmp_dir: Path) -> Path:
+def _download_zip(tmp_dir: Path, *, verify: bool = True) -> Path:
     """Download the arize-skills zipball to tmp_dir and return the path."""
     dest = tmp_dir / "arize-skills.zip"
-    try:
-        with urllib.request.urlopen(SKILLS_REPO_ZIP, timeout=30) as response:  # noqa: S310
-            dest.write_bytes(response.read())
-    except Exception as e:
-        raise FileIOError(f"Failed to download skills from GitHub: {e}") from e
+    download_url(SKILLS_REPO_ZIP, dest, timeout=30, verify=verify)
     return dest
 
 
@@ -275,11 +272,17 @@ def install(
 
     new_line()
 
+    try:
+        config = ConfigManager.load()
+        verify = config.request_verify
+    except ConfigError:
+        verify = True
+
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
 
         with spinner("Downloading skills from GitHub"):
-            zip_path = _download_zip(tmp_dir)
+            zip_path = _download_zip(tmp_dir, verify=verify)
 
         with spinner("Extracting skills"):
             source_root = _extract_zip(zip_path, tmp_dir)

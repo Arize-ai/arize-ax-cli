@@ -16,6 +16,25 @@ import pytest
 import ax.utils.upgrade_check as uc
 
 
+class TestMakeSslContext:
+    """Unit tests for _make_ssl_context."""
+
+    @pytest.mark.unit
+    def test_verify_true_returns_none(self) -> None:
+        """SSL verification enabled → no custom context needed."""
+        assert uc._make_ssl_context(True) is None
+
+    @pytest.mark.unit
+    def test_verify_false_returns_unverified_context(self) -> None:
+        """SSL verification disabled → returns an unverified SSLContext."""
+        import ssl
+
+        ctx = uc._make_ssl_context(False)
+        assert ctx is not None
+        assert ctx.check_hostname is False
+        assert ctx.verify_mode == ssl.CERT_NONE
+
+
 @pytest.fixture(autouse=True)
 def reset_upgrade_state() -> Generator[None, None, None]:
     """Reset module-level upgrade flag before and after each test."""

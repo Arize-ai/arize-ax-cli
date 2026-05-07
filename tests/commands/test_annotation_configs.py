@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
-from arize._generated.api_client.models import (
+from arize.annotation_configs.types import (
     AnnotationConfig,
     AnnotationConfigsList200Response,
+    AnnotationConfigType,
     CategoricalAnnotationConfig,
     CategoricalAnnotationValue,
     ContinuousAnnotationConfig,
@@ -14,7 +15,6 @@ from arize._generated.api_client.models import (
     OptimizationDirection,
     PaginationMetadata,
 )
-from arize.annotation_configs.types import AnnotationConfigType
 from typer.testing import CliRunner, Result
 
 from ax.cli import app

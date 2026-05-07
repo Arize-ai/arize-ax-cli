@@ -5,9 +5,7 @@ from typing import Annotated
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client.models.role_binding_resource_type import (
-    RoleBindingResourceType,
-)
+from arize.role_bindings.types import RoleBindingResourceType
 
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors

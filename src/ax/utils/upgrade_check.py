@@ -12,9 +12,11 @@ from typing import TYPE_CHECKING
 from packaging.version import Version
 
 from ax.config.manager import ConfigManager
+from ax.utils.http import unverified_ssl_context
 from ax.version import __version__
 
 if TYPE_CHECKING:
+    import ssl
     from pathlib import Path
 
 PYPI_TIMEOUT = 3
@@ -28,12 +30,14 @@ _should_upgrade: bool = False
 def start_background_check(
     enabled: bool,
     interval_hours: float,
+    request_verify: bool = True,
 ) -> threading.Thread | None:
     """Start a daemon thread to check PyPI for a newer ax version.
 
     Args:
         enabled: Whether to run the check at all.
         interval_hours: Minimum hours between PyPI fetches.
+        request_verify: Whether to verify SSL certificates.
 
     Returns:
         The started thread, or None if the check is disabled.
@@ -46,6 +50,7 @@ def start_background_check(
         kwargs={
             "interval_hours": interval_hours,
             "cache_path": _DEFAULT_CACHE_PATH,
+            "request_verify": request_verify,
         },
         daemon=True,
         name="ax-upgrade-check",
@@ -64,14 +69,33 @@ def should_upgrade() -> bool:
         return _should_upgrade
 
 
-def fetch_pypi_version() -> str | None:
+def _make_ssl_context(verify: bool) -> ssl.SSLContext | None:
+    """Return an unverified SSL context when verify is False, else None.
+
+    Args:
+        verify: Whether SSL certificates should be verified.
+
+    Returns:
+        An unverified SSLContext, or None to use the default verified context.
+    """
+    return None if verify else unverified_ssl_context()
+
+
+def fetch_pypi_version(request_verify: bool = True) -> str | None:
     """Fetch the latest arize-ax-cli version from PyPI.
+
+    Args:
+        request_verify: Whether to verify SSL certificates.
 
     Returns:
         Version string from PyPI, or None on any failure.
     """
     try:
-        with urllib.request.urlopen(_PYPI_URL, timeout=PYPI_TIMEOUT) as resp:  # noqa: S310
+        with urllib.request.urlopen(  # noqa: S310
+            _PYPI_URL,
+            timeout=PYPI_TIMEOUT,
+            context=_make_ssl_context(request_verify),
+        ) as resp:
             data = json.loads(resp.read())
             return str(data["info"]["version"])
     except Exception:
@@ -81,12 +105,14 @@ def fetch_pypi_version() -> str | None:
 def _run_check(
     interval_hours: float,
     cache_path: Path,
+    request_verify: bool = True,
 ) -> None:
     """Thread target: read cache, set upgrade flag if newer version known, fetch if stale.
 
     Args:
         interval_hours: Minimum hours between PyPI fetches.
         cache_path: Path to the JSON cache file.
+        request_verify: Whether to verify SSL certificates.
     """
     global _should_upgrade
     try:
@@ -106,7 +132,7 @@ def _run_check(
             return
 
         # Fetch and update cache
-        latest = fetch_pypi_version()
+        latest = fetch_pypi_version(request_verify)
         if latest is None:
             return
 

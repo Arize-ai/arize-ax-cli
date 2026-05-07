@@ -4,18 +4,16 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
-from arize._generated.api_client.models import (
+from arize.annotation_queues.types import (
+    AnnotationInput,
     AnnotationQueue,
     AnnotationQueueRecord,
     AnnotationQueueRecordAnnotateResult,
     AnnotationQueueRecordAssignResult,
     AnnotationQueueRecordsList200Response,
     AnnotationQueuesList200Response,
-    PaginationMetadata,
-)
-from arize._generated.api_client.models.annotation_input import AnnotationInput
-from arize._generated.api_client.models.assignment_method import (
     AssignmentMethod,
+    PaginationMetadata,
 )
 from typer.testing import CliRunner, Result
 

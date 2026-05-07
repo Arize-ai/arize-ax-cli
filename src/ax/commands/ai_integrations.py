@@ -5,14 +5,12 @@ from typing import Annotated, Any, overload
 
 import typer
 from arize import ArizeClient
-from arize._generated.api_client.models.ai_integration_auth_type import (
+from arize.ai_integrations.types import (
     AiIntegrationAuthType,
-)
-from arize._generated.api_client.models.ai_integration_provider import (
     AiIntegrationProvider,
-)
-from arize._generated.api_client.models.ai_integration_scoping import (
     AiIntegrationScoping,
+    AwsProviderMetadata,
+    GcpProviderMetadata,
 )
 
 from ax.config.manager import ConfigManager
@@ -60,6 +58,46 @@ def _parse_json_option(
             f"{option_name} must be a JSON {expected.__name__}"
         )
     return parsed
+
+
+def _parse_provider_metadata(
+    *,
+    provider: AiIntegrationProvider,
+    provider_metadata: dict[str, Any] | None,
+) -> AwsProviderMetadata | GcpProviderMetadata | None:
+    if provider_metadata is None:
+        return None
+
+    normalized: dict[str, Any] = dict(provider_metadata)
+    if provider == AiIntegrationProvider.AWSBEDROCK:
+        normalized.setdefault("kind", "aws")
+        if normalized.get("kind") != "aws":
+            raise UsageError(
+                "--provider-metadata.kind must be 'aws' for awsBedrock"
+            )
+        parsed_aws = AwsProviderMetadata.from_dict(normalized)
+        if parsed_aws is None:
+            raise UsageError(
+                "--provider-metadata is missing or invalid for awsBedrock"
+            )
+        return parsed_aws
+
+    if provider == AiIntegrationProvider.VERTEXAI:
+        normalized.setdefault("kind", "gcp")
+        if normalized.get("kind") != "gcp":
+            raise UsageError(
+                "--provider-metadata.kind must be 'gcp' for vertexAI"
+            )
+        parsed_gcp = GcpProviderMetadata.from_dict(normalized)
+        if parsed_gcp is None:
+            raise UsageError(
+                "--provider-metadata is missing or invalid for vertexAI"
+            )
+        return parsed_gcp
+
+    raise UsageError(
+        "--provider-metadata is only supported for awsBedrock and vertexAI"
+    )
 
 
 @app.command("list")
@@ -340,10 +378,14 @@ def create_ai_integration(
     parsed_headers = (
         _parse_json_option(headers, "--headers", dict) if headers else None
     )
-    parsed_provider_metadata = (
+    raw_provider_metadata = (
         _parse_json_option(provider_metadata, "--provider-metadata", dict)
         if provider_metadata
         else None
+    )
+    parsed_provider_metadata = _parse_provider_metadata(
+        provider=provider,
+        provider_metadata=raw_provider_metadata,
     )
 
     setup_logging(verbose)
