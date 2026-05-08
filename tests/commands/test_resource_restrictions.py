@@ -57,13 +57,8 @@ def _invoke(
     """Invoke the CLI app with standard mocks."""
     with (
         patch(
-            "ax.commands.resource_restrictions.ConfigManager.load",
-            return_value=mock_config,
-        ),
-        patch("ax.commands.resource_restrictions.asdict", return_value={}),
-        patch(
-            "ax.commands.resource_restrictions.ArizeClient",
-            return_value=mock_client,
+            "ax.commands.resource_restrictions.make_client",
+            return_value=(mock_client, mock_config),
         ),
     ):
         return runner.invoke(app, args, input=cli_input)

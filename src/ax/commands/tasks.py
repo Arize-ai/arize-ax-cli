@@ -1,15 +1,13 @@
 """Task management commands."""
 
-from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated, Any
 
 import typer
-from arize import ArizeClient
 from arize.tasks.client import RunStatus, TaskType
 from arize.tasks.types import TasksCreateRequestEvaluatorsInner
 
-from ax.config.manager import ConfigManager
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError, UsageError
 from ax.core.output import output_data
@@ -112,14 +110,6 @@ def list_tasks(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -139,8 +129,7 @@ def list_tasks(
 ) -> None:
     """List evaluation tasks."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -169,10 +158,6 @@ def list_tasks(
 @handle_errors
 def get_task(
     task_id: Annotated[str, typer.Argument(help="Task name or ID")],
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -188,8 +173,7 @@ def get_task(
 ) -> None:
     """Get a task by name or ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -287,10 +271,6 @@ def create_task(
             help="Task-level query filter applied to all evaluators",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -314,8 +294,7 @@ def create_task(
     if sampling_rate is not None and not (0.0 <= sampling_rate <= 1.0):
         raise UsageError("--sampling-rate must be between 0.0 and 1.0")
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -393,10 +372,6 @@ def update_task(
             ),
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -413,8 +388,7 @@ def update_task(
     """Update mutable fields on an evaluation task."""
     setup_logging(verbose)
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -475,10 +449,6 @@ def delete_task(
         bool,
         typer.Option("--force", "-f", help="Skip confirmation prompt"),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose logs"),
@@ -493,8 +463,7 @@ def delete_task(
             info("Task not deleted")
             raise typer.Exit()
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     try:
         with spinner("Deleting task", success_msg="Task deleted"):
@@ -566,10 +535,6 @@ def trigger_run(
             "--timeout", help="Maximum seconds to wait (used with --wait)"
         ),
     ] = 600.0,
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -594,8 +559,7 @@ def trigger_run(
             "--data-start-time and --data-end-time are ignored when --experiment-ids is provided; "
             "experiment tasks fetch data directly from the experiment, not a time-based scan"
         )
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -654,14 +618,6 @@ def list_runs(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -681,8 +637,7 @@ def list_runs(
 ) -> None:
     """List runs for a task."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -708,10 +663,6 @@ def list_runs(
 @handle_errors
 def get_run(
     run_id: Annotated[str, typer.Argument(help="Task run global ID (base64)")],
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -727,8 +678,7 @@ def get_run(
 ) -> None:
     """Get a task run by ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -751,10 +701,6 @@ def cancel_run(
         bool,
         typer.Option("--force", "-f", help="Skip confirmation prompt"),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -777,8 +723,7 @@ def cancel_run(
             info("Task run not cancelled")
             raise typer.Exit()
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -808,10 +753,6 @@ def wait_for_run(
         float,
         typer.Option("--timeout", help="Maximum seconds to wait (default 600)"),
     ] = 600.0,
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -827,8 +768,7 @@ def wait_for_run(
 ) -> None:
     """Wait for a task run to reach a terminal state (completed, failed, or cancelled)."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format

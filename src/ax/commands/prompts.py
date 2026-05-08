@@ -1,13 +1,11 @@
 """Prompt management commands."""
 
-from dataclasses import asdict
 from typing import Annotated, Any
 
 import typer
-from arize import ArizeClient
 from arize.prompts.types import InputVariableFormat, LLMMessage, LlmProvider
 
-from ax.config.manager import ConfigManager
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError, UsageError
 from ax.core.output import output_data
@@ -98,14 +96,6 @@ def list_prompts(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -125,8 +115,7 @@ def list_prompts(
 ) -> None:
     """List prompts in a space."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -179,14 +168,6 @@ def get_prompt(
             help="Label name to resolve to a version (e.g. 'production')",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -210,8 +191,7 @@ def get_prompt(
     If neither is supplied, the latest version is returned.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -303,14 +283,6 @@ def create_prompt(
             help="Default model name for this version",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -348,8 +320,7 @@ def create_prompt(
     parsed_messages = _build_llm_messages(load_json(messages))
 
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -401,14 +372,6 @@ def update_prompt(
             help="Updated description for the prompt",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -436,8 +399,7 @@ def update_prompt(
             "Available: --description"
         )
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -485,14 +447,6 @@ def delete_prompt(
             help="Skip confirmation prompt",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -507,8 +461,7 @@ def delete_prompt(
     This operation is irreversible and removes all associated versions.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     if not force:
         warning(
@@ -563,14 +516,6 @@ def list_versions(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -590,8 +535,7 @@ def list_versions(
 ) -> None:
     """List versions for a prompt."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -673,14 +617,6 @@ def create_version(
             help="Default model name for this version",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -711,8 +647,7 @@ def create_version(
     parsed_messages = _build_llm_messages(load_json(messages))
 
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -764,14 +699,6 @@ def get_version_by_label(
             help="Space name or ID (required if using prompt name instead of ID)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -791,8 +718,7 @@ def get_version_by_label(
 ) -> None:
     """Resolve a label to the prompt version it points to."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -833,14 +759,6 @@ def set_version_labels(
             ),
         ),
     ],
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -870,8 +788,7 @@ def set_version_labels(
         raise UsageError("At least one --label must be provided.")
 
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -907,14 +824,6 @@ def remove_version_label(
             help="Label name to remove (e.g. 'production', 'staging')",
         ),
     ],
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -926,8 +835,7 @@ def remove_version_label(
 ) -> None:
     """Remove a label from a prompt version."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     try:
         with spinner(

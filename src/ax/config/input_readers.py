@@ -174,8 +174,18 @@ def read_routing() -> RoutingConfig:
             )
             api_host = read_str_field(
                 msg="API host",
-                example="custom-api.my.company.com",
+                example="api-mycompany.dev.arize.com",
                 env_var="ARIZE_API_HOST",
+            )
+            app_scheme = read_str_field(
+                msg="App scheme",
+                example="https, http",
+                env_var="ARIZE_APP_SCHEME",
+            )
+            app_host = read_str_field(
+                msg="App host",
+                example="app-mycompany.dev.arize.com",
+                env_var="ARIZE_APP_HOST",
             )
             otlp_scheme = read_str_field(
                 msg="OTLP scheme",
@@ -205,6 +215,8 @@ def read_routing() -> RoutingConfig:
             return RoutingConfig(
                 api_scheme=api_scheme,
                 api_host=api_host,
+                app_scheme=app_scheme,
+                app_host=app_host,
                 otlp_scheme=otlp_scheme,
                 otlp_host=otlp_host,
                 flight_scheme=flight_scheme,

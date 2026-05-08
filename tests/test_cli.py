@@ -139,7 +139,7 @@ class TestMainCLIBehavior:
                 return_value=True,
             ),
             patch("ax.cli._start_upgrade_check"),
-            patch("ax.commands.spaces.ArizeClient"),
+            patch("ax.commands.spaces.make_client"),
             patch("ax.config.manager.ConfigManager.load"),
         ):
             result = runner.invoke(app, ["spaces", "list"])

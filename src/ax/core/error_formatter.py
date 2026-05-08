@@ -179,11 +179,15 @@ def get_error_suggestion(status: int) -> str:
         status: HTTP status code
 
     Returns:
-        Suggestion string, or None if no specific suggestion available
+        Suggestion string, or empty string if no specific suggestion available
     """
     suggestions = {
         400: "Check your input parameters and try again.",
-        401: "Authentication failed. Run 'ax profiles create' to configure credentials.",
+        401: (
+            "Authentication failed. If your profile uses OAuth, run "
+            "'ax auth login'. If it uses an API key, run "
+            "'ax profiles create' or 'ax profiles update'."
+        ),
         403: "You don't have permission. Check your API key or space access.",
         404: "Resource not found. Verify the ID exists using the list command.",
         409: "Resource already exists. Choose a different name or use the list command.",

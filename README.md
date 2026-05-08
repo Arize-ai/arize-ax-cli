@@ -70,7 +70,6 @@
   - [Exporting Dataset Examples](#exporting-dataset-examples)
   - [Exporting Experiment Runs](#exporting-experiment-runs)
   - [Exporting Spans by Trace ID](#exporting-spans-by-trace-id)
-  - [Using a Different Profile for a Command](#using-a-different-profile-for-a-command)
   - [Exporting Spans](#exporting-spans)
   - [Listing Traces and Exporting to Parquet](#listing-traces-and-exporting-to-parquet)
   - [Pagination](#pagination)
@@ -546,10 +545,11 @@ ax profiles use production
 ax profiles use staging
 
 # Update a field in a specific profile
-ax profiles update --profile staging --region EU
+ax profiles update staging --region EU
 
-# Use a specific profile for a single command
-ax datasets list --profile production
+# Run commands against a different profile by switching first
+ax profiles use production
+ax datasets list
 
 # Delete a profile (prompts for confirmation)
 ax profiles delete staging
@@ -614,11 +614,12 @@ ax --show-completion >> ~/.zshrc   # For zsh
 
 Available for all commands:
 
-- `--profile, -p <name>`: Use a specific configuration profile
 - `--output, -o <format>`: Set output format (`table`, `json`, `csv`, `parquet`, or a file path)
 - `--help, -h`: Show help message
 
 > **Note:** `--verbose, -v` is available on each individual subcommand (e.g., `ax datasets list --verbose`) rather than as a top-level flag.
+
+> **Profiles:** Commands always use the active profile. Run `ax profiles use <name>` to switch profiles.
 
 ### AI Integrations
 
@@ -1011,7 +1012,6 @@ ax experiments delete <experiment> [--force]
 | ----------------- | ---------------------------------------------- |
 | `--output-dir`    | Output directory (default: current directory)  |
 | `--stdout`        | Print JSON to stdout instead of saving to file |
-| `--profile`, `-p` | Configuration profile to use                   |
 | `--verbose`, `-v` | Enable verbose logs                            |
 
 ### Projects
@@ -1226,7 +1226,6 @@ ax spans export <project-id> --stdout
 | `--end-time`      | Override end of time window (ISO 8601)                                |
 | `--output-dir`    | Output directory (default: current directory)                         |
 | `--stdout`        | Print JSON to stdout instead of saving to file                        |
-| `--profile`, `-p` | Configuration profile to use                                          |
 | `--verbose`, `-v` | Enable verbose logs                                                   |
 
 **Examples:**
@@ -1370,7 +1369,6 @@ ax traces list <project-id> [--start-time <iso8601>] [--end-time <iso8601>] \
 | `--limit`, `-n`   | Maximum number of traces to return (default: 15)                        |
 | `--cursor`        | Pagination cursor for the next page                                     |
 | `--output`, `-o`  | Output format (`table`, `json`, `csv`, `parquet`) or file path          |
-| `--profile`, `-p` | Configuration profile to use                                            |
 | `--verbose`, `-v` | Enable verbose logs                                                     |
 
 **Filter examples:**
@@ -1455,12 +1453,6 @@ ax spans export proj_abc123 --session-id sess_456 --stdout
 
 # Export with a custom lookback window
 ax spans export proj_abc123 --trace-id tr_xyz789 --days 7
-```
-
-### Using a Different Profile for a Command
-
-```bash
-ax datasets list --space sp_abc123 --profile production
 ```
 
 ### Exporting Spans

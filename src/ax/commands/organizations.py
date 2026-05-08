@@ -1,12 +1,10 @@
 """Organization management commands."""
 
-from dataclasses import asdict
 from typing import Annotated
 
 import typer
-from arize import ArizeClient
 
-from ax.config.manager import ConfigManager
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
@@ -49,14 +47,6 @@ def list_organizations(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -76,8 +66,7 @@ def list_organizations(
 ) -> None:
     """List organizations the authenticated user has access to."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -107,14 +96,6 @@ def get_organization(
         str,
         typer.Argument(help="Organization name or ID"),
     ],
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -134,8 +115,7 @@ def get_organization(
 ) -> None:
     """Get an organization by name or ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -172,14 +152,6 @@ def create_organization(
             help="Optional description of the organization (max 1000 characters)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -202,8 +174,7 @@ def create_organization(
     Organization names must be unique within the account.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -250,14 +221,6 @@ def update_organization(
             help="New description (max 1000 characters). Pass an empty string to clear.",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -286,8 +249,7 @@ def update_organization(
         )
 
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format

@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from ax.cli import app
 from ax.config.manager import ConfigManager
-from ax.config.schema import AuthConfig, Config
+from ax.config.schema import AuthConfig, Config, ProfileConfig
 
 
 class TestProfilesValidate:
@@ -17,7 +17,10 @@ class TestProfilesValidate:
         self, mock_config_dir: Path
     ) -> None:
         """Validate on a valid profile should report it's valid."""
-        config = Config(auth=AuthConfig(api_key="ak-test123"))
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="ak-test123"),
+        )
         ConfigManager.save(config, "test")
         ConfigManager.ACTIVE_PROFILE_FILE.write_text("test")
 
@@ -32,9 +35,7 @@ class TestProfilesValidate:
     ) -> None:
         """Validate on a non-existent profile should report an error."""
         runner = CliRunner()
-        result = runner.invoke(
-            app, ["profiles", "validate", "--profile", "ghost"]
-        )
+        result = runner.invoke(app, ["profiles", "validate", "ghost"])
 
         assert result.exit_code != 0
 

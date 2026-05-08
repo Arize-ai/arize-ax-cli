@@ -22,8 +22,10 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
     "arize==8.22.3",
+    "filelock>=3.12.0, <4",  # For concurrent-safe token refresh in OAuth profiles
     "pydantic>=2.0.0, <3",
     "questionary>=2.0.0, <3",
+    "requests>=2.31.0, <3",  # For OAuth /oauth2/token and /oauth2/revoke calls
     "rich>=13.0.0, <14",
     "shellingham>=1.5.0, <2",  # For shell detection in completion
     "tomli-w>=1.0.0, <2",  # For TOML writing
@@ -39,6 +41,7 @@ dev = [
     "pytest==9.0.3",
     "ruff==0.14.9",
     "taskipy>=1.14.1, <2",
+    "types-requests>=2.31.0",
 ]
 
 [project.urls]
@@ -119,12 +122,24 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
+    "ANN001", # Missing type annotation for function argument (test fixtures)
+    "ANN002", # Missing type annotation for *args (test helpers)
+    "ANN003", # Missing type annotation for **kwargs (test helpers)
+    "ANN201", # Missing return type annotation for public function (test fns)
+    "ANN202", # Missing return type annotation for private function (test helpers)
+    "ANN204", # Missing return type annotation for special method (test helpers)
     "ANN401", # Allow Any in test helpers
+    "D101",   # Missing docstring in public class (test classes)
     "D102",   # Missing docstring in public method (not required in tests)
+    "D103",   # Missing docstring in public function (not required in tests)
     "D104",   # Missing docstring in public package
+    "D107",   # Missing docstring in __init__
+    "D205",   # 1 blank line required between summary line and description
     "D301",   # Use r""" for docstrings with backslashes (not required in tests)
     "DTZ001", # Allow naive datetime usage in tests
     "S101",   # Allow assert statements in tests
+    "S105",   # Possible hardcoded password (test fixtures use dummy tokens)
+    "S106",   # Possible hardcoded password as argument (test fixtures)
     "S108",   # Allow insecure usage of temporary file or directory
     "S404",   # Allow subprocess import in integration tests
     "S603",   # Allow subprocess.run with list args in integration tests

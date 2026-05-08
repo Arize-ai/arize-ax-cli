@@ -78,13 +78,8 @@ def _invoke(
     """Invoke the CLI app with standard mocks."""
     with (
         patch(
-            "ax.commands.api_keys.ConfigManager.load",
-            return_value=mock_config,
-        ),
-        patch("ax.commands.api_keys.asdict", return_value={}),
-        patch(
-            "ax.commands.api_keys.ArizeClient",
-            return_value=mock_client,
+            "ax.commands.api_keys.make_client",
+            return_value=(mock_client, mock_config),
         ),
     ):
         return runner.invoke(app, args, input=cli_input)

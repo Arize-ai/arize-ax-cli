@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 if TYPE_CHECKING:
     import pandas as pd
-from arize import ArizeClient
 
-from ax.config.manager import ConfigManager
+from ax.auth.auth_guards import require_api_key_auth
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
@@ -99,14 +98,6 @@ def list_datasets(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -126,8 +117,7 @@ def list_datasets(
 ) -> None:
     """List datasets in a space."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     # Resolve with helper functions
     output_format, output_file = parse_output_option(
@@ -167,14 +157,6 @@ def get_dataset(
             help="Space name or ID (required if using dataset name instead of ID)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -194,8 +176,7 @@ def get_dataset(
 ) -> None:
     """Get a dataset by name or ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -218,6 +199,7 @@ def get_dataset(
 
 
 @app.command("export")
+@require_api_key_auth("--all")
 @handle_errors
 def export_dataset(
     name_or_id: Annotated[
@@ -260,14 +242,6 @@ def export_dataset(
             help="Use Arrow Flight for bulk export (streams all examples).",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -282,8 +256,7 @@ def export_dataset(
     Pass --all to use Arrow Flight for bulk export.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     try:
         with spinner("Exporting dataset examples"):
@@ -344,14 +317,6 @@ def create_dataset(
             help='JSON array of examples, e.g. \'[{"question": "...", "answer": "..."}]\'',
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -377,8 +342,7 @@ def create_dataset(
     if not json_data and not file:
         raise typer.BadParameter("Provide examples via --json or --file.")
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -465,14 +429,6 @@ def append_examples(
             help="Dataset version ID (default: latest version)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -502,8 +458,7 @@ def append_examples(
     if not json_data and not file:
         raise typer.BadParameter("Provide examples via --json or --file.")
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -573,14 +528,6 @@ def delete_dataset(
             help="Skip confirmation prompt",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -592,8 +539,7 @@ def delete_dataset(
 ) -> None:
     """Delete a dataset by name or ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     # Confirm deletion
     if not force:

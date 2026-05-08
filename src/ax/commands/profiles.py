@@ -2,17 +2,23 @@
 
 import os
 import re
-from typing import Annotated
+from typing import Annotated, Literal, cast
 
+import questionary
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from ax.ascii_art import WELCOME_BANNER
+from ax.commands.auth import perform_oauth_login
 from ax.config.manager import ConfigManager
 from ax.config.schema import (
     AuthConfig,
+    AuthMethod,
     Config,
+    OutputConfig,
+    ProfileConfig,
+    RoutingConfig,
 )
 from ax.config.setup import (
     create_config_from_env_vars,
@@ -21,6 +27,7 @@ from ax.config.setup import (
     create_config_interactively,
     detect_env_vars,
     merge_config_with_flags,
+    routing_from_env,
 )
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import ConfigError
@@ -69,6 +76,13 @@ def create(
         str | None,
         typer.Option("--api-key", help="Arize API key."),
     ] = None,
+    auth_method: Annotated[
+        AuthMethod | None,
+        typer.Option(
+            "--auth-method",
+            help="Authentication method to use. If omitted, prompts interactively.",
+        ),
+    ] = None,
     # --- Routing ---
     region: Annotated[
         str | None,
@@ -107,17 +121,27 @@ def create(
 ) -> None:
     """Create Arize CLI configuration interactively or from flags/file.
 
-    Creates a new configuration profile with API key, defaults, and
-    preferences. Non-interactive CLI flags are limited to --api-key, --region,
-    --single-host, --single-port, and --output-format; use --from-file (TOML)
-    or interactive setup for hosts, storage, security, transport, and other
-    sections. Detects existing ARIZE_* environment variables when running
-    interactively (only when neither flags nor --from-file are used).
+    Creates a new configuration profile with API key or OAuth credentials,
+    routing defaults, and preferences. Non-interactive CLI flags are limited
+    to --api-key, --auth-method, --region, --single-host, --single-port, and
+    --output-format; use --from-file (TOML) or interactive setup for hosts,
+    storage, security, transport, and other sections. Detects existing ARIZE_*
+    environment variables when running interactively (only when neither flags
+    nor --from-file are used).
 
     Precedence (highest to lowest): CLI flags > --from-file (TOML) >
     interactive prompts.
     """
     setup_logging(verbose)
+
+    # Typer validates auth_method against the AuthMethod enum; only the
+    # cross-field check (oauth + --api-key) needs to live here.
+    if auth_method == AuthMethod.OAUTH and api_key is not None:
+        raise ConfigError(
+            "--auth-method oauth and --api-key are mutually exclusive. "
+            "Choose one authentication method."
+        )
+
     existing_profiles = ConfigManager.list_profiles()
 
     if existing_profiles:
@@ -131,6 +155,7 @@ def create(
         text("No configuration profile found. Let's set one up!\n")
 
     # --- Build flat flags dict (only explicitly-set values) ---
+    # Note: auth_method is handled separately and not included in flat_flags.
     flat_flags = {
         k: v
         for k, v in {
@@ -165,9 +190,9 @@ def create(
 
     # Check if profile already exists
     if ConfigManager.exists(profile):
-        # Non-interactive sources (flags or --from-file): do not prompt to
-        # overwrite; raise so scripts fail clearly.
-        if flat_flags or from_file:
+        # Non-interactive sources (flags, --auth-method, or --from-file): do not
+        # prompt to overwrite; raise so scripts fail clearly.
+        if flat_flags or auth_method or from_file:
             raise ConfigError(
                 f"Profile '{profile}' already exists. You can use a different name, "
                 "edit the profile using `ax profiles update <name>`, or "
@@ -185,23 +210,77 @@ def create(
         config = create_config_from_toml(from_file, profile)
         if flat_flags:
             config = merge_config_with_flags(config, flat_flags)
+    elif auth_method == AuthMethod.OAUTH:
+        # Explicit OAuth path: build routing from flags, then browser login.
+        routing_flags = {
+            k: v
+            for k, v in {
+                "region": region,
+                "single_host": single_host,
+                "single_port": single_port,
+            }.items()
+            if v is not None
+        }
+        routing_cfg = RoutingConfig(**routing_flags)
+        base_url = routing_cfg.resolve_app_url()
+
+        oauth_creds = perform_oauth_login(base_url=base_url)
+        auth_cfg = AuthConfig(auth_method=AuthMethod.OAUTH, oauth=oauth_creds)
+
+        # output_format is `str | None` from typer but OutputConfig.format
+        # is a Literal — Pydantic validates the value at runtime.
+        output_cfg = (
+            OutputConfig(
+                format=cast(
+                    "Literal['table', 'json', 'csv', 'parquet']", output_format
+                )
+            )
+            if output_format
+            else OutputConfig()
+        )
+        config = Config(
+            profile=ProfileConfig(name=profile),
+            auth=auth_cfg,
+            routing=routing_cfg,
+            output=output_cfg,
+        )
     elif flat_flags:
         config = create_config_from_flags(profile, flat_flags)
     else:
-        # Existing interactive flow with env var detection
+        # Fully interactive flow: prompt for auth method first (if not given via flag)
+        if auth_method is None:
+            chosen = questionary.select(
+                "Which authentication method?",
+                choices=[
+                    questionary.Choice("API key", value=AuthMethod.API_KEY),
+                    questionary.Choice(
+                        "OAuth (browser login)", value=AuthMethod.OAUTH
+                    ),
+                ],
+                default=AuthMethod.API_KEY,
+            ).ask()
+            if chosen is None:
+                raise typer.Abort()
+            auth_method = chosen
+
+        # Detect ARIZE_* env vars relevant to this auth method. OAuth
+        # credentials are never env-derived, so api_key is excluded for OAuth.
         detected_env_vars = detect_env_vars()
+        if auth_method == AuthMethod.OAUTH:
+            detected_env_vars = {
+                k: v for k, v in detected_env_vars.items() if k != "api_key"
+            }
+
         use_env_vars = False
         if detected_env_vars:
             emphasis("Environment Variable Detection\n")
             for field, env_var in detected_env_vars.items():
                 value = os.environ.get(env_var, "")
-                # Mask API key for display
                 if field == "api_key":
                     value = mask(value)
                 console.print(
                     f"  [green]✓[/green] Detected {env_var} = {value}"
                 )
-
             console.print()
             use_env_vars = confirm(
                 "Create config from detected environment variables?",
@@ -209,11 +288,42 @@ def create(
             )
             console.print()
 
-        config = (
-            create_config_from_env_vars(profile, detected_env_vars)
-            if use_env_vars
-            else create_config_interactively(profile)
-        )
+        # Build the base config the same way for both auth methods. For OAuth
+        # the AuthConfig is a logged-out shell at this point — we'll fill in
+        # tokens after running the browser flow below.
+        if use_env_vars:
+            if auth_method == AuthMethod.OAUTH:
+                placeholder_auth = AuthConfig(auth_method=AuthMethod.OAUTH)
+            else:
+                api_key_env = detected_env_vars["api_key"]
+                placeholder_auth = AuthConfig(
+                    auth_method=AuthMethod.API_KEY,
+                    api_key=f"${{{api_key_env}}}",
+                )
+            config = create_config_from_env_vars(
+                profile, detected_env_vars, placeholder_auth
+            )
+        else:
+            # auth_method is validated above to be 'api-key' or 'oauth'.
+            config = create_config_interactively(profile, auth_method)
+
+        # For OAuth, run the browser flow last (before save) so a failed
+        # login does not leave a half-configured profile on disk. Resolve
+        # routing now in case it contains ${VAR} refs.
+        if auth_method == AuthMethod.OAUTH:
+            base_url = (
+                routing_from_env(detected_env_vars).resolve_app_url()
+                if use_env_vars
+                else config.routing.resolve_app_url()
+            )
+            oauth_creds = perform_oauth_login(base_url=base_url)
+            config = config.model_copy(
+                update={
+                    "auth": AuthConfig(
+                        auth_method=AuthMethod.OAUTH, oauth=oauth_creds
+                    )
+                }
+            )
 
     # --- Save and finalize ---
     ConfigManager.save(config, profile)
@@ -412,24 +522,26 @@ def show_profile(
     Use --all to show all sections including defaults.
     """
     setup_logging(verbose)
-    profile = profile_arg or ConfigManager.get_active_profile()
-    config = ConfigManager.load(profile, expand_vars)
+    config = ConfigManager.load(profile_arg, expand_vars)
+    profile_name = config.profile.name
 
     from rich.panel import Panel
 
     # Display profile header
     active_badge = (
         " [green]● active[/green]"
-        if profile == ConfigManager.get_active_profile()
+        if profile_name == ConfigManager.get_active_profile()
         else ""
     )
     new_line()
-    console.print(f"[bold]Profile:[/bold] {profile}{active_badge}")
+    console.print(f"[bold]Profile:[/bold] {profile_name}{active_badge}")
     new_line()
 
-    # Determine which sections to show
+    # Sentinel Config used only as a baseline for diffing — the name and
+    # api_key are placeholders and never written or displayed.
     default_config = Config(
-        auth=AuthConfig(api_key="dummy"),
+        profile=ProfileConfig(name="_default"),
+        auth=AuthConfig(auth_method=AuthMethod.API_KEY, api_key="dummy"),
     )
 
     def is_customized(section_name: str) -> bool:
@@ -449,10 +561,32 @@ def show_profile(
     lines: list[str] = []
 
     # Auth section (always shown)
-    key = config.auth.api_key
-    key = key if _is_env_var_ref(key) else mask(key)
     lines.append("[bold]Authentication[/bold]")
-    lines.append(kv("  API Key", key))
+    if config.auth.uses_oauth:
+        lines.append(kv("  Method", "OAuth (browser login)"))
+        if config.auth.is_logged_out:
+            lines.append(
+                kv(
+                    "  Status",
+                    "[yellow]logged out — run 'ax auth login' to sign in[/yellow]",
+                )
+            )
+        else:
+            # Invariant: uses_oauth and not is_logged_out → oauth populated.
+            oauth = config.auth.oauth
+            assert oauth is not None  # noqa: S101
+            lines.append(kv("  User", oauth.user_email))
+            lines.append(kv("  Access token", mask(oauth.access_token)))
+            lines.append(kv("  Refresh token", mask(oauth.refresh_token)))
+            lines.append(kv("  Token expires at", oauth.expires_at.isoformat()))
+    else:
+        lines.append(kv("  Method", "API key"))
+        # api-key profiles always have a non-empty api_key (enforced by
+        # AuthConfig._validate_method_consistency).
+        key = config.auth.api_key
+        assert key is not None  # noqa: S101
+        key = key if _is_env_var_ref(key) else mask(key)
+        lines.append(kv("  API Key", key))
 
     # Output section (always shown)
     lines.append("")
@@ -529,7 +663,7 @@ def show_profile(
     console.print(
         Panel(
             "\n".join(lines),
-            title=f"[bold]Profile: {profile}[/bold]",
+            title=f"[bold]Profile: {profile_name}[/bold]",
             border_style="cyan",
             padding=(1, 2),
         )
@@ -565,7 +699,7 @@ def use_profile(
 @app.command("validate")
 @handle_errors
 def validate_profile(
-    profile_arg: Annotated[
+    profile: Annotated[
         str,
         typer.Argument(
             help="Profile to validate (uses active if not specified)",
@@ -586,19 +720,7 @@ def validate_profile(
     any issues found. Run 'ax profiles create' to fix problems.
     """
     setup_logging(verbose)
-    profile = profile_arg or ConfigManager.get_active_profile()
-
-    if not ConfigManager.exists(profile):
-        if profile:
-            raise ConfigError(
-                f"Profile '{profile}' does not exist.\n"
-                "Run 'ax profiles create' to create one."
-            )
-        raise ConfigError(
-            "No active profile configured.\n"
-            "Run 'ax profiles create' to create one."
-        )
-
+    profile = profile or ConfigManager.get_active_profile()
     try:
         ConfigManager.load(profile)
         success(f"Profile '{profile}' is valid.")
@@ -654,6 +776,8 @@ def _is_bool(val: str) -> bool:
     return val.lower() in ("true", "false")
 
 
-def _is_env_var_ref(val: str) -> bool:
+def _is_env_var_ref(val: str | None) -> bool:
     """Check if a string is an environment variable reference."""
+    if not val:
+        return False
     return val.startswith("${") and val.endswith("}")

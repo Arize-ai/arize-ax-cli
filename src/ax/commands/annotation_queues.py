@@ -1,13 +1,11 @@
 """Annotation queue management commands."""
 
-from dataclasses import asdict
 from typing import Annotated
 
 import typer
-from arize import ArizeClient
 from arize.annotation_queues.types import AnnotationInput, AssignmentMethod
 
-from ax.config.manager import ConfigManager
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
@@ -65,14 +63,6 @@ def list_annotation_queues(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -92,8 +82,7 @@ def list_annotation_queues(
 ) -> None:
     """List annotation queues in a space."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -132,14 +121,6 @@ def get_annotation_queue(
             help="Space name or ID (required if using queue name instead of ID)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -159,8 +140,7 @@ def get_annotation_queue(
 ) -> None:
     """Get an annotation queue by name or ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -231,14 +211,6 @@ def create_annotation_queue(
             help="How records are assigned to annotators (all, random)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -268,8 +240,7 @@ def create_annotation_queue(
         )
         raise typer.Exit(code=1)
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -342,14 +313,6 @@ def update_annotation_queue(
             help="Full replacement list of annotator emails (repeat for multiple)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -374,8 +337,7 @@ def update_annotation_queue(
     existing values when provided.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -429,14 +391,6 @@ def delete_annotation_queue(
             help="Skip confirmation prompt",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -448,8 +402,7 @@ def delete_annotation_queue(
 ) -> None:
     """Delete an annotation queue by name or ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     if not force:
         warning("This will permanently delete the annotation queue")
@@ -502,14 +455,6 @@ def list_records(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -529,8 +474,7 @@ def list_records(
 ) -> None:
     """List records in an annotation queue."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -584,14 +528,6 @@ def delete_records(
             help="Skip confirmation prompt",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -608,8 +544,7 @@ def delete_records(
         error("--record-id is required; specify at least one record ID")
         raise typer.Exit(code=1)
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     if not force:
         warning(f"This will permanently delete {len(record_ids)} record(s)")
@@ -680,14 +615,6 @@ def annotate_record(
             help="Space name or ID (required if using queue name instead of ID)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -711,8 +638,7 @@ def annotate_record(
     multiple times to annotate with different configs.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -772,14 +698,6 @@ def assign_record(
             help="Space name or ID (required if using queue name instead of ID)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -803,8 +721,7 @@ def assign_record(
     Pass no --email flags to remove all assignments.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format

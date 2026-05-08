@@ -1,12 +1,10 @@
 """Space management commands."""
 
-from dataclasses import asdict
 from typing import Annotated
 
 import typer
-from arize import ArizeClient
 
-from ax.config.manager import ConfigManager
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
@@ -55,14 +53,6 @@ def list_spaces(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -82,8 +72,7 @@ def list_spaces(
 ) -> None:
     """List spaces."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -113,14 +102,6 @@ def get_space(
         str,
         typer.Argument(help="Space name or ID"),
     ],
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -140,8 +121,7 @@ def get_space(
 ) -> None:
     """Get a space by name or ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -187,14 +167,6 @@ def create_space(
             help="Space description",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -214,8 +186,7 @@ def create_space(
 ) -> None:
     """Create a new space."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -262,14 +233,6 @@ def update_space(
             help="New space description",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -293,8 +256,7 @@ def update_space(
         raise typer.Exit(code=1)
 
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -334,14 +296,6 @@ def delete_space(
             help="Skip confirmation prompt",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -353,8 +307,7 @@ def delete_space(
 ) -> None:
     """Delete a space and all resources within it."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     if not force:
         warning("This action is irreversible and will permanently delete:")

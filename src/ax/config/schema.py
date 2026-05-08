@@ -1,10 +1,19 @@
 """Configuration schema using Pydantic models."""
 
+from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
 from arize import Region, SDKConfiguration
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class AuthMethod(StrEnum):
+    """Authentication method a profile uses."""
+
+    API_KEY = "api-key"
+    OAUTH = "oauth"
 
 
 def _str_to_bool(value: bool | str) -> bool:
@@ -17,31 +26,127 @@ def _str_to_bool(value: bool | str) -> bool:
 class ProfileConfig(BaseModel):
     """Profile metadata."""
 
-    name: str = Field(default="", description="Profile name")
+    name: str = Field(description="Profile name")
+
+    @field_validator("name")
+    @classmethod
+    def _nonempty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("profile name must not be empty")
+        return v.strip()
+
+
+class OAuthCredentials(BaseModel):
+    """OAuth tokens stored after a successful login."""
+
+    access_token: str = Field(description="OAuth access token (JWT, RS256)")
+    refresh_token: str = Field(description="OAuth refresh token (JWT, RS256)")
+    expires_at: datetime = Field(description="Access token expiry (UTC)")
+    user_email: str = Field(description="Authenticated user email")
+
+    @field_validator("access_token", "refresh_token", "user_email")
+    @classmethod
+    def _nonempty(cls, v: str) -> str:
+        """Validate that the field is not empty.
+
+        Args:
+            v: Field value
+
+        Returns:
+            Stripped field value
+
+        Raises:
+            ValueError: If the field is empty or whitespace-only
+        """
+        if not v or not v.strip():
+            raise ValueError("must not be empty")
+        return v.strip()
 
 
 class AuthConfig(BaseModel):
-    """Authentication credentials."""
+    """Authentication credentials — exactly one method per profile.
 
-    api_key: str = Field(description="Arize API key")
+    The chosen method is persisted via ``auth_method`` so a profile remembers
+    its identity even when its credentials are cleared (logged out).
+
+    Valid combinations:
+      * auth_method="api-key", api_key=non-empty, oauth=None          → API-key
+      * auth_method="oauth",   api_key=None,      oauth=tokens         → OAuth, signed in
+      * auth_method="oauth",   api_key=None,      oauth=None           → OAuth, logged out
+
+    Backwards compatibility: legacy profiles without auth_method are inferred
+    from whichever credential field is populated.
+    """
+
+    auth_method: AuthMethod = Field(
+        description="The authentication method this profile uses."
+    )
+    api_key: str | None = Field(default=None, description="Arize API key")
+    oauth: OAuthCredentials | None = Field(
+        default=None, description="OAuth tokens (None = logged out)"
+    )
+
+    # TODO: remove once all users have migrated to profiles that include
+    # an explicit ``auth_method`` field (i.e. have re-saved their profile
+    # via the current CLI at least once).
+    @model_validator(mode="before")
+    @classmethod
+    def _infer_legacy_method(cls, data: object) -> object:
+        """Backfill ``auth_method`` for profiles written before the discriminator existed.
+
+        Older CLI versions wrote profiles without an explicit ``auth_method``
+        field. Loading those profiles after we made the field required would
+        fail validation, so we infer it here from whichever credential block
+        is populated.
+        """
+        if isinstance(data, dict) and not data.get("auth_method"):
+            if data.get("api_key"):
+                data["auth_method"] = AuthMethod.API_KEY
+            elif data.get("oauth"):
+                data["auth_method"] = AuthMethod.OAUTH
+        return data
 
     @field_validator("api_key")
     @classmethod
-    def validate_api_key(cls, v: str) -> str:
-        """Validate API key is not empty.
-
-        Args:
-            v: API key value
-
-        Returns:
-            Validated API key
-
-        Raises:
-            ValueError: If API key is empty
-        """
-        if not v or not v.strip():
+    def _validate_api_key(cls, v: str | None) -> str | None:
+        """Validate API key is not empty when provided."""
+        if v is None:
+            return None
+        if not v.strip():
             raise ValueError("api_key cannot be empty")
         return v.strip()
+
+    @model_validator(mode="after")
+    def _validate_method_consistency(self) -> "AuthConfig":
+        """Enforce that fields match the declared auth_method."""
+        if self.auth_method == AuthMethod.API_KEY:
+            if not self.api_key:
+                raise ValueError(
+                    "auth_method='api-key' requires a non-empty api_key"
+                )
+            if self.oauth is not None:
+                raise ValueError(
+                    "auth_method='api-key' must not have an oauth section"
+                )
+        else:  # AuthMethod.OAUTH
+            if self.api_key is not None:
+                raise ValueError("auth_method='oauth' must not have an api_key")
+            # oauth may be None (logged out) or populated (signed in)
+        return self
+
+    @property
+    def uses_oauth(self) -> bool:
+        """Return True if this profile uses OAuth as its auth method."""
+        return self.auth_method == AuthMethod.OAUTH
+
+    @property
+    def is_logged_out(self) -> bool:
+        """Return True only for OAuth profiles whose tokens have been cleared.
+
+        API-key profiles always have credentials present (api_key is required),
+        so they cannot be in a logged-out state.
+        """
+        return self.auth_method == AuthMethod.OAUTH and self.oauth is None
 
 
 class RoutingConfig(BaseModel):
@@ -64,6 +169,13 @@ class RoutingConfig(BaseModel):
         default="api.arize.com", description="Custom API host"
     )
     api_scheme: str = Field(default="https", description="Custom API scheme")
+    app_host: str = Field(
+        default="app.arize.com",
+        description="Custom Arize app (OAuth login) host",
+    )
+    app_scheme: str = Field(
+        default="https", description="Custom Arize app scheme"
+    )
     otlp_host: str = Field(
         default="otlp.arize.com", description="Custom OTLP host"
     )
@@ -127,6 +239,23 @@ class RoutingConfig(BaseModel):
                 "or base_domain"
             )
         return self
+
+    def resolve_app_url(self) -> str:
+        """Derive the Arize app (OAuth login) URL from this routing config.
+
+        Precedence (first match wins):
+          1. ``single_host`` (on-prem / testing override) — uses api_scheme + single_host
+          2. ``base_domain`` (Private Connect) — "https://app.<base_domain>"
+          3. ``region`` (e.g., "eu-prod") — "https://app.<region>.arize.com"
+          4. Explicit ``app_host`` + ``app_scheme`` fields — default "https://app.arize.com"
+        """
+        if self.single_host:
+            return f"{self.api_scheme}://{self.single_host}"
+        if self.base_domain:
+            return f"https://app.{self.base_domain}"
+        if self.region:
+            return f"https://app.{self.region}.arize.com"
+        return f"{self.app_scheme}://{self.app_host}"
 
     # @model_validator(mode="after")
     # def apply_overrides(self) -> "RoutingConfig":
@@ -238,7 +367,7 @@ class UpdateConfig(BaseModel):
 class Config(BaseModel):
     """Root configuration model."""
 
-    profile: ProfileConfig = Field(default_factory=ProfileConfig)
+    profile: ProfileConfig
     auth: AuthConfig
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     transport: TransportConfig = Field(default_factory=TransportConfig)
@@ -254,12 +383,26 @@ class Config(BaseModel):
         """Return security.request_verify as a bool."""
         return _str_to_bool(self.security.request_verify)
 
-    def to_sdk_config(self) -> SDKConfiguration:
+    def to_sdk_config(self, bearer: str | None = None) -> SDKConfiguration:
         """Convert CLI config to SDK config.
+
+        Args:
+            bearer: the auth credential to pass to the SDK. If omitted, uses
+              self.auth.api_key (api-key profiles). For OAuth profiles, callers MUST
+              pass ``bearer=get_active_bearer(self.auth, profile_path=...)``.
 
         Returns:
             SDKConfig instance
+
+        Raises:
+            ValueError: If no bearer can be determined (OAuth profile without bearer override)
         """
+        effective = bearer if bearer is not None else self.auth.api_key
+        if effective is None:
+            raise ValueError(
+                "to_sdk_config() on an OAuth profile requires bearer= "
+                "(use ax.auth.bearer.get_active_bearer)"
+            )
         region = (
             Region(self.routing.region) if self.routing.region else Region.UNSET
         )
@@ -271,7 +414,7 @@ class Config(BaseModel):
         )
 
         return SDKConfiguration(
-            api_key=self.auth.api_key,
+            api_key=effective,
             region=region,
             single_host=self.routing.single_host,
             single_port=single_port,

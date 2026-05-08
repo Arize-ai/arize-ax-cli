@@ -1,12 +1,13 @@
 """Shared fixtures for command tests."""
 
 from collections.abc import Generator
+from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
-from ax.config.schema import AuthConfig, Config
+from ax.config.schema import AuthConfig, Config, ProfileConfig
 
 
 @pytest.fixture
@@ -18,7 +19,10 @@ def cli_runner() -> CliRunner:
 @pytest.fixture
 def mock_config() -> Config:
     """Provide a minimal valid Config for testing."""
-    return Config(auth=AuthConfig(api_key="ak-test-key"))
+    return Config(
+        profile=ProfileConfig(name="test"),
+        auth=AuthConfig(api_key="ak-test-key"),
+    )
 
 
 @pytest.fixture
@@ -35,52 +39,41 @@ def mock_client() -> MagicMock:
     return client
 
 
+_MAKE_CLIENT_MODULES = (
+    "ax.commands.datasets",
+    "ax.commands.evaluators",
+    "ax.commands.experiments",
+    "ax.commands.spans",
+    "ax.commands.traces",
+    "ax.commands.projects",
+    "ax.commands.tasks",
+    "ax.commands.spaces",
+)
+
+
 @pytest.fixture
 def patch_config_and_client(
     mock_config: Config,
     mock_client: MagicMock,
 ) -> Generator[tuple[MagicMock, MagicMock], None, None]:
-    """Patch ConfigManager.load and ArizeClient so commands run without I/O.
+    """Patch ``make_client`` in every command module so commands run without I/O.
 
-    ArizeClient must be patched in every command module because each does
-    ``from arize import ArizeClient``, binding a local name at import time.
+    Each command module imports ``make_client`` from ``ax.core.client_factory``,
+    binding a local name at import time, so we patch per-module. We also patch
+    ``ConfigManager.load`` globally so guards that load config directly (e.g.
+    ``auth_guards.require_api_key_auth``) see the same mock config.
     """
-    with (
-        patch(
-            "ax.config.manager.ConfigManager.load",
-            return_value=mock_config,
-        ) as cfg_mock,
-        patch(
-            "ax.commands.datasets.ArizeClient",
-            return_value=mock_client,
-        ),
-        patch(
-            "ax.commands.evaluators.ArizeClient",
-            return_value=mock_client,
-        ),
-        patch(
-            "ax.commands.experiments.ArizeClient",
-            return_value=mock_client,
-        ),
-        patch(
-            "ax.commands.spans.ArizeClient",
-            return_value=mock_client,
-        ),
-        patch(
-            "ax.commands.traces.ArizeClient",
-            return_value=mock_client,
-        ),
-        patch(
-            "ax.commands.projects.ArizeClient",
-            return_value=mock_client,
-        ),
-        patch(
-            "ax.commands.tasks.ArizeClient",
-            return_value=mock_client,
-        ),
-        patch(
-            "ax.commands.spaces.ArizeClient",
-            return_value=mock_client,
-        ),
-    ):
+    with ExitStack() as stack:
+        cfg_mock = stack.enter_context(
+            patch(
+                "ax.config.manager.ConfigManager.load", return_value=mock_config
+            )
+        )
+        for mod in _MAKE_CLIENT_MODULES:
+            stack.enter_context(
+                patch(
+                    f"{mod}.make_client",
+                    return_value=(mock_client, mock_config),
+                )
+            )
         yield cfg_mock, mock_client

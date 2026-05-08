@@ -1,12 +1,10 @@
 """Resource restriction management commands."""
 
-from dataclasses import asdict
 from typing import Annotated
 
 import typer
-from arize import ArizeClient
 
-from ax.config.manager import ConfigManager
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
@@ -41,14 +39,6 @@ def restrict_resource(
             prompt=True,
         ),
     ],
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -73,8 +63,7 @@ def restrict_resource(
     resources are supported. This operation is idempotent.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -117,14 +106,6 @@ def unrestrict_resource(
             help="Skip confirmation prompt",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -140,8 +121,7 @@ def unrestrict_resource(
     hierarchy (space, org, account) can once again grant access to the resource.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     if not force:
         warning("This will remove the restriction from the resource")

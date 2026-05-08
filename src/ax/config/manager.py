@@ -145,8 +145,8 @@ class ConfigManager:
         if not config_path.exists():
             raise ConfigError(
                 f"Profile '{profile}' not found.\n\n"
-                "Run 'ax profiles create' to create a configuration.\n"
-                "Or specify a different profile with --profile"
+                "Run 'ax profiles create' to create a configuration,\n"
+                "or run 'ax profiles use <name>' to switch the active profile."
             )
 
         try:
@@ -199,6 +199,21 @@ class ConfigManager:
                 tomli_w.dump(data, f)
         except Exception as e:
             raise ConfigError(f"Failed to save config: {e}") from e
+
+    @staticmethod
+    def profile_path(name: str) -> Path:
+        """Return the TOML file path for *name*.
+
+        Convenience wrapper around ``_get_config_path`` for use outside this
+        class (e.g. by ``get_active_bearer``).
+
+        Args:
+            name: Profile name
+
+        Returns:
+            Path to the profile's TOML file
+        """
+        return ConfigManager.PROFILES_DIR / f"{name}.toml"
 
     @classmethod
     def _ensure_dirs(cls) -> None:
@@ -301,14 +316,7 @@ def _remove_empty_values(
 
 
 def _expand_config_dict(data: dict[str, Any]) -> dict[str, Any]:
-    """Recursively expand environment variables in a config dictionary.
-
-    Args:
-        data: Configuration dictionary
-
-    Returns:
-        Dictionary with all ${VAR} references expanded
-    """
+    """Recursively expand environment variables in a config dictionary."""
     result: dict[str, Any] = {}
     for key, value in data.items():
         if isinstance(value, dict):

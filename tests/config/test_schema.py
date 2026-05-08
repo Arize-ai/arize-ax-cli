@@ -22,14 +22,22 @@ from ax.config.schema import (
 class TestProfileConfig:
     """Tests for ProfileConfig model."""
 
-    def test_default_profile_name_is_empty(self) -> None:
-        """Test that profile name defaults to empty string."""
-        profile = ProfileConfig()
-        assert profile.name == ""
+    def test_profile_name_required(self) -> None:
+        """ProfileConfig must have a non-empty name (required field)."""
+        with pytest.raises(ValidationError):
+            ProfileConfig()
+        with pytest.raises(ValidationError, match="must not be empty"):
+            ProfileConfig(name="")
+        with pytest.raises(ValidationError, match="must not be empty"):
+            ProfileConfig(name="   ")
 
     def test_custom_profile_name(self) -> None:
         """Test creating profile with custom name."""
         profile = ProfileConfig(name="production")
+        assert profile.name == "production"
+
+    def test_profile_name_is_stripped(self) -> None:
+        profile = ProfileConfig(name="  production  ")
         assert profile.name == "production"
 
 
@@ -272,11 +280,19 @@ class TestConfig:
 
     def test_minimal_config(self) -> None:
         """Test creating minimal valid config."""
-        config = Config(auth=AuthConfig(api_key="ak-test123"))
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="ak-test123"),
+        )
         assert config.auth.api_key == "ak-test123"
-        assert config.profile.name == ""
+        assert config.profile.name == "test"
         assert config.routing.region == ""
         assert config.output.format == "table"
+
+    def test_profile_required(self) -> None:
+        """Config without a profile name must fail validation."""
+        with pytest.raises(ValidationError):
+            Config(auth=AuthConfig(api_key="ak-test123"))
 
     def test_full_config(self) -> None:
         """Test creating config with all fields."""
@@ -300,6 +316,7 @@ class TestConfig:
     def test_extra_fields_ignored(self) -> None:
         """Test that unknown fields in config are silently ignored."""
         config = Config(
+            profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="ak-test123"),
             extra_field="ignored",  # type: ignore[call-arg]
         )
@@ -309,6 +326,7 @@ class TestConfig:
     def test_to_sdk_config(self) -> None:
         """Test converting Config to SDKConfiguration."""
         config = Config(
+            profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="ak-test123"),
             routing=RoutingConfig(region="us-east-1b"),
             transport=TransportConfig(stream_max_workers=16),
@@ -323,6 +341,7 @@ class TestConfig:
     def test_to_sdk_config_with_single_endpoint(self) -> None:
         """Test converting Config with single endpoint to SDKConfiguration."""
         config = Config(
+            profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="ak-test123"),
             routing=RoutingConfig(
                 single_host="api.example.com", single_port="8443"
@@ -336,6 +355,7 @@ class TestConfig:
     def test_to_sdk_config_with_custom_endpoints(self) -> None:
         """Test converting Config with custom endpoints to SDKConfiguration."""
         config = Config(
+            profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="ak-test123"),
             routing=RoutingConfig(
                 api_host="custom-api.example.com",
@@ -354,6 +374,7 @@ class TestConfig:
     def test_to_sdk_config_unset_region(self) -> None:
         """Test converting Config with unset region to SDKConfiguration."""
         config = Config(
+            profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="ak-test123"),
             routing=RoutingConfig(region=""),
         )
@@ -367,7 +388,10 @@ class TestUpdateConfig:
 
     def test_update_config_defaults(self) -> None:
         """UpdateConfig is present on Config with correct defaults."""
-        config = Config(auth=AuthConfig(api_key="test-key"))
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="test-key"),
+        )
         assert isinstance(config.update, UpdateConfig)
         assert config.update.check_interval_hours == 6.0
         assert config.update.enabled is True
@@ -375,6 +399,7 @@ class TestUpdateConfig:
     def test_update_config_custom_values(self) -> None:
         """UpdateConfig accepts custom interval and disabled flag."""
         config = Config(
+            profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="test-key"),
             update=UpdateConfig(check_interval_hours=12.0, enabled=False),
         )

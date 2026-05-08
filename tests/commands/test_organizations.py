@@ -65,13 +65,8 @@ def _invoke(
 ) -> Result:
     with (
         patch(
-            "ax.commands.organizations.ConfigManager.load",
-            return_value=mock_config,
-        ),
-        patch("ax.commands.organizations.asdict", return_value={}),
-        patch(
-            "ax.commands.organizations.ArizeClient",
-            return_value=mock_client,
+            "ax.commands.organizations.make_client",
+            return_value=(mock_client, mock_config),
         ),
     ):
         return runner.invoke(app, args, input=cli_input)

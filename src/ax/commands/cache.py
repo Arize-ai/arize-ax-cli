@@ -18,14 +18,6 @@ app = typer.Typer(
 @app.command("clear")
 @handle_errors
 def clear_cache(
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Profile to show (uses active if not specified)",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -44,7 +36,7 @@ def clear_cache(
         info("Cache not cleared")
         raise typer.Exit()
 
-    config = ConfigManager.load(profile)
+    config = ConfigManager.load()
     cache_dir = config.storage.cache_dir
 
     if cache_dir.exists() and cache_dir.is_dir():

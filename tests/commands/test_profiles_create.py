@@ -1,13 +1,22 @@
 """Integration tests for the `ax profiles create` command."""
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import urlparse
 
 import pytest
 from typer.testing import CliRunner
 
 from ax.commands.profiles import app
-from ax.config.schema import AuthConfig, Config
+from ax.config.manager import ConfigManager
+from ax.config.schema import (
+    AuthConfig,
+    Config,
+    OAuthCredentials,
+    ProfileConfig,
+    RoutingConfig,
+)
 
 
 @pytest.fixture
@@ -419,7 +428,10 @@ class TestUpdateFlags:
         self, runner: CliRunner
     ) -> None:
         """--single-host and --single-port flags update on-prem routing via merge."""
-        existing_config = Config(auth=AuthConfig(api_key="existing-key"))
+        existing_config = Config(
+            profile=ProfileConfig(name="onprem-profile"),
+            auth=AuthConfig(api_key="existing-key"),
+        )
         saved_configs: list[Config] = []
 
         def capture_save(config: Config, _profile: str) -> None:
@@ -446,3 +458,293 @@ class TestUpdateFlags:
         assert result.exit_code == 0, result.output
         assert saved_configs[0].routing.single_host == "arize.yourcompany.com"
         assert saved_configs[0].routing.single_port == "443"
+
+
+# ---------------------------------------------------------------------------
+# OAuth auth-method tests
+# ---------------------------------------------------------------------------
+
+
+def _fake_oauth_creds(email: str = "user@example.com") -> OAuthCredentials:
+    return OAuthCredentials(
+        access_token="arz_at_x",
+        refresh_token="arz_rt_x",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        user_email=email,
+    )
+
+
+class TestProfilesCreateOAuth:
+    """Tests for --auth-method oauth on the create command."""
+
+    def test_auth_method_oauth_triggers_inline_login(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """--auth-method oauth calls perform_oauth_login and saves OAuth credentials."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr(ConfigManager, "CONFIG_DIR", tmp_path / ".arize")
+        monkeypatch.setattr(
+            ConfigManager, "PROFILES_DIR", tmp_path / ".arize" / "profiles"
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "ACTIVE_PROFILE_FILE",
+            tmp_path / ".arize" / ".active_profile",
+        )
+        (tmp_path / ".arize" / "profiles").mkdir(parents=True, exist_ok=True)
+
+        fake_creds = _fake_oauth_creds()
+
+        with patch(
+            "ax.commands.profiles.perform_oauth_login", return_value=fake_creds
+        ) as mock_login:
+            local_runner = CliRunner()
+            result = local_runner.invoke(
+                app,
+                [
+                    "create",
+                    "my-oauth-profile",
+                    "--auth-method",
+                    "oauth",
+                    "--region",
+                    "eu-west-1a",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_login.assert_called_once()
+        call_url = (
+            mock_login.call_args.kwargs.get("base_url")
+            or mock_login.call_args.args[0]
+        )
+        assert call_url == "https://app.eu-west-1a.arize.com"
+
+        loaded = ConfigManager.load("my-oauth-profile")
+        assert loaded.auth.uses_oauth
+        assert loaded.auth.oauth.access_token == "arz_at_x"
+        assert loaded.routing.region == "eu-west-1a"
+
+    def test_auth_method_oauth_default_routing(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """--auth-method oauth with no routing flags uses the default app URL."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr(ConfigManager, "CONFIG_DIR", tmp_path / ".arize")
+        monkeypatch.setattr(
+            ConfigManager, "PROFILES_DIR", tmp_path / ".arize" / "profiles"
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "ACTIVE_PROFILE_FILE",
+            tmp_path / ".arize" / ".active_profile",
+        )
+        (tmp_path / ".arize" / "profiles").mkdir(parents=True, exist_ok=True)
+
+        fake_creds = _fake_oauth_creds()
+
+        with patch(
+            "ax.commands.profiles.perform_oauth_login", return_value=fake_creds
+        ) as mock_login:
+            local_runner = CliRunner()
+            result = local_runner.invoke(
+                app,
+                ["create", "oauth-default", "--auth-method", "oauth"],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_login.assert_called_once()
+        call_url = (
+            mock_login.call_args.kwargs.get("base_url")
+            or mock_login.call_args.args[0]
+        )
+        assert call_url == "https://app.arize.com"
+
+        loaded = ConfigManager.load("oauth-default")
+        assert loaded.auth.uses_oauth
+        assert loaded.auth.oauth.user_email == "user@example.com"
+
+    def test_api_key_and_oauth_mutually_exclusive(
+        self, runner: CliRunner
+    ) -> None:
+        """Passing both --auth-method oauth and --api-key exits non-zero."""
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "p",
+                "--auth-method",
+                "oauth",
+                "--api-key",
+                "ak-xxx",
+            ],
+        )
+        assert result.exit_code != 0
+
+    def test_invalid_auth_method_exits_nonzero(self, runner: CliRunner) -> None:
+        """An unrecognized --auth-method value exits with an error."""
+        result = runner.invoke(
+            app,
+            ["create", "p", "--auth-method", "magic-link"],
+        )
+        assert result.exit_code != 0
+
+    def test_oauth_profile_saved_with_single_host_routing(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """--auth-method oauth with --single-host saves on-prem routing and uses correct URL."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr(ConfigManager, "CONFIG_DIR", tmp_path / ".arize")
+        monkeypatch.setattr(
+            ConfigManager, "PROFILES_DIR", tmp_path / ".arize" / "profiles"
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "ACTIVE_PROFILE_FILE",
+            tmp_path / ".arize" / ".active_profile",
+        )
+        (tmp_path / ".arize" / "profiles").mkdir(parents=True, exist_ok=True)
+
+        fake_creds = _fake_oauth_creds()
+
+        with patch(
+            "ax.commands.profiles.perform_oauth_login", return_value=fake_creds
+        ) as mock_login:
+            local_runner = CliRunner()
+            result = local_runner.invoke(
+                app,
+                [
+                    "create",
+                    "onprem-oauth",
+                    "--auth-method",
+                    "oauth",
+                    "--single-host",
+                    "arize.mycompany.internal",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_login.assert_called_once()
+        call_url = (
+            mock_login.call_args.kwargs.get("base_url")
+            or mock_login.call_args.args[0]
+        )
+        assert call_url == "https://arize.mycompany.internal"
+
+        loaded = ConfigManager.load("onprem-oauth")
+        assert loaded.routing.single_host == "arize.mycompany.internal"
+        assert loaded.auth.uses_oauth
+
+    def test_oauth_with_single_host_flag(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """--auth-method oauth --single-host saves on-prem routing and derives correct login URL."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr(ConfigManager, "CONFIG_DIR", tmp_path / ".arize")
+        monkeypatch.setattr(
+            ConfigManager, "PROFILES_DIR", tmp_path / ".arize" / "profiles"
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "ACTIVE_PROFILE_FILE",
+            tmp_path / ".arize" / ".active_profile",
+        )
+        (tmp_path / ".arize" / "profiles").mkdir(parents=True, exist_ok=True)
+
+        fake_creds = _fake_oauth_creds()
+
+        with patch(
+            "ax.commands.profiles.perform_oauth_login", return_value=fake_creds
+        ) as mock_login:
+            local_runner = CliRunner()
+            result = local_runner.invoke(
+                app,
+                [
+                    "create",
+                    "onprem-oauth",
+                    "--auth-method",
+                    "oauth",
+                    "--single-host",
+                    "arize.my-company.com",
+                    "--single-port",
+                    "443",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_login.assert_called_once()
+        called_url = (
+            mock_login.call_args.kwargs.get("base_url")
+            or mock_login.call_args.args[0]
+        )
+        assert urlparse(called_url).netloc == "arize.my-company.com"
+
+        loaded = ConfigManager.load("onprem-oauth")
+        assert loaded.routing.single_host == "arize.my-company.com"
+        assert loaded.routing.region == ""
+        assert loaded.auth.uses_oauth
+
+    def test_oauth_interactive_supports_single_host(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Interactive OAuth profile creation must allow on-prem single_host routing via read_routing()."""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr(ConfigManager, "CONFIG_DIR", tmp_path / ".arize")
+        monkeypatch.setattr(
+            ConfigManager, "PROFILES_DIR", tmp_path / ".arize" / "profiles"
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "ACTIVE_PROFILE_FILE",
+            tmp_path / ".arize" / ".active_profile",
+        )
+        (tmp_path / ".arize" / "profiles").mkdir(parents=True, exist_ok=True)
+
+        fake_creds = _fake_oauth_creds()
+        single_host_routing = RoutingConfig(
+            single_host="arize.my-company.com", single_port="443"
+        )
+
+        from ax.config.schema import SecurityConfig, TransportConfig
+
+        with (
+            patch(
+                "ax.commands.profiles.perform_oauth_login",
+                return_value=fake_creds,
+            ) as mock_login,
+            patch(
+                "ax.config.setup.read_routing",
+                return_value=single_host_routing,
+            ),
+            patch(
+                "ax.config.setup.read_transport",
+                return_value=TransportConfig(),
+            ),
+            patch(
+                "ax.config.setup.read_security",
+                return_value=SecurityConfig(),
+            ),
+            patch("ax.config.setup.read_output_format", return_value="table"),
+            patch("questionary.select") as mock_select,
+        ):
+            # Two questionary.select prompts: auth method, then Simple/Advanced
+            # mode (Advanced is required to reach read_routing()).
+            mock_select.return_value.ask.side_effect = ["oauth", "Advanced"]
+
+            local_runner = CliRunner()
+            result = local_runner.invoke(
+                app,
+                ["create", "onprem-oauth-interactive"],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_login.assert_called_once()
+        called_url = (
+            mock_login.call_args.kwargs.get("base_url")
+            or mock_login.call_args.args[0]
+        )
+        assert urlparse(called_url).netloc == "arize.my-company.com"
+
+        loaded = ConfigManager.load("onprem-oauth-interactive")
+        assert loaded.routing.single_host == "arize.my-company.com"
+        assert loaded.routing.region == ""
+        assert loaded.auth.uses_oauth

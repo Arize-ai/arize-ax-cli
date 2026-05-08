@@ -150,10 +150,6 @@ from ax.utils.console import success, spinner
 @app.command("list")
 @handle_errors
 def list_items(
-    profile: Annotated[
-        str,
-        typer.Option("--profile", "-p", help="Configuration profile to use"),
-    ] = "",
     output: Annotated[
         str,
         typer.Option("--output", "-o", help="Output format or file path"),
@@ -164,8 +160,8 @@ def list_items(
     ] = False,
 ) -> None:
     """List items with optional filters."""
-    # 1. Load config
-    config = ConfigManager.load(profile, expand_env_vars=True)
+    # 1. Load active profile config
+    config = ConfigManager.load(expand_env_vars=True)
 
     # 2. Create SDK client
     client = ArizeClient(**asdict(config.to_sdk_config()))
@@ -241,8 +237,11 @@ Configuration is managed through TOML files stored in `~/.arize/config/`:
 from ax.config.manager import ConfigManager
 from ax.config.schema import Config
 
-# Load config (expands environment variables)
-config = ConfigManager.load(profile="default", expand_env_vars=True)
+# Load active profile config (expands environment variables)
+config = ConfigManager.load(expand_env_vars=True)
+
+# Load a specific profile by name (used by profile-management commands)
+config = ConfigManager.load(profile="staging", expand_env_vars=True)
 
 # Save config
 ConfigManager.save(config, profile="default")
@@ -443,11 +442,10 @@ DEFAULT_BANNER = OPTION_3  # Switch to a different design
    @app.command("list")
    @handle_errors
    def list_experiments(
-       profile: str = "",
        verbose: bool = False,
    ) -> None:
        """List all experiments."""
-       config = ConfigManager.load(profile, expand_env_vars=True)
+       config = ConfigManager.load(expand_env_vars=True)
        # Implementation
    ```
 
@@ -654,7 +652,7 @@ region = "${ARIZE_REGION}"
 
 These are expanded when loading config:
 ```python
-config = ConfigManager.load(profile="default", expand_env_vars=True)
+config = ConfigManager.load(expand_env_vars=True)
 ```
 
 ## Testing

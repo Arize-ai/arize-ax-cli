@@ -3,8 +3,6 @@
 import os
 from unittest.mock import patch
 
-import pytest
-
 from ax.config.schema import (
     AuthConfig,
     Config,
@@ -75,17 +73,22 @@ class TestDetectEnvVars:
             del os.environ[env_var]
 
 
+def _api_key_auth(env_var: str = "ARIZE_API_KEY") -> AuthConfig:
+    return AuthConfig(auth_method="api-key", api_key=f"${{{env_var}}}")
+
+
 class TestCreateConfigFromEnvVars:
     """Tests for create_config_from_env_vars function."""
 
     @patch("ax.config.setup.read_output_format")
     def test_create_config_minimal(self, mock_read_format: object) -> None:
         """Test create_config_from_env_vars with minimal env vars."""
-        # Mock the interactive output format prompt
         mock_read_format.return_value = "table"  # type: ignore[attr-defined]
 
         env_vars = {"api_key": "ARIZE_API_KEY"}
-        config = create_config_from_env_vars("default", env_vars)
+        config = create_config_from_env_vars(
+            "default", env_vars, _api_key_auth()
+        )
 
         assert isinstance(config, Config)
         assert config.profile.name == "default"
@@ -100,7 +103,9 @@ class TestCreateConfigFromEnvVars:
             "api_key": "ARIZE_API_KEY",
             "region": "ARIZE_REGION",
         }
-        config = create_config_from_env_vars("production", env_vars)
+        config = create_config_from_env_vars(
+            "production", env_vars, _api_key_auth()
+        )
 
         assert config.profile.name == "production"
         assert config.auth.api_key == "${ARIZE_API_KEY}"
@@ -118,7 +123,9 @@ class TestCreateConfigFromEnvVars:
             "stream_max_workers": "ARIZE_STREAM_MAX_WORKERS",
             "pyarrow_max_chunksize": "ARIZE_MAX_CHUNKSIZE",
         }
-        config = create_config_from_env_vars("default", env_vars)
+        config = create_config_from_env_vars(
+            "default", env_vars, _api_key_auth()
+        )
 
         assert (
             config.transport.stream_max_workers == "${ARIZE_STREAM_MAX_WORKERS}"
@@ -138,7 +145,9 @@ class TestCreateConfigFromEnvVars:
             "api_key": "ARIZE_API_KEY",
             "request_verify": "ARIZE_REQUEST_VERIFY",
         }
-        config = create_config_from_env_vars("default", env_vars)
+        config = create_config_from_env_vars(
+            "default", env_vars, _api_key_auth()
+        )
 
         assert config.security.request_verify == "${ARIZE_REQUEST_VERIFY}"
 
@@ -149,7 +158,6 @@ class TestCreateConfigFromEnvVars:
         """Test create_config_from_env_vars with custom endpoint env vars."""
         mock_read_format.return_value = "table"  # type: ignore[attr-defined]
 
-        # Use only custom endpoint fields (not mutually exclusive options)
         env_vars = {
             "api_key": "ARIZE_API_KEY",
             "api_host": "ARIZE_API_HOST",
@@ -160,7 +168,9 @@ class TestCreateConfigFromEnvVars:
             "flight_port": "ARIZE_FLIGHT_PORT",
             "flight_scheme": "ARIZE_FLIGHT_SCHEME",
         }
-        config = create_config_from_env_vars("default", env_vars)
+        config = create_config_from_env_vars(
+            "default", env_vars, _api_key_auth()
+        )
 
         assert isinstance(config.routing, RoutingConfig)
         assert config.routing.api_host == "${ARIZE_API_HOST}"
@@ -169,25 +179,12 @@ class TestCreateConfigFromEnvVars:
         assert config.routing.flight_port == "${ARIZE_FLIGHT_PORT}"
 
     @patch("ax.config.setup.read_output_format")
-    def test_create_config_raises_without_api_key(
-        self, mock_read_format: object
-    ) -> None:
-        """Test create_config_from_env_vars raises error without api_key."""
-        mock_read_format.return_value = "table"  # type: ignore[attr-defined]
-
-        env_vars = {"region": "ARIZE_REGION"}  # Missing api_key
-
-        with pytest.raises(ValueError, match="api_key must be present"):
-            create_config_from_env_vars("default", env_vars)
-
-    @patch("ax.config.setup.read_output_format")
     def test_create_config_with_all_transport_and_security(
         self, mock_read_format: object
     ) -> None:
         """Test create_config_from_env_vars with transport and security env vars."""
         mock_read_format.return_value = "csv"  # type: ignore[attr-defined]
 
-        # Use non-mutually-exclusive fields
         env_vars = {
             "api_key": "ARIZE_API_KEY",
             "region": "ARIZE_REGION",
@@ -198,7 +195,9 @@ class TestCreateConfigFromEnvVars:
             "request_verify": "ARIZE_REQUEST_VERIFY",
         }
 
-        config = create_config_from_env_vars("production", env_vars)
+        config = create_config_from_env_vars(
+            "production", env_vars, _api_key_auth()
+        )
 
         assert isinstance(config, Config)
         assert config.profile.name == "production"

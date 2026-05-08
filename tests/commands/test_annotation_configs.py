@@ -113,13 +113,8 @@ def _invoke(
     """Invoke the CLI app with standard mocks for ConfigManager, asdict, and ArizeClient."""
     with (
         patch(
-            "ax.commands.annotation_configs.ConfigManager.load",
-            return_value=mock_config,
-        ),
-        patch("ax.commands.annotation_configs.asdict", return_value={}),
-        patch(
-            "ax.commands.annotation_configs.ArizeClient",
-            return_value=mock_client,
+            "ax.commands.annotation_configs.make_client",
+            return_value=(mock_client, mock_config),
         ),
     ):
         return runner.invoke(app, args, input=cli_input)
@@ -382,7 +377,7 @@ class TestCreateAnnotationConfig:
     ) -> None:
         """Test that --value 'good' --value 'neutral' --value 'bad' is
         parsed into CategoricalAnnotationValue list.
-        """  # noqa: D205
+        """
         mock_client.annotation_configs.create.return_value = _categorical(
             name="Verdict"
         )

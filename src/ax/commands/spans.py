@@ -2,15 +2,14 @@
 
 import json
 import sys
-from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
 import typer
-from arize import ArizeClient
 
-from ax.config.manager import ConfigManager
+from ax.auth.auth_guards import require_api_key_auth
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError, AxError
 from ax.utils.console import (
@@ -84,6 +83,7 @@ def _build_span_filter(
 
 
 @app.command("export")
+@require_api_key_auth("--all")
 @handle_errors
 def export_spans(
     project_id: Annotated[
@@ -169,14 +169,6 @@ def export_spans(
             help="Print JSON to stdout instead of saving to file",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     use_all: Annotated[
         bool,
         typer.Option(
@@ -222,8 +214,7 @@ def export_spans(
         trace_id, span_id, session_id, filter_expr
     )
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     end_dt = parse_optional_iso8601(end_time) or datetime.now(tz=timezone.utc)
     start_dt = (

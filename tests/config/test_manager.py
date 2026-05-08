@@ -114,6 +114,7 @@ class TestConfigManager:
     def test_save_and_load_config(self, mock_config_dir: Path) -> None:
         """Test saving and loading a config."""
         config = Config(
+            profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="ak-test123"),
             routing=RoutingConfig(region="us-east-1b"),
         )
@@ -170,6 +171,7 @@ class TestConfigManager:
         import tomli_w
 
         data = {
+            "profile": {"name": "test"},
             "auth": {"api_key": "ak-test123"},
             "unknown_future_section": {"foo": "bar"},
         }
@@ -183,7 +185,10 @@ class TestConfigManager:
         self, mock_config_dir: Path
     ) -> None:
         """Test load uses active profile when profile param is empty."""
-        config = Config(auth=AuthConfig(api_key="ak-test123"))
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="ak-test123"),
+        )
         ConfigManager.save(config, profile="test")
         ConfigManager.ACTIVE_PROFILE_FILE.write_text("test")
 
@@ -194,7 +199,10 @@ class TestConfigManager:
         self, mock_config_dir: Path
     ) -> None:
         """Test load() with no args uses the active profile."""
-        config = Config(auth=AuthConfig(api_key="ak-test123"))
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="ak-test123"),
+        )
         ConfigManager.save(config, profile="test")
         ConfigManager.ACTIVE_PROFILE_FILE.write_text("test")
 
@@ -205,7 +213,10 @@ class TestConfigManager:
         """Test load expands environment variables."""
         os.environ["TEST_API_KEY"] = "ak-from-env"
 
-        config = Config(auth=AuthConfig(api_key="${TEST_API_KEY}"))
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="${TEST_API_KEY}"),
+        )
         ConfigManager.save(config, profile="test")
 
         loaded_config = ConfigManager.load(profile="test")
@@ -218,7 +229,10 @@ class TestConfigManager:
         self, mock_config_dir: Path
     ) -> None:
         """Test load without env var expansion."""
-        config = Config(auth=AuthConfig(api_key="${TEST_API_KEY}"))
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="${TEST_API_KEY}"),
+        )
         ConfigManager.save(config, profile="test")
 
         loaded_config = ConfigManager.load(
@@ -229,6 +243,7 @@ class TestConfigManager:
     def test_save_removes_empty_values(self, mock_config_dir: Path) -> None:
         """Test that save removes empty string values."""
         config = Config(
+            profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="ak-test123"),
             routing=RoutingConfig(region=""),  # Empty string
         )

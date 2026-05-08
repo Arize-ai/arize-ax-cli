@@ -1,13 +1,12 @@
 """Experiment management commands."""
 
-from dataclasses import asdict
 from typing import Annotated
 
 import typer
-from arize import ArizeClient
 from arize.experiments.types import ExperimentTaskFieldNames
 
-from ax.config.manager import ConfigManager
+from ax.auth.auth_guards import require_api_key_auth
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
@@ -70,14 +69,6 @@ def list_experiments(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -97,8 +88,7 @@ def list_experiments(
 ) -> None:
     """List experiments, optionally filtered by dataset."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -144,14 +134,6 @@ def get_experiment(
             help="Space name or ID (required if using dataset name instead of ID)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -171,8 +153,7 @@ def get_experiment(
 ) -> None:
     """Get an experiment by name or ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -196,6 +177,7 @@ def get_experiment(
 
 
 @app.command("export")
+@require_api_key_auth("--all")
 @handle_errors
 def export_experiment(
     name_or_id: Annotated[
@@ -238,14 +220,6 @@ def export_experiment(
             help="Use Arrow Flight for bulk export (streams all runs).",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -263,8 +237,7 @@ def export_experiment(
     with output=null and an 'error' field containing the exception message.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     try:
         with spinner("Exporting experiment runs"):
@@ -333,14 +306,6 @@ def create_experiment(
             help="Space name or ID (required if using dataset name instead of ID)",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -364,8 +329,7 @@ def create_experiment(
     Extra columns are passed through as additional fields.
     """
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -442,14 +406,6 @@ def delete_experiment(
             help="Skip confirmation prompt",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -461,8 +417,7 @@ def delete_experiment(
 ) -> None:
     """Delete an experiment by name or ID."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     if not force:
         warning("This will permanently delete the experiment")

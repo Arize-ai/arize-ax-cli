@@ -2,7 +2,6 @@
 
 import json
 import sys
-from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
@@ -10,7 +9,8 @@ from typing import Annotated
 import typer
 from arize import ArizeClient
 
-from ax.config.manager import ConfigManager
+from ax.auth.auth_guards import require_api_key_auth
+from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError, AxError
 from ax.core.output import output_data
@@ -88,14 +88,6 @@ def list_spans(
             help="Pagination cursor for next page",
         ),
     ] = None,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     output: Annotated[
         str,
         typer.Option(
@@ -115,8 +107,7 @@ def list_spans(
 ) -> None:
     """List traces in a project."""
     setup_logging(verbose)
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, config = make_client()
 
     output_format, output_file = parse_output_option(
         output if output else config.output.format
@@ -159,6 +150,7 @@ def _build_trace_id_in_filter(trace_ids: list[str]) -> str:
 
 
 @app.command("export")
+@require_api_key_auth("--all")
 @handle_errors
 def export_traces(
     project_id: Annotated[
@@ -225,14 +217,6 @@ def export_traces(
             help="Print JSON to stdout instead of saving to file",
         ),
     ] = False,
-    profile: Annotated[
-        str,
-        typer.Option(
-            "--profile",
-            "-p",
-            help="Configuration profile to use",
-        ),
-    ] = "",
     use_all: Annotated[
         bool,
         typer.Option(
@@ -270,8 +254,7 @@ def export_traces(
     if use_all and limit != 50:
         warning("--limit is ignored when --all is set.")
 
-    config = ConfigManager.load(profile, expand_env_vars=True)
-    client = ArizeClient(**asdict(config.to_sdk_config()))
+    client, _ = make_client()
 
     end_dt = parse_optional_iso8601(end_time) or datetime.now(tz=timezone.utc)
     start_dt = (

@@ -18,6 +18,7 @@ from ax.config.input_readers import (
 )
 from ax.config.schema import (
     AuthConfig,
+    AuthMethod,
     Config,
     OutputConfig,
     ProfileConfig,
@@ -59,8 +60,15 @@ class SetupMode(Enum):
 
 def create_config_interactively(
     profile: str,
+    auth_method: AuthMethod = AuthMethod.API_KEY,
 ) -> Config:
-    """Create a configuration interactively by prompting the user."""
+    """Create a configuration interactively by prompting the user.
+
+    For ``auth_method="oauth"`` the returned Config has an empty (logged-out)
+    OAuth AuthConfig — the caller is expected to run the browser flow against
+    ``config.routing.resolve_app_url()`` and populate ``config.auth.oauth``
+    before persisting.
+    """
     mode = SetupMode.SIMPLE
     mode_choice = questionary.select(
         "Choose configuration mode:",
@@ -75,14 +83,28 @@ def create_config_interactively(
     mode = SetupMode.SIMPLE if "Simple" in mode_choice else SetupMode.ADVANCED
 
     if mode == SetupMode.SIMPLE:
-        return simple_setup(profile)
+        return simple_setup(profile, auth_method)
 
-    return advanced_setup(profile)
+    return advanced_setup(profile, auth_method)
 
 
-def simple_setup(profile: str) -> Config:
+def _interactive_auth(auth_method: AuthMethod) -> AuthConfig:
+    """Build an AuthConfig for the interactive flow.
+
+    api-key → prompt for the key. oauth → return a logged-out shell; the
+    caller runs the browser flow once routing is known.
+    """
+    if auth_method == AuthMethod.OAUTH:
+        return AuthConfig(auth_method=AuthMethod.OAUTH)
+    return AuthConfig(auth_method=AuthMethod.API_KEY, api_key=read_api_key())
+
+
+def simple_setup(
+    profile: str,
+    auth_method: AuthMethod = AuthMethod.API_KEY,
+) -> Config:
     """Create a simple configuration with basic settings."""
-    auth_config = AuthConfig(api_key=read_api_key())
+    auth_config = _interactive_auth(auth_method)
     routing_config = RoutingConfig(
         region=read_region(),
     )
@@ -98,12 +120,13 @@ def simple_setup(profile: str) -> Config:
     )
 
 
-def advanced_setup(profile: str) -> Config:
+def advanced_setup(
+    profile: str,
+    auth_method: AuthMethod = AuthMethod.API_KEY,
+) -> Config:
     """Create an advanced configuration with all settings."""
-    auth_config = AuthConfig(api_key=read_api_key())
-
+    auth_config = _interactive_auth(auth_method)
     routing_config = read_routing()
-
     transport_config = read_transport()
     security_config = read_security()
     storage_config = StorageConfig()
@@ -275,83 +298,75 @@ def merge_config_with_flags(existing: Config, flat: dict[str, Any]) -> Config:
         raise ConfigError(str(e)) from e
 
 
+_ENV_ROUTING_FIELDS = frozenset(_ROUTING_KEYS)
+_ENV_TRANSPORT_FIELDS = frozenset(_TRANSPORT_KEYS)
+
+
+def _env_ref(env_var_name: str) -> str:
+    """Convert an env var name to a ``${NAME}`` reference string."""
+    return f"${{{env_var_name}}}"
+
+
+def routing_from_env(env_vars: dict[str, str]) -> RoutingConfig:
+    """Build a RoutingConfig populated with current literal env values.
+
+    Use this when you need the *current* routing values (e.g. for an OAuth
+    browser flow's base_url). The returned config does NOT contain ``${VAR}``
+    references; it captures the values at this moment.
+    """
+    kwargs = {
+        field: os.environ[env_vars[field]]
+        for field in _ENV_ROUTING_FIELDS
+        if field in env_vars
+    }
+    return RoutingConfig(**kwargs)
+
+
 def create_config_from_env_vars(
-    profile: str, env_vars: dict[str, str]
+    profile: str,
+    env_vars: dict[str, str],
+    auth: AuthConfig,
 ) -> Config:
-    """Create a Config object with environment variable references.
+    """Create a Config from detected env vars, with the given AuthConfig.
+
+    Routing/transport/security fields become ``${ARIZE_*}`` references so the
+    saved profile re-reads the env at runtime. Auth is supplied by the caller
+    (api-key path passes an env-ref; OAuth path passes browser-flow tokens).
 
     Args:
         profile: Profile name
         env_vars: Dict mapping field names to env var names for detected env vars
-
-    Returns:
-        Config object with env var references (e.g., "${ARIZE_API_KEY}")
+        auth: Pre-built AuthConfig (api-key or OAuth)
     """
-
-    def env_ref(env_var_name: str) -> str:
-        """Convert env var name to reference string."""
-        return f"${{{env_var_name}}}"
-
-    # Build AuthConfig
-    auth_kwargs = {}
-    if "api_key" in env_vars:
-        auth_kwargs["api_key"] = env_ref(env_vars["api_key"])
-    else:
-        # api_key is required - this shouldn't happen but handle gracefully
-        raise ValueError("api_key must be present in detected env vars")
-
-    auth_config = AuthConfig(**auth_kwargs)
-
     # Build RoutingConfig
-    routing_kwargs = {}
-    routing_fields = {
-        "region",
-        "single_host",
-        "single_port",
-        "base_domain",
-        "api_host",
-        "api_scheme",
-        "otlp_host",
-        "otlp_scheme",
-        "flight_host",
-        "flight_port",
-        "flight_scheme",
+    routing_kwargs = {
+        field: _env_ref(env_vars[field])
+        for field in _ENV_ROUTING_FIELDS
+        if field in env_vars
     }
-    for field in routing_fields:
-        if field in env_vars:
-            routing_kwargs[field] = env_ref(env_vars[field])
-
     routing_config = RoutingConfig(**routing_kwargs)
 
     # Build TransportConfig
-    transport_kwargs = {}
-    transport_fields = {
-        "stream_max_workers",
-        "stream_max_queue_bound",
-        "pyarrow_max_chunksize",
-        "max_http_payload_size_mb",
+    transport_kwargs = {
+        field: _env_ref(env_vars[field])
+        for field in _ENV_TRANSPORT_FIELDS
+        if field in env_vars
     }
-    for field in transport_fields:
-        if field in env_vars:
-            transport_kwargs[field] = env_ref(env_vars[field])
-
     transport_config = TransportConfig(**transport_kwargs)
 
     # Build SecurityConfig
     security_kwargs = {}
     if "request_verify" in env_vars:
-        security_kwargs["request_verify"] = env_ref(env_vars["request_verify"])
-
+        security_kwargs["request_verify"] = _env_ref(env_vars["request_verify"])
     security_config = SecurityConfig(**security_kwargs)
 
     storage_config = StorageConfig()
     output_config = OutputConfig(
         format=read_output_format(),
     )
-    # Build Config with all sections
     return Config(
         profile=ProfileConfig(name=profile),
-        auth=auth_config,
+        auth=auth,
         routing=routing_config,
         transport=transport_config,
         security=security_config,

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.18.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.17.1...arize-ax-cli/v0.18.0) (2026-05-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** remove per-command --profile flag ([#70966](https://github.com/Arize-ai/arize/issues/70966))
+
+### 🎁 New Features
+
+* **auth:** add browser-based OAuth PKCE login with token refresh and profile integration ([#70318](https://github.com/Arize-ai/arize/issues/70318)) ([3261fd2](https://github.com/Arize-ai/arize/commit/3261fd26cf6f480fbac860f03e772dcd689ce322))
+
 ## [0.17.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.17.0...arize-ax-cli/v0.17.1) (2026-05-07)
 
 
