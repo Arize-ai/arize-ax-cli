@@ -36,6 +36,8 @@ def mock_client() -> MagicMock:
     client.projects = MagicMock()
     client.tasks = MagicMock()
     client.spaces = MagicMock()
+    client.users = MagicMock()
+    client.organizations = MagicMock()
     return client
 
 
@@ -48,6 +50,8 @@ _MAKE_CLIENT_MODULES = (
     "ax.commands.projects",
     "ax.commands.tasks",
     "ax.commands.spaces",
+    "ax.commands.users",
+    "ax.commands.organizations",
 )
 
 

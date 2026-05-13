@@ -9,6 +9,7 @@ from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
 from ax.utils.console import (
+    confirm,
     info,
     setup_logging,
     spinner,
@@ -337,3 +338,131 @@ def delete_space(
             client.spaces.delete(space=name_or_id)
     except Exception as e:
         raise APIError(f"Failed to delete space: {e}") from e
+
+
+@app.command("add-user")
+@handle_errors
+def add_user_to_space(
+    space: Annotated[
+        str,
+        typer.Argument(help="Space name or ID"),
+    ],
+    user_id: Annotated[
+        str,
+        typer.Option(
+            "--user-id",
+            help="Global ID of the user to add",
+            prompt=True,
+        ),
+    ],
+    role: Annotated[
+        str,
+        typer.Option(
+            "--role",
+            "-r",
+            help="Predefined space role: admin, member, read-only, or annotator",
+            prompt=True,
+        ),
+    ],
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Add a user to a space (or update their role if already a member).
+
+    The user must already be a member of the space's parent organization.
+    If the user is already a member of the space, their role is updated (upsert semantics).
+    """
+    from arize.spaces.types import PredefinedSpaceRole, UserSpaceRole
+
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Adding user to space",
+            success_msg="User added to space successfully",
+        ):
+            membership = client.spaces.add_user(
+                space=space,
+                user_id=user_id,
+                role=PredefinedSpaceRole(name=UserSpaceRole(role)),
+            )
+    except Exception as e:
+        raise APIError(f"Failed to add user to space: {e}") from e
+    else:
+        output_data(
+            membership,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@app.command("remove-user")
+@handle_errors
+def remove_user_from_space(
+    space: Annotated[
+        str,
+        typer.Argument(help="Space name or ID"),
+    ],
+    user_id: Annotated[
+        str,
+        typer.Option(
+            "--user-id",
+            help="Global ID of the user to remove",
+            prompt=True,
+        ),
+    ],
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Skip confirmation prompt",
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Remove a user from a space."""
+    setup_logging(verbose)
+    client, _ = make_client()
+
+    if not force:
+        warning(f"This will remove user '{user_id}' from space '{space}'")
+
+        if not confirm("Are you sure?", default=False):
+            info("User not removed")
+            raise typer.Exit()
+
+    try:
+        with spinner(
+            "Removing user from space",
+            success_msg="User removed from space successfully",
+        ):
+            client.spaces.remove_user(space=space, user_id=user_id)
+    except Exception as e:
+        raise APIError(f"Failed to remove user from space: {e}") from e

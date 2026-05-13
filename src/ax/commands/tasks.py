@@ -4,8 +4,12 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import typer
-from arize.tasks.client import RunStatus, TaskType
-from arize.tasks.types import TasksCreateRequestEvaluatorsInner
+from arize.tasks.types import (
+    BaseEvaluationTaskRequestEvaluatorsInner,
+    RunConfiguration,
+    RunStatus,
+    TaskType,
+)
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
@@ -31,15 +35,16 @@ app = typer.Typer(
 
 def _build_evaluators(
     parsed: dict[str, Any] | list[dict[str, Any]],
-) -> list[TasksCreateRequestEvaluatorsInner]:
-    """Parse a JSON string into a list of TasksCreateRequestEvaluatorsInner."""
+) -> list[BaseEvaluationTaskRequestEvaluatorsInner]:
+    """Parse a JSON string into a list of BaseEvaluationTaskRequestEvaluatorsInner."""
     if not isinstance(parsed, list) or not parsed:
         raise typer.BadParameter(
             "--evaluators must be a non-empty JSON array of evaluator objects"
         )
     try:
         evaluators = [
-            TasksCreateRequestEvaluatorsInner.from_dict(e) for e in parsed
+            BaseEvaluationTaskRequestEvaluatorsInner.from_dict(e)
+            for e in parsed
         ]
     except Exception as exc:
         raise typer.BadParameter(f"Failed to parse evaluators: {exc}") from exc
@@ -50,6 +55,27 @@ def _build_evaluators(
             f"Failed to parse evaluator(s) at index(es): {none_indices}"
         )
     return evaluators  # type: ignore[return-value]
+
+
+def _build_run_configuration(
+    parsed: dict[str, Any] | list[dict[str, Any]],
+) -> RunConfiguration:
+    """Parse a dict into a RunConfiguration discriminated-union model."""
+    if not isinstance(parsed, dict):
+        raise typer.BadParameter(
+            "--run-configuration must be a JSON object, not an array"
+        )
+    try:
+        result = RunConfiguration.from_dict(parsed)
+    except Exception as exc:
+        raise typer.BadParameter(
+            f"Failed to parse run configuration: {exc}"
+        ) from exc
+    if result is None:
+        raise typer.BadParameter(
+            "Failed to parse run configuration: result was None"
+        )
+    return result  # type: ignore[return-value]
 
 
 def _parse_experiment_ids(value: str | None) -> list[str] | None:
@@ -91,7 +117,10 @@ def list_tasks(
         TaskType | None,
         typer.Option(
             "--task-type",
-            help="Filter by task type: template_evaluation or code_evaluation",
+            help=(
+                "Filter by task type: template_evaluation, code_evaluation, "
+                "or run_experiment"
+            ),
         ),
     ] = None,
     limit: Annotated[
@@ -203,6 +232,224 @@ def create_task(
         TaskType,
         typer.Option(
             "--task-type",
+            help=(
+                "Task type: template_evaluation, code_evaluation, or run_experiment"
+            ),
+        ),
+    ],
+    evaluators: Annotated[
+        str | None,
+        typer.Option(
+            "--evaluators",
+            help=(
+                "JSON array of evaluator configs (evaluation tasks only). "
+                "Find evaluator IDs with `ax evaluators list`. "
+                'Example: \'[{"evaluator_id": "RXZhbaGWx9yOjEyMzQ1", '
+                '"query_filter": "tag[environment] = \'production\'", '
+                '"column_mappings": {"input": "user_query", "output": "model_response"}}]\'. '
+                "Fields: evaluator_id (required, base64 ID from ax evaluators list), "
+                "query_filter (optional per-evaluator filter string), "
+                "column_mappings (optional dict remapping column names). "
+                "[required for evaluation tasks]"
+            ),
+        ),
+    ] = None,
+    run_configuration: Annotated[
+        str | None,
+        typer.Option(
+            "--run-configuration",
+            help=(
+                "JSON object (or @file.json) specifying the run configuration "
+                "for run_experiment tasks. "
+                'Example: \'{"experiment_type": "llm_generation", '
+                '"ai_integration_id": "...", "model_name": "gpt-4o", '
+                '"messages": [{"role": "user", "content": "{{input}}"}]}\'. '
+                "Required when --task-type=run_experiment."
+            ),
+        ),
+    ] = None,
+    project: Annotated[
+        str | None,
+        typer.Option(
+            "--project",
+            help="Project name or ID; mutually exclusive with --dataset (evaluation tasks only)",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required when using a project name)",
+        ),
+    ] = None,
+    dataset: Annotated[
+        str | None,
+        typer.Option(
+            "--dataset",
+            help=(
+                "Dataset name or ID; mutually exclusive with --project for "
+                "evaluation tasks, required for run_experiment tasks"
+            ),
+        ),
+    ] = None,
+    experiment_ids: Annotated[
+        str | None,
+        typer.Option(
+            "--experiment-ids",
+            help="Comma-separated experiment global IDs (evaluation tasks only)",
+        ),
+    ] = None,
+    sampling_rate: Annotated[
+        float | None,
+        typer.Option(
+            "--sampling-rate",
+            help="Fraction of data to evaluate (0-1); project evaluation tasks only",
+        ),
+    ] = None,
+    is_continuous: Annotated[
+        bool | None,
+        typer.Option(
+            "--is-continuous/--no-continuous",
+            help="Run task continuously on incoming data (evaluation tasks only)",
+        ),
+    ] = None,
+    query_filter: Annotated[
+        str | None,
+        typer.Option(
+            "--query-filter",
+            help="Task-level query filter applied to all evaluators (evaluation tasks only)",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logs"),
+    ] = False,
+) -> None:
+    """Create a new task, dispatching internally based on --task-type.
+
+    Evaluation tasks (template_evaluation / code_evaluation) require --name,
+    --task-type, --evaluators, and one of --project / --dataset.
+
+    Run-experiment tasks (run_experiment) require --name, --task-type,
+    --dataset, and --run-configuration. The flags --evaluators, --project,
+    --experiment-ids, --sampling-rate, --is-continuous, and --query-filter are
+    not valid for this task type.
+    """
+    setup_logging(verbose)
+
+    match task_type:
+        case TaskType.RUN_EXPERIMENT:
+            # run_experiment validation
+            if dataset is None:
+                raise UsageError(
+                    "--dataset is required for run_experiment tasks"
+                )
+            if run_configuration is None:
+                raise UsageError(
+                    "--run-configuration is required for run_experiment tasks"
+                )
+            eval_only_flags: dict[str, Any] = {
+                "--project": project,
+                "--evaluators": evaluators,
+                "--experiment-ids": experiment_ids,
+                "--sampling-rate": sampling_rate,
+                "--is-continuous": is_continuous,
+                "--query-filter": query_filter,
+            }
+            rejected = [k for k, v in eval_only_flags.items() if v is not None]
+            if rejected:
+                raise UsageError(
+                    f"{', '.join(rejected)} "
+                    f"{'is' if len(rejected) == 1 else 'are'} not valid "
+                    "for run_experiment tasks"
+                )
+        case _:
+            # Evaluation task validation
+            if project is None and dataset is None:
+                raise UsageError(
+                    "One of --project or --dataset must be provided"
+                )
+            if project is not None and dataset is not None:
+                raise UsageError(
+                    "--project and --dataset are mutually exclusive"
+                )
+            if evaluators is None:
+                raise UsageError(
+                    "--evaluators is required for evaluation tasks"
+                )
+            if run_configuration is not None:
+                raise UsageError(
+                    "--run-configuration is only valid for run_experiment tasks"
+                )
+            if sampling_rate is not None and not (0.0 <= sampling_rate <= 1.0):
+                raise UsageError("--sampling-rate must be between 0.0 and 1.0")
+
+    client, config = make_client()
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner("Creating task", success_msg="Task created successfully"):
+            match task_type:
+                case TaskType.RUN_EXPERIMENT:
+                    parsed_run_config = _build_run_configuration(
+                        load_json(run_configuration)  # type: ignore[arg-type]
+                    )
+                    task = client.tasks.create_run_experiment_task(
+                        name=name,
+                        dataset=dataset,  # type: ignore[arg-type]
+                        space=space,
+                        run_configuration=parsed_run_config,
+                    )
+                case _:
+                    parsed_evaluators = _build_evaluators(
+                        load_json(evaluators)  # type: ignore[arg-type]
+                    )
+                    task = client.tasks.create_evaluation_task(
+                        name=name,
+                        task_type=task_type,
+                        evaluators=parsed_evaluators,
+                        project=project,
+                        dataset=dataset,
+                        space=space,
+                        experiment_ids=_parse_experiment_ids(experiment_ids),
+                        sampling_rate=sampling_rate,
+                        is_continuous=is_continuous,
+                        query_filter=query_filter,
+                    )
+    except (typer.BadParameter, UsageError):
+        raise
+    except Exception as e:
+        raise APIError(f"Failed to create task: {e}") from e
+    else:
+        output_data(task, format_type=output_format, output_file=output_file)
+
+
+@app.command("create-evaluation")
+@handle_errors
+def create_evaluation_task_cmd(
+    name: Annotated[
+        str,
+        typer.Option(
+            "--name",
+            "-n",
+            help="Task name (unique within the space)",
+        ),
+    ],
+    task_type: Annotated[
+        TaskType,
+        typer.Option(
+            "--task-type",
             help="Task type: template_evaluation or code_evaluation",
         ),
     ],
@@ -211,13 +458,12 @@ def create_task(
         typer.Option(
             "--evaluators",
             help=(
-                "JSON array of evaluator configs. Find evaluator IDs with `ax evaluators list`. "
+                "JSON array of evaluator configs. Find evaluator IDs with "
+                "`ax evaluators list`. "
                 'Example: \'[{"evaluator_id": "RXZhbaGWx9yOjEyMzQ1", '
-                '"query_filter": "tag[environment] = \'production\'", '
                 '"column_mappings": {"input": "user_query", "output": "model_response"}}]\'. '
-                "Fields: evaluator_id (required, base64 ID from ax evaluators list), "
-                "query_filter (optional per-evaluator filter string), "
-                "column_mappings (optional dict remapping column names)."
+                "Fields: evaluator_id (required), query_filter (optional), "
+                "column_mappings (optional)."
             ),
         ),
     ],
@@ -284,9 +530,17 @@ def create_task(
         typer.Option("--verbose", "-v", help="Enable verbose logs"),
     ] = False,
 ) -> None:
-    """Create a new evaluation task."""
+    """Create a new evaluation task (template_evaluation or code_evaluation).
+
+    Requires --name, --task-type, --evaluators, and one of --project / --dataset.
+    """
     setup_logging(verbose)
 
+    if task_type == TaskType.RUN_EXPERIMENT:
+        raise UsageError(
+            "--task-type run_experiment is not valid for this command; "
+            "use `ax tasks create-run-experiment` instead"
+        )
     if project is None and dataset is None:
         raise UsageError("One of --project or --dataset must be provided")
     if project is not None and dataset is not None:
@@ -295,7 +549,6 @@ def create_task(
         raise UsageError("--sampling-rate must be between 0.0 and 1.0")
 
     client, config = make_client()
-
     output_format, output_file = parse_output_option(
         output if output else config.output.format
     )
@@ -304,7 +557,7 @@ def create_task(
 
     try:
         with spinner("Creating task", success_msg="Task created successfully"):
-            task = client.tasks.create(
+            task = client.tasks.create_evaluation_task(
                 name=name,
                 task_type=task_type,
                 evaluators=parsed_evaluators,
@@ -316,6 +569,87 @@ def create_task(
                 is_continuous=is_continuous,
                 query_filter=query_filter,
             )
+    except (typer.BadParameter, UsageError):
+        raise
+    except Exception as e:
+        raise APIError(f"Failed to create task: {e}") from e
+    else:
+        output_data(task, format_type=output_format, output_file=output_file)
+
+
+@app.command("create-run-experiment")
+@handle_errors
+def create_run_experiment_task_cmd(
+    name: Annotated[
+        str,
+        typer.Option(
+            "--name",
+            "-n",
+            help="Task name (unique within the space)",
+        ),
+    ],
+    dataset: Annotated[
+        str,
+        typer.Option(
+            "--dataset",
+            help="Dataset name or ID to run experiments against",
+        ),
+    ],
+    run_configuration: Annotated[
+        str,
+        typer.Option(
+            "--run-configuration",
+            help=(
+                "JSON object (or @file.json) specifying the run configuration. "
+                'Example: \'{"experiment_type": "llm_generation", '
+                '"ai_integration_id": "...", "model_name": "gpt-4o", '
+                '"messages": [{"role": "user", "content": "{{input}}"}]}\'. '
+            ),
+        ),
+    ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Enable verbose logs"),
+    ] = False,
+) -> None:
+    """Create a new run_experiment task.
+
+    Requires --name, --dataset, and --run-configuration.
+    """
+    setup_logging(verbose)
+    client, config = make_client()
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    parsed_run_config = _build_run_configuration(load_json(run_configuration))
+
+    try:
+        with spinner("Creating task", success_msg="Task created successfully"):
+            task = client.tasks.create_run_experiment_task(
+                name=name,
+                dataset=dataset,
+                space=space,
+                run_configuration=parsed_run_config,
+            )
+    except (typer.BadParameter, UsageError):
+        raise
     except Exception as e:
         raise APIError(f"Failed to create task: {e}") from e
     else:
@@ -342,14 +676,14 @@ def update_task(
         float | None,
         typer.Option(
             "--sampling-rate",
-            help="Sampling rate between 0 and 1 (project tasks only)",
+            help="Sampling rate between 0 and 1 (evaluation tasks only)",
         ),
     ] = None,
     is_continuous: Annotated[
         bool | None,
         typer.Option(
             "--is-continuous/--no-continuous",
-            help="Whether the task runs continuously (project tasks only)",
+            help="Whether the task runs continuously (evaluation tasks only)",
         ),
     ] = None,
     query_filter: Annotated[
@@ -357,7 +691,7 @@ def update_task(
         typer.Option(
             "--query-filter",
             help=(
-                "Task-level query filter. Pass an empty string with "
+                "Task-level query filter (evaluation tasks only). Pass an empty string with "
                 '`--query-filter ""` to clear the existing filter.'
             ),
         ),
@@ -367,8 +701,18 @@ def update_task(
         typer.Option(
             "--evaluators",
             help=(
-                "JSON array replacing the full evaluator list. Same shape as "
-                "`ax tasks create --evaluators`. Find IDs with `ax evaluators list`."
+                "JSON array replacing the full evaluator list (evaluation tasks only). "
+                "Same shape as `ax tasks create --evaluators`. Find IDs with `ax evaluators list`."
+            ),
+        ),
+    ] = None,
+    run_configuration: Annotated[
+        str | None,
+        typer.Option(
+            "--run-configuration",
+            help=(
+                "JSON object (or @file.json) replacing the run configuration "
+                "(run_experiment tasks only). The entire stored config is atomically replaced."
             ),
         ),
     ] = None,
@@ -385,7 +729,11 @@ def update_task(
         typer.Option("--verbose", "-v", help="Enable verbose logs"),
     ] = False,
 ) -> None:
-    """Update mutable fields on an evaluation task."""
+    """Update mutable fields on a task.
+
+    The SDK auto-dispatches based on the task's type; providing a field that
+    is invalid for the resolved task type will raise an error.
+    """
     setup_logging(verbose)
 
     client, config = make_client()
@@ -418,6 +766,11 @@ def update_task(
     if evaluators is not None:
         update_kwargs["evaluators"] = _build_evaluators(load_json(evaluators))
         has_field = True
+    if run_configuration is not None:
+        update_kwargs["run_configuration"] = _build_run_configuration(
+            load_json(run_configuration)
+        )
+        has_field = True
 
     if not has_field:
         raise UsageError(
@@ -427,6 +780,8 @@ def update_task(
     try:
         with spinner("Updating task", success_msg="Task updated"):
             updated = client.tasks.update(**update_kwargs)
+    except (typer.BadParameter, UsageError):
+        raise
     except Exception as e:
         raise APIError(f"Failed to update task: {e}") from e
     else:
@@ -485,35 +840,72 @@ def trigger_run(
         datetime | None,
         typer.Option(
             "--data-start-time",
-            help="ISO 8601 start of the data window to evaluate",
+            help="ISO 8601 start of the data window to evaluate (evaluation tasks only)",
         ),
     ] = None,
     data_end_time: Annotated[
         datetime | None,
         typer.Option(
             "--data-end-time",
-            help="ISO 8601 end of the data window (defaults to now)",
+            help="ISO 8601 end of the data window (evaluation tasks only, defaults to now)",
         ),
     ] = None,
     max_spans: Annotated[
         int | None,
         typer.Option(
             "--max-spans",
-            help="Maximum number of spans to process (default 10 000)",
+            help="Maximum number of spans to process (evaluation tasks only, default 10 000)",
         ),
     ] = None,
     override_evaluations: Annotated[
         bool | None,
         typer.Option(
             "--override-evaluations/--no-override-evaluations",
-            help="Re-evaluate data that already has evaluation labels",
+            help="Re-evaluate data that already has evaluation labels (evaluation tasks only)",
         ),
     ] = None,
     experiment_ids: Annotated[
         str | None,
         typer.Option(
             "--experiment-ids",
-            help="Comma-separated experiment global IDs; dataset-based tasks only",
+            help="Comma-separated experiment global IDs; dataset-based evaluation tasks only",
+        ),
+    ] = None,
+    experiment_name: Annotated[
+        str | None,
+        typer.Option(
+            "--experiment-name",
+            help=(
+                "Display name for the experiment to be created "
+                "(run_experiment tasks only, required for that type)"
+            ),
+        ),
+    ] = None,
+    dataset_version_id: Annotated[
+        str | None,
+        typer.Option(
+            "--dataset-version-id",
+            help=(
+                "Dataset version global ID (base64); defaults to the latest version "
+                "(run_experiment tasks only)"
+            ),
+        ),
+    ] = None,
+    max_examples: Annotated[
+        int | None,
+        typer.Option(
+            "--max-examples",
+            help="Maximum number of examples to run (run_experiment tasks only)",
+        ),
+    ] = None,
+    tracing_metadata: Annotated[
+        str | None,
+        typer.Option(
+            "--tracing-metadata",
+            help=(
+                "JSON object (or @file.json) of key/value pairs attached to "
+                "experiment traces (run_experiment tasks only)"
+            ),
         ),
     ] = None,
     wait: Annotated[
@@ -548,7 +940,11 @@ def trigger_run(
         typer.Option("--verbose", "-v", help="Enable verbose logs"),
     ] = False,
 ) -> None:
-    """Trigger an on-demand run for a task."""
+    """Trigger an on-demand run for a task.
+
+    The SDK auto-dispatches based on the task's type. Providing a flag that
+    is invalid for the resolved task type will raise an error.
+    """
     setup_logging(verbose)
     if not wait and (poll_interval != 5.0 or timeout != 600.0):
         warning("--poll-interval and --timeout have no effect without --wait")
@@ -559,6 +955,14 @@ def trigger_run(
             "--data-start-time and --data-end-time are ignored when --experiment-ids is provided; "
             "experiment tasks fetch data directly from the experiment, not a time-based scan"
         )
+
+    parsed_tracing_metadata: dict[str, Any] | None = None
+    if tracing_metadata is not None:
+        raw = load_json(tracing_metadata)
+        if not isinstance(raw, dict):
+            raise UsageError("--tracing-metadata must be a JSON object")
+        parsed_tracing_metadata = raw
+
     client, config = make_client()
 
     output_format, output_file = parse_output_option(
@@ -574,7 +978,13 @@ def trigger_run(
                 max_spans=max_spans,
                 override_evaluations=override_evaluations,
                 experiment_ids=_parse_experiment_ids(experiment_ids),
+                experiment_name=experiment_name,
+                dataset_version_id=dataset_version_id,
+                max_examples=max_examples,
+                tracing_metadata=parsed_tracing_metadata,
             )
+    except (typer.BadParameter, UsageError):
+        raise
     except Exception as e:
         raise APIError(f"Failed to trigger task run: {e}") from e
 

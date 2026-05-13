@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.19.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.18.0...arize-ax-cli/v0.19.0) (2026-05-13)
+
+
+### 🎁 New Features
+
+* **tasks:** add run_experiment support (PR [#70545](https://github.com/Arize-ai/arize/issues/70545) follow-on) ([#71360](https://github.com/Arize-ai/arize/issues/71360)) ([b117d5e](https://github.com/Arize-ai/arize/commit/b117d5e57d24c3df58bc4cca159c6e117598a59c))
+* **users:** add user management commands ([#71316](https://github.com/Arize-ai/arize/issues/71316)) ([b5a7ed4](https://github.com/Arize-ai/arize/commit/b5a7ed4a8c66f091605eff1dba37662bea8c12da)), closes [#70418](https://github.com/Arize-ai/arize/issues/70418)
+
 ## [0.18.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.17.1...arize-ax-cli/v0.18.0) (2026-05-08)
 
 

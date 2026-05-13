@@ -41,7 +41,8 @@ def categorize_basemodel_fields(
     metadata: dict[str, Any] = {}
     list_fields: dict[str, list] = {}
 
-    for field_name, value in model.model_dump().items():
+    for field_name in model.model_fields:
+        value = getattr(model, field_name)
         if is_list_of_structured_data(value):
             list_fields[field_name] = value
         else:

@@ -9,7 +9,7 @@ import json
 import pytest
 from pydantic import BaseModel
 
-from ax.core.output import CSVFormatter, JSONFormatter
+from ax.core.output import BaseModelTableFormatter, CSVFormatter, JSONFormatter
 
 
 class SpanAttributes(BaseModel):
@@ -115,6 +115,49 @@ class TestJSONFormatterProducesValidJSON:
         with open(out) as f:
             parsed = json.loads(f.read())
         assert parsed["spans"][0]["name"] == "test"
+
+
+class TestBaseModelTableFormatterFormatValue:
+    """Tests for _format_value, focusing on generated OneOf union types."""
+
+    def setup_method(self) -> None:
+        self.formatter = BaseModelTableFormatter()
+
+    def test_oneof_predefined_role_shows_name(self) -> None:
+        """OneOf wrapper with a predefined role should display just the role name."""
+        value = {
+            "oneof_schema_1_validator": None,
+            "oneof_schema_2_validator": None,
+            "actual_instance": {"type": "predefined", "name": "member"},
+            "one_of_schemas": {
+                "OrganizationPredefinedRoleAssignment",
+                "OrganizationCustomRoleAssignment",
+            },
+            "discriminator_value_class_map": {},
+        }
+        result = self.formatter._format_value(value)
+        assert result == "member"
+
+    def test_oneof_custom_role_shows_id(self) -> None:
+        """OneOf wrapper with a custom role should display just the role ID."""
+        value = {
+            "oneof_schema_1_validator": None,
+            "oneof_schema_2_validator": None,
+            "actual_instance": {"type": "custom", "id": "role-abc-123"},
+            "one_of_schemas": {
+                "OrganizationPredefinedRoleAssignment",
+                "OrganizationCustomRoleAssignment",
+            },
+            "discriminator_value_class_map": {},
+        }
+        result = self.formatter._format_value(value)
+        assert result == "role-abc-123"
+
+    def test_plain_dict_not_affected(self) -> None:
+        """Plain dicts without the OneOf marker keys are not unwrapped."""
+        value = {"foo": "bar", "baz": 1}
+        result = self.formatter._format_value(value)
+        assert "foo" in result  # rendered as str(dict)
 
 
 class TestCSVFormatterProducesValidOutput:

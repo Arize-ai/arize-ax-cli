@@ -138,6 +138,25 @@ class BaseModelTableFormatter:
         if isinstance(value, list):
             # Empty list or list of scalars
             return f"[dim]{len(value)} items[/dim]" if value else "[dim][]"
+        # Unwrap SDK domain types that have __str__ (e.g. PredefinedOrgRole, PredefinedUserRole)
+        if isinstance(value, BaseModel):
+            return str(value)
+        # Unwrap generated OneOf discriminated union wrapper dicts
+        # (pattern: dict with `actual_instance` + `one_of_schemas` from openapi-generator)
+        if (
+            isinstance(value, dict)
+            and "actual_instance" in value
+            and "one_of_schemas" in value
+        ):
+            actual = value.get("actual_instance")
+            if isinstance(actual, dict):
+                # Predefined role: {'type': ..., 'name': ...} → show name
+                if "name" in actual:
+                    return self._format_value(actual["name"])
+                # Custom role: {'type': ..., 'id': ...} → show id
+                if "id" in actual:
+                    return self._format_value(actual["id"])
+            return self._format_value(actual)
         # Unwrap enum instances (e.g. ApiKeyStatus.ACTIVE → "active") before display
         if isinstance(value, Enum):
             value = value.value

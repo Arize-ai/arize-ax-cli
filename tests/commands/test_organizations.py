@@ -330,3 +330,137 @@ class TestUpdateOrganization:
             mock_client,
         )
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax organizations add-user
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAddUserToOrganization:
+    """Tests for `ax organizations add-user <org>`."""
+
+    def test_add_user_calls_sdk_correctly(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """add-user should call the SDK with correct args and exit 0."""
+        mock_membership = MagicMock()
+        mock_membership.user_id = "user_1"
+        mock_client.organizations.add_user.return_value = mock_membership
+
+        result = _invoke(
+            [
+                "organizations",
+                "add-user",
+                _ORG_ID,
+                "--user-id",
+                "user_1",
+                "--role",
+                "member",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.organizations.add_user.call_args.kwargs
+        assert call_kwargs["organization"] == _ORG_ID
+        assert call_kwargs["user_id"] == "user_1"
+        assert call_kwargs["role"] is not None
+
+    def test_add_user_sdk_error_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """SDK error should cause the command to exit non-zero."""
+        mock_client.organizations.add_user.side_effect = RuntimeError(
+            "Not found"
+        )
+        result = _invoke(
+            [
+                "organizations",
+                "add-user",
+                _ORG_ID,
+                "--user-id",
+                "user_1",
+                "--role",
+                "member",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax organizations remove-user
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRemoveUserFromOrganization:
+    """Tests for `ax organizations remove-user <org>`."""
+
+    def test_remove_user_force_skips_confirmation(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--force should bypass the confirmation prompt."""
+        mock_client.organizations.remove_user.return_value = None
+        result = _invoke(
+            [
+                "organizations",
+                "remove-user",
+                _ORG_ID,
+                "--user-id",
+                "user_1",
+                "--force",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.organizations.remove_user.assert_called_once_with(
+            organization=_ORG_ID,
+            user_id="user_1",
+        )
+
+    def test_remove_user_with_confirmation_no(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Declining the prompt should abort removal."""
+        result = _invoke(
+            [
+                "organizations",
+                "remove-user",
+                _ORG_ID,
+                "--user-id",
+                "user_1",
+            ],
+            mock_config,
+            mock_client,
+            cli_input="n\n",
+        )
+        assert result.exit_code == 0
+        mock_client.organizations.remove_user.assert_not_called()
+
+    def test_remove_user_sdk_error_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """SDK error should cause the command to exit non-zero."""
+        mock_client.organizations.remove_user.side_effect = RuntimeError(
+            "Not found"
+        )
+        result = _invoke(
+            [
+                "organizations",
+                "remove-user",
+                _ORG_ID,
+                "--user-id",
+                "user_1",
+                "--force",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0

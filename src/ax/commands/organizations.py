@@ -8,7 +8,7 @@ from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
 from ax.core.output import output_data
-from ax.utils.console import setup_logging, spinner
+from ax.utils.console import confirm, info, setup_logging, spinner, warning
 from ax.utils.file_io import parse_output_option
 
 # Create organizations subcommand app
@@ -273,3 +273,141 @@ def update_organization(
             format_type=output_format,
             output_file=output_file,
         )
+
+
+@app.command("add-user")
+@handle_errors
+def add_user_to_organization(
+    organization: Annotated[
+        str,
+        typer.Argument(help="Organization name or ID"),
+    ],
+    user_id: Annotated[
+        str,
+        typer.Option(
+            "--user-id",
+            help="Global ID of the user to add",
+            prompt=True,
+        ),
+    ],
+    role: Annotated[
+        str,
+        typer.Option(
+            "--role",
+            "-r",
+            help="Predefined organization role: admin, member, read-only, or annotator",
+            prompt=True,
+        ),
+    ],
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Add a user to an organization (or update their role if already a member).
+
+    If the user is already a member, their role is updated (upsert semantics).
+    """
+    from arize.organizations.types import (
+        OrganizationRole,
+        PredefinedOrgRole,
+    )
+
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Adding user to organization",
+            success_msg="User added to organization successfully",
+        ):
+            membership = client.organizations.add_user(
+                organization=organization,
+                user_id=user_id,
+                role=PredefinedOrgRole(name=OrganizationRole(role)),
+            )
+    except Exception as e:
+        raise APIError(f"Failed to add user to organization: {e}") from e
+    else:
+        output_data(
+            membership,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@app.command("remove-user")
+@handle_errors
+def remove_user_from_organization(
+    organization: Annotated[
+        str,
+        typer.Argument(help="Organization name or ID"),
+    ],
+    user_id: Annotated[
+        str,
+        typer.Option(
+            "--user-id",
+            help="Global ID of the user to remove",
+            prompt=True,
+        ),
+    ],
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Skip confirmation prompt",
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Remove a user from an organization.
+
+    Also removes the user from all child spaces (membership cascade).
+    """
+    setup_logging(verbose)
+    client, _ = make_client()
+
+    if not force:
+        warning(
+            f"This will remove user '{user_id}' from organization '{organization}' and all its spaces"
+        )
+
+        if not confirm("Are you sure?", default=False):
+            info("User not removed")
+            raise typer.Exit()
+
+    try:
+        with spinner(
+            "Removing user from organization",
+            success_msg="User removed from organization successfully",
+        ):
+            client.organizations.remove_user(
+                organization=organization,
+                user_id=user_id,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to remove user from organization: {e}") from e

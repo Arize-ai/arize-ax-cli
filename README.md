@@ -55,14 +55,18 @@
   - [Cache](#cache)
   - [Datasets](#datasets)
   - [Evaluators](#evaluators)
+    - [Code evaluators](#code-evaluators)
   - [Experiments](#experiments)
+  - [Organizations](#organizations)
   - [Projects](#projects)
   - [Prompts](#prompts)
   - [Roles](#roles)
+  - [Spaces](#spaces)
   - [Skills](#skills)
   - [Spans](#spans)
   - [Tasks](#tasks)
   - [Traces](#traces)
+  - [Users](#users)
 - [Usage Examples](#usage-examples)
   - [Creating a Dataset from a CSV File](#creating-a-dataset-from-a-csv-file)
   - [Creating a Dataset from stdin](#creating-a-dataset-from-stdin)
@@ -108,6 +112,7 @@ Official command-line interface for [Arize AI](https://arize.com) - manage your 
 - **AI Integrations**: Configure external LLM providers (OpenAI, Anthropic, AWS Bedrock, and more)
 - **Prompt Management**: Create and version prompts with label management
 - **Role Management**: Create, update, and delete custom roles with granular permissions
+- **User Management**: Invite users, manage account-level roles, and control organization/space memberships
 - **Agent Skills**: Install Arize context skills for AI coding agents (Claude Code, Cursor, Codex, Windsurf)
 - **Spans & Traces**: Query and filter LLM spans and traces
 - **Multiple Profiles**: Switch between different Arize environments
@@ -766,7 +771,7 @@ ax api-keys list [--key-type user|service] [--status active|deleted] \
 ax api-keys create --name "My Key" [--description "..."] [--expires-at 2025-12-31T23:59:59]
 
 # Create a service key (scoped to a space)
-ax api-keys create --name "CI Key" --key-type service --space-id <space-id>
+ax api-keys create --name "CI Key" --key-type service --space <space-name-or-id>
 
 # Refresh a key (revokes old key, issues replacement)
 ax api-keys refresh <key-id> [--expires-at 2025-12-31T23:59:59]
@@ -777,10 +782,10 @@ ax api-keys delete <key-id> [--force]
 
 **Key types:**
 
-| Type      | Description                                                             |
-| --------- | ----------------------------------------------------------------------- |
-| `user`    | Authenticates as the creating user. Global, so `--space-id` not needed. |
-| `service` | Scoped to a specific space. `--space-id` is required.                  |
+| Type      | Description                                                              |
+| --------- | ------------------------------------------------------------------------ |
+| `user`    | Authenticates as the creating user. Global, so `--space` not needed.    |
+| `service` | Scoped to a specific space. `--space` (name or ID) is required.         |
 
 ### Cache
 
@@ -1014,6 +1019,33 @@ ax experiments delete <experiment> [--force]
 | `--stdout`        | Print JSON to stdout instead of saving to file |
 | `--verbose`, `-v` | Enable verbose logs                            |
 
+### Organizations
+
+Manage organizations:
+
+```bash
+# List organizations
+ax organizations list [--name <substring>] [--limit 50] [--cursor <cursor>]
+
+# Get an organization by name or ID
+ax organizations get <organization>
+
+# Create a new organization
+ax organizations create --name "My Org" [--description "..."]
+
+# Update an organization's name or description (at least one field required)
+ax organizations update <organization> --name "New Name"
+ax organizations update <organization> --description "Updated description"
+
+# Add a user to an organization (or update their role if already a member)
+ax organizations add-user <organization> --user-id <user-id> --role <role>
+
+# Remove a user from an organization (also removes them from all child spaces)
+ax organizations remove-user <organization> --user-id <user-id> [--force]
+```
+
+**Organization roles:** `admin`, `member`, `read-only`, `annotator`
+
 ### Projects
 
 Organize your projects:
@@ -1133,14 +1165,47 @@ ax roles create --name "Data Analyst" --permissions DATASET_READ,PROJECT_READ
 ax roles create --name "Data Analyst" --permissions DATASET_READ --description "Read-only data access"
 
 # Update a role (at least one field required; --permissions fully replaces existing permissions)
-ax roles update <role-id> --name "Senior Analyst"
-ax roles update <role-id> --permissions DATASET_READ,DATASET_CREATE
+ax roles update <role-name-or-id> --name "Senior Analyst"
+ax roles update <role-name-or-id> --permissions DATASET_READ,DATASET_CREATE
 
 # Delete a role by name or ID (pass --force to skip confirmation)
 ax roles delete <role-name-or-id> [--force]
 ```
 
 > **Note:** Permission values are uppercase identifiers such as `PROJECT_READ`, `DATASET_CREATE`, `ANNOTATION_CONFIG_READ`, etc. Predefined (system-managed) roles cannot be created, updated, or deleted.
+
+### Spaces
+
+Manage spaces:
+
+```bash
+# List spaces
+ax spaces list [--organization-id <org-id>] [--limit 15] [--cursor <cursor>]
+
+# Get a space by name or ID
+ax spaces get <space>
+
+# Create a new space
+ax spaces create --name "My Space" --organization-id <org-id> [--description "..."]
+
+# Update a space's name or description (at least one field required)
+ax spaces update <space> --name "New Name"
+ax spaces update <space> --description "Updated description"
+
+# Delete a space and all resources within it
+ax spaces delete <space> [--force]
+
+# Add a user to a space (or update their role if already a member)
+# The user must already be a member of the space's parent organization.
+ax spaces add-user <space> --user-id <user-id> --role <role>
+
+# Remove a user from a space
+ax spaces remove-user <space> --user-id <user-id> [--force]
+```
+
+**Space roles:** `admin`, `member`, `read-only`, `annotator`
+
+> **Warning:** `ax spaces delete` permanently deletes the space and all of its contents, including all models, monitors, dashboards, datasets, custom metrics, and experiments.
 
 ### Skills
 
@@ -1239,18 +1304,21 @@ ax spans export <project-id> --start-time 2024-01-01T00:00:00Z --end-time 2024-0
 
 ### Tasks
 
-Manage evaluation tasks and trigger on-demand runs:
+Manage evaluation tasks and run-experiment tasks, and trigger on-demand runs:
 
 ```bash
-# List tasks (optionally filtered by space, project, dataset, or type)
+# List tasks (filtered by space, project, dataset, or type)
 ax tasks list [--name <substring>] [--space <space>] [--project-id <project-name-or-id>] \
-  [--dataset-id <dataset-id>] [--task-type template_evaluation|code_evaluation] \
+  [--dataset-id <dataset-id>] \
+  [--task-type template_evaluation|code_evaluation|run_experiment] \
   [--limit 15] [--cursor <cursor>]
 
 # Get a specific task
 ax tasks get <task-id>
 
-# Create a project-based task (use ax evaluators list to find evaluator IDs)
+# ── Evaluation tasks (template_evaluation / code_evaluation) ─────────────────
+
+# Create a project-based evaluation task (use ax evaluators list to find IDs)
 ax tasks create \
   --name "Relevance Check" \
   --task-type template_evaluation \
@@ -1258,7 +1326,7 @@ ax tasks create \
   --project <project> [--space <space>] \
   --is-continuous
 
-# Create a dataset-based task
+# Create a dataset-based evaluation task
 ax tasks create \
   --name "Dataset Eval" \
   --task-type template_evaluation \
@@ -1266,7 +1334,37 @@ ax tasks create \
   --dataset <dataset> \
   --experiment-ids <exp-id-1>,<exp-id-2>
 
-# Update mutable fields on a task (provide at least one field)
+# Narrower subcommand (same options, cleaner help text)
+ax tasks create-evaluation \
+  --name "Relevance Check" \
+  --task-type template_evaluation \
+  --evaluators '[{"evaluator_id": "<id>"}]' \
+  --project <project>
+
+# ── Run-experiment tasks ──────────────────────────────────────────────────────
+
+# Create a run-experiment task (dispatched via ax tasks create)
+ax tasks create \
+  --name "LLM Eval Run" \
+  --task-type run_experiment \
+  --dataset <dataset> \
+  --run-configuration '{
+    "experiment_type": "llm_generation",
+    "ai_integration_id": "<integration-id>",
+    "model_name": "gpt-4o",
+    "input_variable_format": "mustache",
+    "messages": [{"role": "user", "content": "{{input}}"}]
+  }'
+
+# Or use the dedicated subcommand
+ax tasks create-run-experiment \
+  --name "LLM Eval Run" \
+  --dataset <dataset> \
+  --run-configuration @run_config.json [--space <space>]
+
+# ── Common task management ────────────────────────────────────────────────────
+
+# Update mutable fields on an evaluation task (provide at least one field)
 ax tasks update <task> --name "New Name"
 ax tasks update <task> --sampling-rate 0.25
 ax tasks update <task> --is-continuous
@@ -1274,20 +1372,34 @@ ax tasks update <task> --query-filter "attributes.env = 'prod'"
 ax tasks update <task> --query-filter ""    # clear the task-level query filter
 ax tasks update <task> --evaluators '[{"evaluator_id": "<id>"}]'
 
+# Update the run configuration on a run_experiment task
+ax tasks update <task> --run-configuration @new_config.json
+
 # Delete a task (irreversible; prompts unless --force is passed)
 ax tasks delete <task> [--space <space>] [--force]
 
-# Trigger an on-demand run
+# ── Triggering runs ───────────────────────────────────────────────────────────
+
+# Trigger an on-demand evaluation run
 ax tasks trigger-run <task-id>
 
 # Trigger a run and wait for it to complete
 ax tasks trigger-run <task-id> --wait
 
-# Trigger a run over a specific data window
+# Trigger an evaluation run over a specific data window
 ax tasks trigger-run <task-id> \
   --data-start-time 2024-01-01T00:00:00Z \
   --data-end-time 2024-01-02T00:00:00Z \
   --max-spans 5000
+
+# Trigger a run-experiment run (SDK dispatches based on task type)
+ax tasks trigger-run <task-id> \
+  --experiment-name "My Experiment" \
+  --dataset-version-id <version-id> \
+  --max-examples 200 \
+  --tracing-metadata '{"env": "prod"}'
+
+# ── Run management ────────────────────────────────────────────────────────────
 
 # List runs for a task (optionally filtered by status)
 ax tasks list-runs <task-id> [--status pending|running|completed|failed|cancelled] \
@@ -1303,30 +1415,41 @@ ax tasks cancel-run <run-id> [--force]
 ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 ```
 
-**`create` options:**
+**`create` / `create-evaluation` options:**
 
 | Option | Description |
 | --- | --- |
 | `--name`, `-n` | Task name (must be unique within the space) |
-| `--task-type` | `template_evaluation` or `code_evaluation` |
-| `--evaluators` | JSON array of evaluator configs. Get IDs via `ax evaluators list`. Example: `[{"evaluator_id": "<id>", "query_filter": null, "column_mappings": null}]`. Fields: `evaluator_id` (required), `query_filter` (optional per-evaluator filter), `column_mappings` (optional column name remappings) |
-| `--project` | Project name or ID; mutually exclusive with `--dataset` |
+| `--task-type` | `template_evaluation`, `code_evaluation`, or `run_experiment` |
+| `--evaluators` | JSON array of evaluator configs (evaluation tasks only). Get IDs via `ax evaluators list`. Example: `[{"evaluator_id": "<id>", "query_filter": null, "column_mappings": null}]` |
+| `--run-configuration` | JSON object or `@file.json` with the run configuration (`run_experiment` tasks only) |
+| `--project` | Project name or ID; mutually exclusive with `--dataset` (evaluation tasks only) |
 | `--space` | Space name or ID (helps resolve project/dataset names) |
-| `--dataset` | Dataset name or ID; mutually exclusive with `--project` |
-| `--experiment-ids` | Comma-separated experiment IDs (required for dataset-based tasks) |
-| `--sampling-rate` | Fraction of data to evaluate (0–1); project tasks only |
-| `--is-continuous` / `--no-continuous` | Run continuously on incoming data |
-| `--query-filter` | Task-level filter applied to all evaluators |
+| `--dataset` | Dataset name or ID; required for `run_experiment` tasks, mutually exclusive with `--project` for evaluation tasks |
+| `--experiment-ids` | Comma-separated experiment IDs (evaluation tasks, dataset-based only) |
+| `--sampling-rate` | Fraction of data to evaluate (0–1); project evaluation tasks only |
+| `--is-continuous` / `--no-continuous` | Run continuously on incoming data (evaluation tasks only) |
+| `--query-filter` | Task-level filter applied to all evaluators (evaluation tasks only) |
+
+**`create-run-experiment` options:**
+
+| Option | Description |
+| --- | --- |
+| `--name`, `-n` | Task name (must be unique within the space) |
+| `--dataset` | Dataset name or ID to run experiments against |
+| `--run-configuration` | JSON object or `@file.json` with the run configuration |
+| `--space`, `-s` | Space name or ID |
 
 **`update` options:** (must provide at least one field)
 
 | Option | Description |
 | --- | --- |
 | `--name`, `-n` | New task display name |
-| `--sampling-rate` | Sampling rate between 0 and 1 (project tasks only) |
-| `--is-continuous` / `--no-continuous` | Whether the task runs continuously (project tasks only) |
-| `--query-filter` | Task-level query filter. Pass `""` to clear the existing filter |
-| `--evaluators` | JSON array replacing the full evaluator list; same shape as `ax tasks create --evaluators` |
+| `--sampling-rate` | Sampling rate between 0 and 1 (evaluation tasks only) |
+| `--is-continuous` / `--no-continuous` | Whether the task runs continuously (evaluation tasks only) |
+| `--query-filter` | Task-level query filter; pass `""` to clear (evaluation tasks only) |
+| `--evaluators` | JSON array replacing the full evaluator list (evaluation tasks only) |
+| `--run-configuration` | JSON object or `@file.json` replacing the run configuration (`run_experiment` tasks only) |
 | `--space`, `-s` | Space name or ID (helps resolve task by name) |
 
 **`delete` options:**
@@ -1340,11 +1463,15 @@ ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 
 | Option | Description |
 | --- | --- |
-| `--data-start-time` | ISO 8601 start of the data window |
-| `--data-end-time` | ISO 8601 end of the data window (defaults to now) |
-| `--max-spans` | Maximum spans to evaluate (default: 10 000) |
-| `--override-evaluations` | Re-evaluate data that already has labels |
-| `--experiment-ids` | Comma-separated experiment IDs; dataset-based tasks only |
+| `--data-start-time` | ISO 8601 start of the data window (evaluation tasks only) |
+| `--data-end-time` | ISO 8601 end of the data window (defaults to now; evaluation tasks only) |
+| `--max-spans` | Maximum spans to evaluate (default: 10 000; evaluation tasks only) |
+| `--override-evaluations` | Re-evaluate data that already has labels (evaluation tasks only) |
+| `--experiment-ids` | Comma-separated experiment IDs; dataset-based evaluation tasks only |
+| `--experiment-name` | Display name for the experiment to be created (`run_experiment` tasks only) |
+| `--dataset-version-id` | Dataset version ID; defaults to latest (`run_experiment` tasks only) |
+| `--max-examples` | Maximum examples to run (`run_experiment` tasks only) |
+| `--tracing-metadata` | JSON object or `@file.json` of key/value pairs for experiment traces (`run_experiment` tasks only) |
 | `--wait`, `-w` | Block until the run reaches a terminal state |
 | `--poll-interval` | Seconds between polling attempts when `--wait` is set (default: 5) |
 | `--timeout` | Maximum seconds to wait when `--wait` is set (default: 600) |
@@ -1378,6 +1505,49 @@ ax traces list <project-id> --filter "status_code = 'ERROR'"
 ax traces list <project-id> --start-time 2024-01-01T00:00:00Z
 ax traces list <project-id> --filter "latency_ms > 5000" --limit 50
 ```
+
+### Users
+
+Manage users in the account:
+
+```bash
+# List users (optionally filtered by email or status)
+ax users list [--email <substring>] [--status active] [--status invited] \
+  [--limit 50] [--cursor <cursor>]
+
+# Get a specific user by ID
+ax users get <user-id>
+
+# Create a new user and invite them
+ax users create --full-name "Jane Doe" --email jane@example.com \
+  --role member --invite-mode email_link
+
+# Update a user's full name or developer permission flag
+ax users update <user-id> --full-name "Jane Smith"
+ax users update <user-id> --is-developer
+ax users update <user-id> --no-is-developer
+
+# Delete a user (cascades to memberships, API keys, and role bindings)
+ax users delete <user-id> [--force]
+
+# Resend an invitation email to a pending user
+ax users resend-invitation <user-id>
+
+# Send a password-reset email to a user
+ax users reset-password <user-id>
+```
+
+**Account-level roles:** `admin`, `member`, `annotator`
+
+**Invite modes:**
+
+| Mode                 | Description                                          |
+| -------------------- | ---------------------------------------------------- |
+| `none`               | Create the user without sending any invitation       |
+| `email_link`         | Send an invitation email with a sign-in link         |
+| `temporary_password` | Send an email with a one-time temporary password     |
+
+> **Note:** `ax users delete` deletes the user and cascades to all organization memberships, space memberships, API keys, and role bindings.
 
 ## Usage Examples
 

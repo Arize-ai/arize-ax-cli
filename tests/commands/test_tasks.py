@@ -1,11 +1,16 @@
 """Tests for task CLI commands."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
-from ax.commands.tasks import _build_evaluators, _parse_experiment_ids, app
+from ax.commands.tasks import (
+    _build_evaluators,
+    _build_run_configuration,
+    _parse_experiment_ids,
+    app,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -47,6 +52,14 @@ def _make_run_list_response(*runs: MagicMock) -> MagicMock:
     return mock
 
 
+_RUN_CONFIG_JSON = (
+    '{"experiment_type": "llm_generation", '
+    '"ai_integration_id": "int-1", '
+    '"model_name": "gpt-4o", '
+    '"input_variable_format": "mustache", '
+    '"messages": [{"role": "user", "content": "{{input}}"}]}'
+)
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -67,6 +80,8 @@ class TestTaskCommands:
             "list",
             "get",
             "create",
+            "create-evaluation",
+            "create-run-experiment",
             "update",
             "delete",
             "trigger-run",
@@ -88,7 +103,7 @@ class TestBuildEvaluators:
 
     @pytest.mark.unit
     def test_valid_evaluators(self) -> None:
-        """Valid list input is parsed into TasksCreateRequestEvaluatorsInner objects."""
+        """Valid list input is parsed into BaseEvaluationTaskRequestEvaluatorsInner objects."""
         result = _build_evaluators([{"evaluator_id": "ev-1"}])
         assert len(result) == 1
         assert result[0].evaluator_id == "ev-1"
@@ -108,6 +123,60 @@ class TestBuildEvaluators:
 
         with pytest.raises(typer.BadParameter, match="non-empty JSON array"):
             _build_evaluators([])
+
+
+class TestBuildRunConfiguration:
+    """Tests for the _build_run_configuration helper."""
+
+    @pytest.mark.unit
+    def test_array_raises(self) -> None:
+        """Array input raises BadParameter."""
+        import typer
+
+        with pytest.raises(typer.BadParameter, match="JSON object"):
+            _build_run_configuration([])  # type: ignore[arg-type]
+
+    @pytest.mark.unit
+    def test_valid_dict_parses_to_run_configuration(self) -> None:
+        """Valid dict input is parsed and the RunConfiguration result is returned."""
+        mock_rc = MagicMock()
+        with patch(
+            "ax.commands.tasks.RunConfiguration.from_dict", return_value=mock_rc
+        ):
+            result = _build_run_configuration(
+                {"experiment_type": "llm_generation"}
+            )
+        assert result is mock_rc
+
+    @pytest.mark.unit
+    def test_from_dict_exception_wraps_as_bad_parameter(self) -> None:
+        """Exception raised by RunConfiguration.from_dict is wrapped as BadParameter."""
+        import typer
+
+        with (
+            patch(
+                "ax.commands.tasks.RunConfiguration.from_dict",
+                side_effect=ValueError("unknown discriminator"),
+            ),
+            pytest.raises(
+                typer.BadParameter, match="Failed to parse run configuration"
+            ),
+        ):
+            _build_run_configuration({"experiment_type": "bad"})
+
+    @pytest.mark.unit
+    def test_from_dict_returns_none_wraps_as_bad_parameter(self) -> None:
+        """None returned by RunConfiguration.from_dict is wrapped as BadParameter."""
+        import typer
+
+        with (
+            patch(
+                "ax.commands.tasks.RunConfiguration.from_dict",
+                return_value=None,
+            ),
+            pytest.raises(typer.BadParameter, match="result was None"),
+        ):
+            _build_run_configuration({"experiment_type": "bad"})
 
 
 class TestParseExperimentIds:
@@ -311,7 +380,7 @@ class TestGetTask:
 
 
 class TestCreateTask:
-    """Tests for the 'ax tasks create' command."""
+    """Tests for the 'ax tasks create' command (dispatched)."""
 
     _EVALUATORS_JSON = '[{"evaluator_id": "ev-1"}]'
 
@@ -322,8 +391,8 @@ class TestCreateTask:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Create a project-based task and verify the SDK call arguments."""
-        mock_client.tasks.create.return_value = _make_task()
+        """Create a project-based evaluation task and verify the SDK call."""
+        mock_client.tasks.create_evaluation_task.return_value = _make_task()
 
         result = cli_runner.invoke(
             app,
@@ -340,7 +409,7 @@ class TestCreateTask:
             ],
         )
         assert result.exit_code == 0
-        call_kwargs = mock_client.tasks.create.call_args.kwargs
+        call_kwargs = mock_client.tasks.create_evaluation_task.call_args.kwargs
         assert call_kwargs["name"] == "My Task"
         assert call_kwargs["task_type"] == "template_evaluation"
         assert call_kwargs["project"] == "proj-1"
@@ -355,8 +424,8 @@ class TestCreateTask:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Create a dataset-based task with experiment IDs."""
-        mock_client.tasks.create.return_value = _make_task()
+        """Create a dataset-based evaluation task with experiment IDs."""
+        mock_client.tasks.create_evaluation_task.return_value = _make_task()
 
         result = cli_runner.invoke(
             app,
@@ -375,7 +444,7 @@ class TestCreateTask:
             ],
         )
         assert result.exit_code == 0
-        call_kwargs = mock_client.tasks.create.call_args.kwargs
+        call_kwargs = mock_client.tasks.create_evaluation_task.call_args.kwargs
         assert call_kwargs["dataset"] == "ds-1"
         assert call_kwargs["project"] is None
         assert call_kwargs["experiment_ids"] == ["exp-1", "exp-2"]
@@ -388,7 +457,7 @@ class TestCreateTask:
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
         """Project name is passed directly to the SDK (SDK handles name-or-ID resolution)."""
-        mock_client.tasks.create.return_value = _make_task()
+        mock_client.tasks.create_evaluation_task.return_value = _make_task()
 
         result = cli_runner.invoke(
             app,
@@ -407,7 +476,7 @@ class TestCreateTask:
             ],
         )
         assert result.exit_code == 0
-        call_kwargs = mock_client.tasks.create.call_args.kwargs
+        call_kwargs = mock_client.tasks.create_evaluation_task.call_args.kwargs
         assert call_kwargs["project"] == "my-project"
 
     @pytest.mark.unit
@@ -417,7 +486,7 @@ class TestCreateTask:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """'create' without --project or --dataset-id exits non-zero."""
+        """'create' without --project or --dataset exits non-zero for eval tasks."""
         result = cli_runner.invoke(
             app,
             [
@@ -431,7 +500,7 @@ class TestCreateTask:
             ],
         )
         assert result.exit_code != 0
-        mock_client.tasks.create.assert_not_called()
+        mock_client.tasks.create_evaluation_task.assert_not_called()
 
     @pytest.mark.unit
     def test_project_and_dataset_mutually_exclusive(
@@ -440,7 +509,7 @@ class TestCreateTask:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Providing both --project and --dataset-id exits non-zero."""
+        """Providing both --project and --dataset exits non-zero."""
         result = cli_runner.invoke(
             app,
             [
@@ -458,7 +527,7 @@ class TestCreateTask:
             ],
         )
         assert result.exit_code != 0
-        mock_client.tasks.create.assert_not_called()
+        mock_client.tasks.create_evaluation_task.assert_not_called()
 
     @pytest.mark.unit
     def test_optional_flags_forwarded(
@@ -468,7 +537,7 @@ class TestCreateTask:
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
         """Optional flags (sampling-rate, is-continuous, query-filter) are passed through."""
-        mock_client.tasks.create.return_value = _make_task()
+        mock_client.tasks.create_evaluation_task.return_value = _make_task()
 
         result = cli_runner.invoke(
             app,
@@ -490,7 +559,7 @@ class TestCreateTask:
             ],
         )
         assert result.exit_code == 0
-        call_kwargs = mock_client.tasks.create.call_args.kwargs
+        call_kwargs = mock_client.tasks.create_evaluation_task.call_args.kwargs
         assert call_kwargs["sampling_rate"] == pytest.approx(0.5)
         assert call_kwargs["is_continuous"] is True
         assert call_kwargs["query_filter"] == "score > 0.8"
@@ -503,7 +572,9 @@ class TestCreateTask:
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
         """API failure results in a non-zero exit code."""
-        mock_client.tasks.create.side_effect = Exception("conflict")
+        mock_client.tasks.create_evaluation_task.side_effect = Exception(
+            "conflict"
+        )
         result = cli_runner.invoke(
             app,
             [
@@ -516,6 +587,323 @@ class TestCreateTask:
                 self._EVALUATORS_JSON,
                 "--project",
                 "proj-1",
+            ],
+        )
+        assert result.exit_code != 0
+
+    @pytest.mark.unit
+    def test_creates_run_experiment_task(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--task-type run_experiment dispatches to create_run_experiment_task."""
+        mock_client.tasks.create_run_experiment_task.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "Exp Task",
+                "--task-type",
+                "run_experiment",
+                "--dataset",
+                "ds-1",
+                "--run-configuration",
+                _RUN_CONFIG_JSON,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = (
+            mock_client.tasks.create_run_experiment_task.call_args.kwargs
+        )
+        assert call_kwargs["name"] == "Exp Task"
+        assert call_kwargs["dataset"] == "ds-1"
+        mock_client.tasks.create_evaluation_task.assert_not_called()
+
+    @pytest.mark.unit
+    def test_run_experiment_requires_dataset(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """run_experiment task without --dataset exits non-zero."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "Exp Task",
+                "--task-type",
+                "run_experiment",
+                "--run-configuration",
+                _RUN_CONFIG_JSON,
+            ],
+        )
+        assert result.exit_code != 0
+        mock_client.tasks.create_run_experiment_task.assert_not_called()
+
+    @pytest.mark.unit
+    def test_run_experiment_requires_run_configuration(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """run_experiment task without --run-configuration exits non-zero."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "Exp Task",
+                "--task-type",
+                "run_experiment",
+                "--dataset",
+                "ds-1",
+            ],
+        )
+        assert result.exit_code != 0
+        mock_client.tasks.create_run_experiment_task.assert_not_called()
+
+    @pytest.mark.unit
+    def test_run_experiment_rejects_eval_flags(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Providing --evaluators with run_experiment exits non-zero."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "Exp Task",
+                "--task-type",
+                "run_experiment",
+                "--dataset",
+                "ds-1",
+                "--run-configuration",
+                _RUN_CONFIG_JSON,
+                "--evaluators",
+                '[{"evaluator_id": "ev-1"}]',
+            ],
+        )
+        assert result.exit_code != 0
+        mock_client.tasks.create_run_experiment_task.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# ax tasks create-evaluation
+# ---------------------------------------------------------------------------
+
+
+class TestCreateEvaluationSubcmd:
+    """Tests for the 'ax tasks create-evaluation' subcommand."""
+
+    _EVALUATORS_JSON = '[{"evaluator_id": "ev-1"}]'
+
+    @pytest.mark.unit
+    def test_creates_evaluation_task(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """create-evaluation calls create_evaluation_task with correct kwargs."""
+        mock_client.tasks.create_evaluation_task.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluation",
+                "--name",
+                "Eval Task",
+                "--task-type",
+                "template_evaluation",
+                "--evaluators",
+                self._EVALUATORS_JSON,
+                "--project",
+                "proj-1",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.tasks.create_evaluation_task.call_args.kwargs
+        assert call_kwargs["name"] == "Eval Task"
+        assert call_kwargs["task_type"] == "template_evaluation"
+        assert call_kwargs["project"] == "proj-1"
+        assert len(call_kwargs["evaluators"]) == 1
+        assert call_kwargs["evaluators"][0].evaluator_id == "ev-1"
+
+    @pytest.mark.unit
+    def test_requires_project_or_dataset(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """create-evaluation without --project or --dataset exits non-zero."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluation",
+                "--name",
+                "Eval Task",
+                "--task-type",
+                "template_evaluation",
+                "--evaluators",
+                self._EVALUATORS_JSON,
+            ],
+        )
+        assert result.exit_code != 0
+        mock_client.tasks.create_evaluation_task.assert_not_called()
+
+    @pytest.mark.unit
+    def test_rejects_run_experiment_task_type(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--task-type run_experiment exits non-zero with a helpful message."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluation",
+                "--name",
+                "Eval Task",
+                "--task-type",
+                "run_experiment",
+                "--evaluators",
+                self._EVALUATORS_JSON,
+                "--project",
+                "proj-1",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "create-run-experiment" in result.output
+        mock_client.tasks.create_evaluation_task.assert_not_called()
+
+    @pytest.mark.unit
+    def test_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """API failure results in a non-zero exit code."""
+        mock_client.tasks.create_evaluation_task.side_effect = Exception(
+            "conflict"
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluation",
+                "--name",
+                "Eval Task",
+                "--task-type",
+                "template_evaluation",
+                "--evaluators",
+                self._EVALUATORS_JSON,
+                "--project",
+                "proj-1",
+            ],
+        )
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax tasks create-run-experiment
+# ---------------------------------------------------------------------------
+
+
+class TestCreateRunExperimentSubcmd:
+    """Tests for the 'ax tasks create-run-experiment' subcommand."""
+
+    @pytest.mark.unit
+    def test_creates_run_experiment_task(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """create-run-experiment calls create_run_experiment_task with correct kwargs."""
+        mock_client.tasks.create_run_experiment_task.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-run-experiment",
+                "--name",
+                "Run Exp Task",
+                "--dataset",
+                "ds-1",
+                "--run-configuration",
+                _RUN_CONFIG_JSON,
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = (
+            mock_client.tasks.create_run_experiment_task.call_args.kwargs
+        )
+        assert call_kwargs["name"] == "Run Exp Task"
+        assert call_kwargs["dataset"] == "ds-1"
+
+    @pytest.mark.unit
+    def test_space_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--space is forwarded to create_run_experiment_task."""
+        mock_client.tasks.create_run_experiment_task.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-run-experiment",
+                "--name",
+                "Run Exp Task",
+                "--dataset",
+                "ds-1",
+                "--run-configuration",
+                _RUN_CONFIG_JSON,
+                "--space",
+                "space-1",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = (
+            mock_client.tasks.create_run_experiment_task.call_args.kwargs
+        )
+        assert call_kwargs["space"] == "space-1"
+
+    @pytest.mark.unit
+    def test_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """API failure results in a non-zero exit code."""
+        mock_client.tasks.create_run_experiment_task.side_effect = Exception(
+            "conflict"
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-run-experiment",
+                "--name",
+                "Run Exp Task",
+                "--dataset",
+                "ds-1",
+                "--run-configuration",
+                _RUN_CONFIG_JSON,
             ],
         )
         assert result.exit_code != 0
@@ -627,6 +1015,25 @@ class TestUpdateTask:
             task="tid",
             query_filter="score > 0.8",
         )
+
+    @pytest.mark.unit
+    def test_update_run_configuration(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--run-configuration is parsed and forwarded to client.tasks.update."""
+        mock_client.tasks.update.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            ["update", "tid", "--run-configuration", _RUN_CONFIG_JSON],
+        )
+        assert result.exit_code == 0, result.output
+        call_kw = mock_client.tasks.update.call_args.kwargs
+        assert call_kw["task"] == "tid"
+        assert "run_configuration" in call_kw
 
     @pytest.mark.unit
     def test_usage_error_when_no_fields(
@@ -751,6 +1158,10 @@ class TestTriggerRun:
             max_spans=None,
             override_evaluations=None,
             experiment_ids=None,
+            experiment_name=None,
+            dataset_version_id=None,
+            max_examples=None,
+            tracing_metadata=None,
         )
 
     @pytest.mark.unit
@@ -791,6 +1202,38 @@ class TestTriggerRun:
         assert result.exit_code == 0
         call_kwargs = mock_client.tasks.trigger_run.call_args.kwargs
         assert call_kwargs["experiment_ids"] == ["exp-1", "exp-2"]
+
+    @pytest.mark.unit
+    def test_run_experiment_kwargs_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """run_experiment-specific kwargs are forwarded to trigger_run."""
+        mock_client.tasks.trigger_run.return_value = _make_run()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "trigger-run",
+                "task-1",
+                "--experiment-name",
+                "my-exp",
+                "--dataset-version-id",
+                "ver-123",
+                "--max-examples",
+                "50",
+                "--tracing-metadata",
+                '{"env": "prod"}',
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.tasks.trigger_run.call_args.kwargs
+        assert call_kwargs["experiment_name"] == "my-exp"
+        assert call_kwargs["dataset_version_id"] == "ver-123"
+        assert call_kwargs["max_examples"] == 50
+        assert call_kwargs["tracing_metadata"] == {"env": "prod"}
 
     @pytest.mark.unit
     def test_api_error_exits_nonzero(
