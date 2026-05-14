@@ -244,13 +244,13 @@ class RoutingConfig(BaseModel):
         """Derive the Arize app (OAuth login) URL from this routing config.
 
         Precedence (first match wins):
-          1. ``single_host`` (on-prem / testing override) — uses api_scheme + single_host
+          1. ``single_host`` (on-prem / testing override) — uses app_scheme + single_host
           2. ``base_domain`` (Private Connect) — "https://app.<base_domain>"
           3. ``region`` (e.g., "eu-prod") — "https://app.<region>.arize.com"
           4. Explicit ``app_host`` + ``app_scheme`` fields — default "https://app.arize.com"
         """
         if self.single_host:
-            return f"{self.api_scheme}://{self.single_host}"
+            return f"{self.app_scheme}://{self.single_host}"
         if self.base_domain:
             return f"https://app.{self.base_domain}"
         if self.region:

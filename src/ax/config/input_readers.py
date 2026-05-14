@@ -155,9 +155,19 @@ def read_routing() -> RoutingConfig:
                 example="443",
                 env_var="ARIZE_SINGLE_PORT",
             )
+            scheme = read_str_field(
+                msg="URL scheme",
+                example="https, http",
+                env_var="ARIZE_API_SCHEME",
+            )
+            flight_scheme = "grpc" if scheme == "http" else "grpc+tls"
             return RoutingConfig(
                 single_host=single_host,
                 single_port=single_port,
+                api_scheme=scheme,
+                app_scheme=scheme,
+                otlp_scheme=scheme,
+                flight_scheme=flight_scheme,
             )
         case AdvancedRoutingOpts.BASE_DOMAIN.value:
             base_domain = read_str_field(

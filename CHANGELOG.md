@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.19.0...arize-ax-cli/v0.20.0) (2026-05-14)
+
+
+### 🎁 New Features
+
+* **profile-setup:** prompt for URL scheme and apply app_scheme for single-host URLs ([#71936](https://github.com/Arize-ai/arize/issues/71936)) ([debec39](https://github.com/Arize-ai/arize/commit/debec3944333f79b410616ea4d606508bb41b7a8))
+
 ## [0.19.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.18.0...arize-ax-cli/v0.19.0) (2026-05-13)
 
 

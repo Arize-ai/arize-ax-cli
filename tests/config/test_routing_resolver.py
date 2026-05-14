@@ -31,7 +31,7 @@ class TestResolveAppUrl:
 
     def test_single_host_with_custom_scheme(self):
         r = RoutingConfig(
-            single_host="onprem.local", single_port="9000", api_scheme="http"
+            single_host="onprem.local", single_port="9000", app_scheme="http"
         )
         assert r.resolve_app_url() == "http://onprem.local"
 
