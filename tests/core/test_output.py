@@ -5,22 +5,11 @@ console.print() wrapping long lines at the terminal width (default 80 cols).
 """
 
 import json
-from enum import Enum
-from typing import Optional
 
 import pytest
 from pydantic import BaseModel
 
-from ax.core.output import (
-    BaseModelTableFormatter,
-    CSVFormatter,
-    JSONFormatter,
-    PromptFormatter,
-    TableFormatter,
-    _all_none,
-    _is_prompt_version,
-    _is_prompt_with_version,
-)
+from ax.core.output import BaseModelTableFormatter, CSVFormatter, JSONFormatter, TableFormatter
 
 
 class SpanAttributes(BaseModel):
@@ -191,246 +180,158 @@ class TestCSVFormatterProducesValidOutput:
 
 
 # ---------------------------------------------------------------------------
-# Minimal Pydantic models that duck-type as PromptWithVersion / PromptVersion
+# Regression tests: PromptWithVersion and PromptVersion display cleanly
+#
+# These tests use the real SDK types (arize.prompts.types) which define
+# PromptVersion.__str__ and InvocationParams.__str__ to avoid leaking
+# internal Python repr strings (LLMMessage repr, raw enum repr, etc.).
+# The generic BaseModelTableFormatter calls str() on nested BaseModel
+# fields, so the fix lives entirely in the SDK types.
 # ---------------------------------------------------------------------------
 
 
-class _FakeRole(str, Enum):
-    SYSTEM = "system"
-    USER = "user"
+def _make_prompt_version(**kwargs):  # type: ignore[no-untyped-def]
+    """Build a minimal PromptVersion using real SDK types."""
+    from datetime import datetime, timezone
+
+    from arize._generated.api_client.models.input_variable_format import (
+        InputVariableFormat,
+    )
+    from arize._generated.api_client.models.llm_message import LLMMessage
+    from arize._generated.api_client.models.llm_provider import LlmProvider
+    from arize._generated.api_client.models.message_role import MessageRole
+    from arize.prompts.types import PromptVersion
+
+    defaults = dict(
+        id="pv_1",
+        prompt_id="pr_1",
+        commit_hash="abc123",
+        commit_message="Add greeting",
+        messages=[
+            LLMMessage(role=MessageRole.SYSTEM, content="You are helpful."),
+            LLMMessage(role=MessageRole.USER, content="Hello, {name}!"),
+        ],
+        input_variable_format=InputVariableFormat.F_STRING,
+        provider=LlmProvider.OPEN_AI,
+        model="gpt-4",
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        created_by_user_id="u_1",
+    )
+    defaults.update(kwargs)
+    return PromptVersion(**defaults)
 
 
-class _FakeMessage(BaseModel):
-    role: _FakeRole
-    content: Optional[str] = None
-    tool_call_id: Optional[str] = None
-    tool_calls: Optional[list] = None
+def _make_prompt_with_version(**kwargs):  # type: ignore[no-untyped-def]
+    """Build a minimal PromptWithVersion using real SDK types."""
+    from datetime import datetime, timezone
+
+    from arize.prompts.types import PromptWithVersion
+
+    version = _make_prompt_version()
+    defaults = dict(
+        id="pr_1",
+        name="My Prompt",
+        space_id="sp_1",
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        updated_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        created_by_user_id="u_1",
+        version=version,
+    )
+    defaults.update(kwargs)
+    return PromptWithVersion(**defaults)
 
 
-class _FakeProvider(str, Enum):
-    OPEN_AI = "open_ai"
+class TestPromptVersionStr:
+    """PromptVersion.__str__ must produce clean output — no internal repr."""
 
+    def test_shows_commit_message(self) -> None:
+        pv = _make_prompt_version(commit_message="My commit")
+        assert "My commit" in str(pv)
 
-class _FakeIVF(str, Enum):
-    F_STRING = "f_string"
+    def test_enum_values_not_repr(self) -> None:
+        pv = _make_prompt_version()
+        s = str(pv)
+        assert "open_ai" in s
+        assert "f_string" in s
+        assert "<LlmProvider" not in s
+        assert "<InputVariableFormat" not in s
 
+    def test_message_role_and_content(self) -> None:
+        pv = _make_prompt_version()
+        s = str(pv)
+        assert "system" in s
+        assert "user" in s
+        assert "You are helpful." in s
+        assert "Hello, {name}!" in s
+        assert "LLMMessage(" not in s
+        assert "<MessageRole" not in s
 
-class _FakeInvocationParams(BaseModel):
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
+    def test_labels_shown(self) -> None:
+        pv = _make_prompt_version(labels=["production", "staging"])
+        s = str(pv)
+        assert "production" in s
+        assert "staging" in s
 
+    def test_empty_content_message_still_shows_role(self) -> None:
+        from arize._generated.api_client.models.llm_message import LLMMessage
+        from arize._generated.api_client.models.message_role import MessageRole
 
-class _FakeVersion(BaseModel):
-    id: str = "pv_1"
-    prompt_id: str = "pr_1"
-    commit_hash: str = "abc123"
-    commit_message: str = "Add greeting"
-    messages: list[_FakeMessage] = []
-    input_variable_format: _FakeIVF = _FakeIVF.F_STRING
-    provider: _FakeProvider = _FakeProvider.OPEN_AI
-    model: str = "gpt-4"
-    invocation_params: Optional[_FakeInvocationParams] = None
-    labels: Optional[list[str]] = None
-
-
-class _FakePromptWithVersion(BaseModel):
-    id: str = "pr_1"
-    name: str = "My Prompt"
-    description: Optional[str] = None
-    space_id: str = "sp_1"
-    version: _FakeVersion
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
-class TestAllNone:
-    def test_none_returns_true(self) -> None:
-        assert _all_none(None) is True
-
-    def test_all_none_basemodel_returns_true(self) -> None:
-        assert _all_none(_FakeInvocationParams()) is True
-
-    def test_partial_basemodel_returns_false(self) -> None:
-        assert _all_none(_FakeInvocationParams(temperature=0.7)) is False
-
-    def test_non_basemodel_returns_false(self) -> None:
-        assert _all_none("value") is False
-
-
-class TestDuckTypeDetection:
-    def test_prompt_with_version_detected(self) -> None:
-        model = _FakePromptWithVersion(version=_FakeVersion())
-        assert _is_prompt_with_version(model) is True
-        assert _is_prompt_version(model) is False
-
-    def test_prompt_version_detected(self) -> None:
-        model = _FakeVersion()
-        assert _is_prompt_version(model) is True
-        assert _is_prompt_with_version(model) is False
-
-    def test_unrelated_model_not_detected(self) -> None:
-        model = SpanAttributes(name="x")
-        assert _is_prompt_with_version(model) is False
-        assert _is_prompt_version(model) is False
-
-
-class TestPromptFormatter:
-    """PromptFormatter renders cleanly — no LLMMessage repr, no raw enum repr."""
-
-    def test_format_with_version_shows_name_and_commit(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        version = _FakeVersion(commit_message="Update greeting")
-        model = _FakePromptWithVersion(name="Greeter", version=version)
-        PromptFormatter().format_with_version(model)
-        out = capsys.readouterr().out
-        assert "Greeter" in out
-        assert "Update greeting" in out
-        # Must not leak class names
-        assert "FakeVersion" not in out
-        assert "FakeMessage" not in out
-
-    def test_format_with_version_shows_message_role_and_content(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        messages = [
-            _FakeMessage(role=_FakeRole.SYSTEM, content="You are helpful."),
-            _FakeMessage(role=_FakeRole.USER, content="Hello, {name}!"),
-        ]
-        version = _FakeVersion(messages=messages)
-        model = _FakePromptWithVersion(version=version)
-        PromptFormatter().format_with_version(model)
-        out = capsys.readouterr().out
-        assert "system" in out
-        assert "user" in out
-        assert "You are helpful." in out
-        assert "Hello, {name}!" in out
-        # Must not leak Python repr
-        assert "FakeRole" not in out
-        assert "FakeMessage(" not in out
-
-    def test_format_with_version_enum_values_not_repr(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        version = _FakeVersion()
-        model = _FakePromptWithVersion(version=version)
-        PromptFormatter().format_with_version(model)
-        out = capsys.readouterr().out
-        # Enum value strings, not repr
-        assert "open_ai" in out
-        assert "f_string" in out
-        assert "OPEN_AI" not in out
-        assert "F_STRING" not in out
-        assert "<" not in out  # no <EnumClass.VALUE: 'value'> pattern
-
-    def test_format_with_version_omits_all_none_invocation_params(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        version = _FakeVersion(invocation_params=_FakeInvocationParams())
-        model = _FakePromptWithVersion(version=version)
-        PromptFormatter().format_with_version(model)
-        out = capsys.readouterr().out
-        assert "InvocationParams" not in out
-        assert "Invocation Parameters" not in out
-
-    def test_format_with_version_shows_non_none_invocation_params(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        version = _FakeVersion(
-            invocation_params=_FakeInvocationParams(temperature=0.5)
+        pv = _make_prompt_version(
+            messages=[LLMMessage(role=MessageRole.USER, content="")]
         )
-        model = _FakePromptWithVersion(version=version)
-        PromptFormatter().format_with_version(model)
-        out = capsys.readouterr().out
-        assert "temperature" in out
-        assert "0.5" in out
+        assert "user" in str(pv)
 
-    def test_format_with_version_shows_labels(
+
+class TestInvocationParamsStr:
+    """InvocationParams.__str__ omits None fields."""
+
+    def test_all_none_returns_empty(self) -> None:
+        from arize.prompts.types import InvocationParams
+
+        assert str(InvocationParams()) == ""
+
+    def test_non_none_fields_shown(self) -> None:
+        from arize.prompts.types import InvocationParams
+
+        ip = InvocationParams(temperature=0.7, max_tokens=1000)
+        s = str(ip)
+        assert "temperature=0.7" in s
+        assert "max_tokens=1000" in s
+        assert "max_completion_tokens" not in s  # None → omitted
+
+
+class TestPromptWithVersionTableRendering:
+    """TableFormatter renders PromptWithVersion cleanly via SDK __str__."""
+
+    def test_no_internal_repr_in_panel(
         self, capsys: pytest.CaptureFixture
     ) -> None:
-        version = _FakeVersion(labels=["production", "staging"])
-        model = _FakePromptWithVersion(version=version)
-        PromptFormatter().format_with_version(model)
-        out = capsys.readouterr().out
-        assert "production" in out
-        assert "staging" in out
-
-    def test_format_version_standalone(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        messages = [_FakeMessage(role=_FakeRole.USER, content="Hi")]
-        version = _FakeVersion(messages=messages, labels=["v1"])
-        PromptFormatter().format_version(version)
-        out = capsys.readouterr().out
-        assert "user" in out
-        assert "Hi" in out
-        assert "v1" in out
-        assert "FakeMessage(" not in out
-
-    def test_table_formatter_dispatches_prompt_with_version(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        """TableFormatter must delegate PromptWithVersion to PromptFormatter."""
-        version = _FakeVersion(
-            messages=[_FakeMessage(role=_FakeRole.SYSTEM, content="sys")]
-        )
-        model = _FakePromptWithVersion(version=version)
+        """The version row must not contain Python class repr strings."""
+        model = _make_prompt_with_version()
         TableFormatter().format(model)
         out = capsys.readouterr().out
-        assert "sys" in out
-        assert "FakeVersion(" not in out
+        assert "LLMMessage(" not in out
+        assert "<MessageRole" not in out
+        assert "<LlmProvider" not in out
+        assert "<InputVariableFormat" not in out
+        assert "InvocationParams(" not in out
 
-    def test_table_formatter_dispatches_prompt_version(
+    def test_messages_content_visible(
         self, capsys: pytest.CaptureFixture
     ) -> None:
-        """TableFormatter must delegate standalone PromptVersion to PromptFormatter."""
-        version = _FakeVersion(
-            messages=[_FakeMessage(role=_FakeRole.USER, content="hello")]
-        )
-        TableFormatter().format(version)
+        model = _make_prompt_with_version()
+        TableFormatter().format(model)
         out = capsys.readouterr().out
-        assert "hello" in out
-        assert "FakeMessage(" not in out
-
-    def test_empty_string_content_still_renders_role(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        """A message with content='' must still render the role line (not be dropped)."""
-        messages = [_FakeMessage(role=_FakeRole.USER, content="")]
-        version = _FakeVersion(messages=messages)
-        model = _FakePromptWithVersion(version=version)
-        PromptFormatter().format_with_version(model)
-        out = capsys.readouterr().out
+        assert "You are helpful." in out
+        assert "Hello, {name}!" in out
+        assert "system" in out
         assert "user" in out
 
-    def test_tool_calls_message_renders_function_name(
+    def test_enum_values_not_repr(
         self, capsys: pytest.CaptureFixture
     ) -> None:
-        """An assistant message with tool_calls renders the function name."""
-        from unittest.mock import MagicMock
-
-        fn = MagicMock()
-        fn.name = "lookup_ticket"
-        tc = MagicMock()
-        tc.function = fn
-        msg = _FakeMessage(role=_FakeRole.USER, tool_calls=[tc])
-        version = _FakeVersion(messages=[msg])
-        model = _FakePromptWithVersion(version=version)
-        PromptFormatter().format_with_version(model)
+        model = _make_prompt_with_version()
+        TableFormatter().format(model)
         out = capsys.readouterr().out
-        assert "lookup_ticket" in out
-        assert "→" in out
-
-    def test_tool_call_id_message_renders_response(
-        self, capsys: pytest.CaptureFixture
-    ) -> None:
-        """A tool-response message with tool_call_id renders the response line."""
-        msg = _FakeMessage(role=_FakeRole.USER, tool_call_id="call_abc")
-        version = _FakeVersion(messages=[msg])
-        model = _FakePromptWithVersion(version=version)
-        PromptFormatter().format_with_version(model)
-        out = capsys.readouterr().out
-        assert "call_abc" in out
+        assert "open_ai" in out
+        assert "f_string" in out
