@@ -5,11 +5,22 @@ console.print() wrapping long lines at the terminal width (default 80 cols).
 """
 
 import json
+from enum import Enum
+from typing import Optional
 
 import pytest
 from pydantic import BaseModel
 
-from ax.core.output import BaseModelTableFormatter, CSVFormatter, JSONFormatter
+from ax.core.output import (
+    BaseModelTableFormatter,
+    CSVFormatter,
+    JSONFormatter,
+    PromptFormatter,
+    TableFormatter,
+    _all_none,
+    _is_prompt_version,
+    _is_prompt_with_version,
+)
 
 
 class SpanAttributes(BaseModel):
@@ -177,3 +188,249 @@ class TestCSVFormatterProducesValidOutput:
         captured = capsys.readouterr()
         lines = captured.out.strip().split("\n")
         assert len(lines) == 2, "CSV should have exactly header + 1 data row"
+
+
+# ---------------------------------------------------------------------------
+# Minimal Pydantic models that duck-type as PromptWithVersion / PromptVersion
+# ---------------------------------------------------------------------------
+
+
+class _FakeRole(str, Enum):
+    SYSTEM = "system"
+    USER = "user"
+
+
+class _FakeMessage(BaseModel):
+    role: _FakeRole
+    content: Optional[str] = None
+    tool_call_id: Optional[str] = None
+    tool_calls: Optional[list] = None
+
+
+class _FakeProvider(str, Enum):
+    OPEN_AI = "open_ai"
+
+
+class _FakeIVF(str, Enum):
+    F_STRING = "f_string"
+
+
+class _FakeInvocationParams(BaseModel):
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+
+
+class _FakeVersion(BaseModel):
+    id: str = "pv_1"
+    prompt_id: str = "pr_1"
+    commit_hash: str = "abc123"
+    commit_message: str = "Add greeting"
+    messages: list[_FakeMessage] = []
+    input_variable_format: _FakeIVF = _FakeIVF.F_STRING
+    provider: _FakeProvider = _FakeProvider.OPEN_AI
+    model: str = "gpt-4"
+    invocation_params: Optional[_FakeInvocationParams] = None
+    labels: Optional[list[str]] = None
+
+
+class _FakePromptWithVersion(BaseModel):
+    id: str = "pr_1"
+    name: str = "My Prompt"
+    description: Optional[str] = None
+    space_id: str = "sp_1"
+    version: _FakeVersion
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+
+class TestAllNone:
+    def test_none_returns_true(self) -> None:
+        assert _all_none(None) is True
+
+    def test_all_none_basemodel_returns_true(self) -> None:
+        assert _all_none(_FakeInvocationParams()) is True
+
+    def test_partial_basemodel_returns_false(self) -> None:
+        assert _all_none(_FakeInvocationParams(temperature=0.7)) is False
+
+    def test_non_basemodel_returns_false(self) -> None:
+        assert _all_none("value") is False
+
+
+class TestDuckTypeDetection:
+    def test_prompt_with_version_detected(self) -> None:
+        model = _FakePromptWithVersion(version=_FakeVersion())
+        assert _is_prompt_with_version(model) is True
+        assert _is_prompt_version(model) is False
+
+    def test_prompt_version_detected(self) -> None:
+        model = _FakeVersion()
+        assert _is_prompt_version(model) is True
+        assert _is_prompt_with_version(model) is False
+
+    def test_unrelated_model_not_detected(self) -> None:
+        model = SpanAttributes(name="x")
+        assert _is_prompt_with_version(model) is False
+        assert _is_prompt_version(model) is False
+
+
+class TestPromptFormatter:
+    """PromptFormatter renders cleanly — no LLMMessage repr, no raw enum repr."""
+
+    def test_format_with_version_shows_name_and_commit(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        version = _FakeVersion(commit_message="Update greeting")
+        model = _FakePromptWithVersion(name="Greeter", version=version)
+        PromptFormatter().format_with_version(model)
+        out = capsys.readouterr().out
+        assert "Greeter" in out
+        assert "Update greeting" in out
+        # Must not leak class names
+        assert "FakeVersion" not in out
+        assert "FakeMessage" not in out
+
+    def test_format_with_version_shows_message_role_and_content(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        messages = [
+            _FakeMessage(role=_FakeRole.SYSTEM, content="You are helpful."),
+            _FakeMessage(role=_FakeRole.USER, content="Hello, {name}!"),
+        ]
+        version = _FakeVersion(messages=messages)
+        model = _FakePromptWithVersion(version=version)
+        PromptFormatter().format_with_version(model)
+        out = capsys.readouterr().out
+        assert "system" in out
+        assert "user" in out
+        assert "You are helpful." in out
+        assert "Hello, {name}!" in out
+        # Must not leak Python repr
+        assert "FakeRole" not in out
+        assert "FakeMessage(" not in out
+
+    def test_format_with_version_enum_values_not_repr(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        version = _FakeVersion()
+        model = _FakePromptWithVersion(version=version)
+        PromptFormatter().format_with_version(model)
+        out = capsys.readouterr().out
+        # Enum value strings, not repr
+        assert "open_ai" in out
+        assert "f_string" in out
+        assert "OPEN_AI" not in out
+        assert "F_STRING" not in out
+        assert "<" not in out  # no <EnumClass.VALUE: 'value'> pattern
+
+    def test_format_with_version_omits_all_none_invocation_params(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        version = _FakeVersion(invocation_params=_FakeInvocationParams())
+        model = _FakePromptWithVersion(version=version)
+        PromptFormatter().format_with_version(model)
+        out = capsys.readouterr().out
+        assert "InvocationParams" not in out
+        assert "Invocation Parameters" not in out
+
+    def test_format_with_version_shows_non_none_invocation_params(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        version = _FakeVersion(
+            invocation_params=_FakeInvocationParams(temperature=0.5)
+        )
+        model = _FakePromptWithVersion(version=version)
+        PromptFormatter().format_with_version(model)
+        out = capsys.readouterr().out
+        assert "temperature" in out
+        assert "0.5" in out
+
+    def test_format_with_version_shows_labels(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        version = _FakeVersion(labels=["production", "staging"])
+        model = _FakePromptWithVersion(version=version)
+        PromptFormatter().format_with_version(model)
+        out = capsys.readouterr().out
+        assert "production" in out
+        assert "staging" in out
+
+    def test_format_version_standalone(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        messages = [_FakeMessage(role=_FakeRole.USER, content="Hi")]
+        version = _FakeVersion(messages=messages, labels=["v1"])
+        PromptFormatter().format_version(version)
+        out = capsys.readouterr().out
+        assert "user" in out
+        assert "Hi" in out
+        assert "v1" in out
+        assert "FakeMessage(" not in out
+
+    def test_table_formatter_dispatches_prompt_with_version(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """TableFormatter must delegate PromptWithVersion to PromptFormatter."""
+        version = _FakeVersion(
+            messages=[_FakeMessage(role=_FakeRole.SYSTEM, content="sys")]
+        )
+        model = _FakePromptWithVersion(version=version)
+        TableFormatter().format(model)
+        out = capsys.readouterr().out
+        assert "sys" in out
+        assert "FakeVersion(" not in out
+
+    def test_table_formatter_dispatches_prompt_version(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """TableFormatter must delegate standalone PromptVersion to PromptFormatter."""
+        version = _FakeVersion(
+            messages=[_FakeMessage(role=_FakeRole.USER, content="hello")]
+        )
+        TableFormatter().format(version)
+        out = capsys.readouterr().out
+        assert "hello" in out
+        assert "FakeMessage(" not in out
+
+    def test_empty_string_content_still_renders_role(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """A message with content='' must still render the role line (not be dropped)."""
+        messages = [_FakeMessage(role=_FakeRole.USER, content="")]
+        version = _FakeVersion(messages=messages)
+        model = _FakePromptWithVersion(version=version)
+        PromptFormatter().format_with_version(model)
+        out = capsys.readouterr().out
+        assert "user" in out
+
+    def test_tool_calls_message_renders_function_name(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """An assistant message with tool_calls renders the function name."""
+        from unittest.mock import MagicMock
+
+        fn = MagicMock()
+        fn.name = "lookup_ticket"
+        tc = MagicMock()
+        tc.function = fn
+        msg = _FakeMessage(role=_FakeRole.USER, tool_calls=[tc])
+        version = _FakeVersion(messages=[msg])
+        model = _FakePromptWithVersion(version=version)
+        PromptFormatter().format_with_version(model)
+        out = capsys.readouterr().out
+        assert "lookup_ticket" in out
+        assert "→" in out
+
+    def test_tool_call_id_message_renders_response(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        """A tool-response message with tool_call_id renders the response line."""
+        msg = _FakeMessage(role=_FakeRole.USER, tool_call_id="call_abc")
+        version = _FakeVersion(messages=[msg])
+        model = _FakePromptWithVersion(version=version)
+        PromptFormatter().format_with_version(model)
+        out = capsys.readouterr().out
+        assert "call_abc" in out
