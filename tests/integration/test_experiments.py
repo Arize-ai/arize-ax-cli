@@ -6,7 +6,7 @@ import json
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -181,3 +181,110 @@ class TestExperimentsCreateAndDelete:
                 test_space_id,
                 "--force",
             )
+
+
+class TestExperimentsAnnotateRuns:
+    """ax experiments annotate-runs — annotate runs in an experiment."""
+
+    _ANNOTATIONS: ClassVar[list[dict]] = [
+        {"record_id": "run-1", "values": [{"name": "quality", "score": 0.9}]}
+    ]
+
+    def _setup_dataset_and_experiment(
+        self, space_id: str, tmp_dir: str
+    ) -> tuple[str, str]:
+        """Create a dataset and experiment, returning (dataset_id, experiment_id)."""
+        ds_name = f"ax-cli-ann-exp-ds-{uuid.uuid4().hex[:8]}"
+        exp_name = f"ax-cli-ann-exp-{uuid.uuid4().hex[:8]}"
+        examples = json.dumps([{"question": "Q1", "answer": "A1"}])
+
+        create_ds = ax(
+            "datasets",
+            "create",
+            "--name",
+            ds_name,
+            "--space",
+            space_id,
+            "--json",
+            examples,
+            "--output",
+            "json",
+        )
+        assert create_ds.returncode == 0, (
+            f"Dataset create failed:\n{create_ds.stderr}"
+        )
+        dataset_id = json.loads(create_ds.stdout).get("id") or json.loads(
+            create_ds.stdout
+        ).get("dataset_id")
+        assert dataset_id
+
+        runs = [{"example_id": "ex-1", "output": "answer"}]
+        runs_file = Path(tmp_dir) / "runs.json"
+        runs_file.write_text(json.dumps(runs))
+
+        create_exp = ax(
+            "experiments",
+            "create",
+            "--name",
+            exp_name,
+            "--dataset",
+            dataset_id,
+            "--file",
+            str(runs_file),
+            "--output",
+            "json",
+        )
+        assert create_exp.returncode == 0, (
+            f"Experiment create failed:\n{create_exp.stderr}"
+        )
+        experiment_id = json.loads(create_exp.stdout).get("id")
+        assert experiment_id
+        return dataset_id, experiment_id
+
+    @pytest.mark.integration
+    def test_annotate_runs_with_file(self, test_space_id: str) -> None:
+        """``annotate-runs --file`` reads annotations from disk."""
+        with tempfile.TemporaryDirectory() as tmp:
+            dataset_id, experiment_id = self._setup_dataset_and_experiment(
+                test_space_id, tmp
+            )
+        annotations_file: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False
+            ) as f:
+                json.dump(self._ANNOTATIONS, f)
+                annotations_file = f.name
+
+            result = ax(
+                "experiments",
+                "annotate-runs",
+                experiment_id,
+                "--file",
+                annotations_file,
+            )
+            assert result.returncode == 0, (
+                f"annotate-runs --file failed:\n{result.stderr}"
+            )
+        finally:
+            ax("experiments", "delete", experiment_id, "--force")
+            ax(
+                "datasets",
+                "delete",
+                dataset_id,
+                "--space",
+                test_space_id,
+                "--force",
+            )
+            if annotations_file:
+                Path(annotations_file).unlink(missing_ok=True)
+
+    @pytest.mark.integration
+    def test_annotate_runs_missing_input_fails(self) -> None:
+        """``annotate-runs`` with no --file exits non-zero."""
+        result = ax(
+            "experiments",
+            "annotate-runs",
+            "nonexistent-experiment-id",
+        )
+        assert result.returncode != 0

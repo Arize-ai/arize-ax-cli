@@ -8,8 +8,9 @@ from arize.experiments.types import ExperimentTaskFieldNames
 from ax.auth.auth_guards import require_api_key_auth
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
-from ax.core.exceptions import APIError
+from ax.core.exceptions import APIError, AxError
 from ax.core.output import output_data
+from ax.utils.annotations import parse_annotations
 from ax.utils.console import (
     confirm,
     info,
@@ -438,3 +439,76 @@ def delete_experiment(
             )
     except Exception as e:
         raise APIError(f"Failed to delete experiment: {e}") from e
+
+
+@app.command("annotate-runs")
+@handle_errors
+def annotate_runs(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Experiment name or ID"),
+    ],
+    file: Annotated[
+        str | None,
+        typer.Option(
+            "--file",
+            "-f",
+            help="Path to a file containing annotation records (JSON, JSONL, CSV, Parquet), or '-' for stdin",
+        ),
+    ] = None,
+    dataset: Annotated[
+        str | None,
+        typer.Option(
+            "--dataset",
+            help="Dataset name or ID (required to resolve experiment by name)",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required when dataset is a name)",
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Annotate a batch of runs in an experiment.
+
+    Provide annotations via --file (JSON, JSONL, CSV, or Parquet; use '-' for stdin).
+    Each array item must have a ``record_id`` (the experiment run ID) and
+    ``values`` (a list of annotation dicts with at least ``name``, plus
+    optionally ``score``, ``label``, or ``text``).
+
+    Annotations are upserted — resubmitting the same annotation config name
+    for the same run overwrites the previous value. Up to 1000 runs may be
+    annotated per request. Unmatched record IDs are silently ignored.
+    """
+    setup_logging(verbose)
+
+    annotations = parse_annotations(file)
+
+    client, _ = make_client()
+
+    try:
+        with spinner(
+            "Annotating experiment runs",
+            success_msg=f"Annotated {len(annotations)} run(s) successfully",
+        ):
+            client.experiments.annotate_runs(
+                experiment=name_or_id,
+                dataset=dataset,
+                space=space,
+                annotations=annotations,
+            )
+    except AxError:
+        raise
+    except Exception as e:
+        raise APIError(f"Failed to annotate experiment runs: {e}") from e

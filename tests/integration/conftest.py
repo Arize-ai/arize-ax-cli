@@ -4,11 +4,11 @@ Integration tests run against the real Arize API and require:
   - ARIZE_API_KEY environment variable set to a valid API key
   - (Optional) ARIZE_TEST_SPACE set to a space name or ID to use as the test target.
     If not set, the first space returned by ``ax spaces list`` is used.
-  - (Optional) ARIZE_TEST_USER_ID set to a user global ID (base64-encoded).
+  - (Optional) ARIZE_TEST_USER_ID set to a user identifier (base64-encoded).
     Required for role binding lifecycle tests.
-  - (Optional) ARIZE_TEST_ROLE_ID set to a role global ID (base64-encoded).
+  - (Optional) ARIZE_TEST_ROLE_ID set to a role identifier (base64-encoded).
     Required for role binding lifecycle tests.
-  - (Optional) ARIZE_TEST_EVALUATOR_ID set to an evaluator global ID
+  - (Optional) ARIZE_TEST_EVALUATOR_ID set to an evaluator identifier
     (base64-encoded). Required for task lifecycle tests.
 
 Run::

@@ -1,5 +1,6 @@
 """Tests for experiment CLI commands."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -361,3 +362,139 @@ class TestCreateExperiment:
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.experiments.create.call_args.kwargs
         assert call_kwargs["space"] is None
+
+
+# ---------------------------------------------------------------------------
+# ax experiments annotate-runs
+# ---------------------------------------------------------------------------
+
+_ANNOTATIONS_JSON = (
+    '[{"record_id":"run-1","values":[{"name":"quality","score":0.9}]}]'
+)
+
+
+class TestAnnotateExperimentRuns:
+    """Tests for the 'ax experiments annotate-runs' command."""
+
+    def test_annotate_command_registered(self) -> None:
+        """Verify 'annotate-runs' is registered as a subcommand."""
+        names = [cmd.name for cmd in app.registered_commands]
+        assert "annotate-runs" in names
+        assert "annotate" not in names
+
+    def test_annotate_with_stdin_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--file - reads annotations from stdin and calls annotate_runs."""
+        mock_client.experiments.annotate_runs.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate-runs", "my-experiment", "--file", "-"],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.experiments.annotate_runs.assert_called_once()
+        call_kwargs = mock_client.experiments.annotate_runs.call_args.kwargs
+        assert call_kwargs["experiment"] == "my-experiment"
+        assert len(call_kwargs["annotations"]) == 1
+        assert call_kwargs["annotations"][0].record_id == "run-1"
+        assert call_kwargs["dataset"] is None
+        assert call_kwargs["space"] is None
+
+    def test_annotate_with_dataset_and_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--dataset and --space are forwarded to the SDK."""
+        mock_client.experiments.annotate_runs.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "annotate-runs",
+                "my-experiment",
+                "--file",
+                "-",
+                "--dataset",
+                "my-dataset",
+                "--space",
+                "my-space",
+            ],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.experiments.annotate_runs.call_args.kwargs
+        assert call_kwargs["dataset"] == "my-dataset"
+        assert call_kwargs["space"] == "my-space"
+
+    def test_annotate_with_file_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """--file with a valid JSON file calls annotate_runs."""
+        mock_client.experiments.annotate_runs.return_value = None
+        json_file = tmp_path / "annotations.json"
+        json_file.write_text(_ANNOTATIONS_JSON)
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate-runs", "my-experiment", "--file", str(json_file)],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.experiments.annotate_runs.assert_called_once()
+
+    def test_annotate_requires_file(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Providing no --file results in a non-zero exit."""
+        result = cli_runner.invoke(app, ["annotate-runs", "my-experiment"])
+        assert result.exit_code != 0
+
+    def test_annotate_sdk_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """An SDK error results in a non-zero exit code."""
+        mock_client.experiments.annotate_runs.side_effect = RuntimeError(
+            "API error"
+        )
+        json_file = tmp_path / "annotations.json"
+        json_file.write_text(_ANNOTATIONS_JSON)
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate-runs", "my-experiment", "--file", str(json_file)],
+        )
+        assert result.exit_code != 0
+
+    def test_annotate_success_message(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """A success message is shown after annotating."""
+        mock_client.experiments.annotate_runs.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate-runs", "my-experiment", "--file", "-"],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        assert "run" in result.output.lower()

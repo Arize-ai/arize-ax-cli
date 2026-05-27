@@ -52,6 +52,17 @@ def categorize_basemodel_fields(
     return metadata, list_fields
 
 
+def _is_oneof_wrapper(model: BaseModel) -> bool:
+    """Return True if model is an openapi-generator oneOf discriminated union wrapper.
+
+    These wrappers expose ``actual_instance``, ``one_of_schemas``, and
+    ``discriminator_value_class_map`` as their fields instead of the real
+    domain fields, which produces unusable column names in tables.
+    """
+    fields = set(model.model_fields.keys())
+    return "actual_instance" in fields and "one_of_schemas" in fields
+
+
 def basemodel_to_dataframe(models: list[BaseModel | dict]) -> pd.DataFrame:
     """Convert a list of BaseModel instances or dicts to a DataFrame.
 
@@ -64,14 +75,23 @@ def basemodel_to_dataframe(models: list[BaseModel | dict]) -> pd.DataFrame:
     if not models:
         return pd.DataFrame()
 
-    # Convert BaseModels to dicts if needed.
-    # mode="json" ensures enum fields are serialized to their string values
-    # rather than returning enum instances (which stringify as e.g. ApiKeyStatus.active).
-    data = (
-        [model.model_dump(mode="json") for model in models]  # type: ignore[union-attr]
-        if isinstance(models[0], BaseModel)
-        else models
-    )
+    data: list[dict] = []
+    for model in models:
+        if isinstance(model, BaseModel):
+            # Unwrap oneOf discriminated union wrappers to their actual instance
+            # so we display real domain fields instead of generator internals
+            # (oneof_schema_1_validator, discriminator_value_class_map, etc.)
+            if _is_oneof_wrapper(model):
+                actual = getattr(model, "actual_instance", None)
+                if isinstance(actual, BaseModel):
+                    data.append(actual.model_dump(mode="json"))
+                    continue
+                if isinstance(actual, dict):
+                    data.append(actual)
+                    continue
+            data.append(model.model_dump(mode="json"))
+        else:
+            data.append(model)  # type: ignore[arg-type]
 
     return pd.DataFrame(data)
 

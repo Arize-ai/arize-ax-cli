@@ -111,9 +111,9 @@ def list_users(
 @app.command("get")
 @handle_errors
 def get_user(
-    user_id: Annotated[
+    user: Annotated[
         str,
-        typer.Argument(help="User ID"),
+        typer.Argument(help="User ID or email address"),
     ],
     output: Annotated[
         str,
@@ -132,7 +132,7 @@ def get_user(
         ),
     ] = False,
 ) -> None:
-    """Get a user by ID."""
+    """Get a user by ID or email address."""
     setup_logging(verbose)
     client, config = make_client()
 
@@ -142,10 +142,12 @@ def get_user(
 
     try:
         with spinner("Fetching user"):
-            result = client.users.get(user_id=user_id)
+            result = client.users.get(user=user)
     except Exception as e:
         raise APIError(f"Failed to get user: {e}") from e
     else:
+        if result is None:
+            raise APIError(f"User '{user}' not found")
         output_data(
             result,
             format_type=output_format,

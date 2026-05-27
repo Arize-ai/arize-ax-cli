@@ -10,6 +10,7 @@ from arize._generated.api_client.models.provider_params import ProviderParams
 from arize.evaluators.types import (
     CodeConfig,
     CustomCodeConfig,
+    DataGranularity,
     EvaluatorLlmConfig,
     ManagedCodeConfig,
     ManagedCodeEvaluator,
@@ -64,16 +65,6 @@ def _parse_optional_classification_choices(
     return result
 
 
-def _parse_optional_data_granularity(source: str | None) -> str | None:
-    """Return API data_granularity value or None."""
-    if source is None or not source.strip():
-        return None
-    normalized = source.strip().lower()
-    if normalized not in ("span", "trace", "session"):
-        raise UsageError("--data-granularity must be span, trace, or session")
-    return normalized
-
-
 def _build_template_config(
     template_name: str,
     template: str,
@@ -85,7 +76,7 @@ def _build_template_config(
     provider_params_str: str,
     classification_choices_str: str | None = None,
     direction: OptimizationDirection | None = None,
-    data_granularity: str | None = None,
+    data_granularity: DataGranularity | None = None,
 ) -> TemplateConfig:
     r"""Build a TemplateConfig from individual CLI option values."""
     invocation_params = load_json(invocation_params_str)
@@ -120,7 +111,7 @@ def _build_template_config(
             classification_choices_str
         ),
         direction=direction,
-        data_granularity=_parse_optional_data_granularity(data_granularity),
+        data_granularity=data_granularity,
     )
 
 
@@ -165,7 +156,7 @@ def _build_managed_code_config(
     variables: str,
     static_params: str | None,
     query_filter: str | None,
-    data_granularity: str | None,
+    data_granularity: DataGranularity | None,
 ) -> CodeConfig:
     """Build a CodeConfig wrapping a ManagedCodeConfig from CLI option values."""
     managed = ManagedCodeConfig(
@@ -175,7 +166,7 @@ def _build_managed_code_config(
         variables=_parse_variables(variables),
         static_params=_parse_static_params(static_params),
         query_filter=query_filter if query_filter else None,
-        data_granularity=_parse_optional_data_granularity(data_granularity),
+        data_granularity=data_granularity,
     )
     return CodeConfig(managed)
 
@@ -188,7 +179,7 @@ def _build_custom_code_config(
     variables: str,
     static_params: str | None,
     query_filter: str | None,
-    data_granularity: str | None,
+    data_granularity: DataGranularity | None,
 ) -> CodeConfig:
     """Build a CodeConfig wrapping a CustomCodeConfig from CLI option values."""
     custom = CustomCodeConfig(
@@ -203,7 +194,7 @@ def _build_custom_code_config(
         variables=_parse_variables(variables),
         static_params=_parse_static_params(static_params),
         query_filter=query_filter if query_filter else None,
-        data_granularity=_parse_optional_data_granularity(data_granularity),
+        data_granularity=data_granularity,
     )
     return CodeConfig(custom)
 
@@ -379,7 +370,6 @@ def template_create_evaluator(
         typer.Option(
             "--commit-message",
             help="Commit message for the initial version",
-            prompt=True,
         ),
     ],
     template_name: Annotated[
@@ -402,7 +392,7 @@ def template_create_evaluator(
         str,
         typer.Option(
             "--ai-integration-id",
-            help="AI integration global ID (base64)",
+            help="AI integration identifier (base64)",
             prompt=True,
         ),
     ],
@@ -468,10 +458,11 @@ def template_create_evaluator(
         ),
     ] = None,
     data_granularity: Annotated[
-        str | None,
+        DataGranularity | None,
         typer.Option(
             "--data-granularity",
             help="Data granularity: span, trace, or session",
+            case_sensitive=False,
         ),
     ] = None,
     output: Annotated[
@@ -561,7 +552,6 @@ def code_create_evaluator(
         typer.Option(
             "--commit-message",
             help="Commit message for the initial version",
-            prompt=True,
         ),
     ],
     code_type: Annotated[
@@ -643,10 +633,11 @@ def code_create_evaluator(
         ),
     ] = None,
     data_granularity: Annotated[
-        str | None,
+        DataGranularity | None,
         typer.Option(
             "--data-granularity",
             help="Data granularity: span, trace, or session",
+            case_sensitive=False,
         ),
     ] = None,
     description: Annotated[
@@ -1007,7 +998,6 @@ def template_create_version(
         typer.Option(
             "--commit-message",
             help="Commit message describing the changes in this version",
-            prompt=True,
         ),
     ],
     template_name: Annotated[
@@ -1030,7 +1020,7 @@ def template_create_version(
         str,
         typer.Option(
             "--ai-integration-id",
-            help="AI integration global ID (base64)",
+            help="AI integration identifier (base64)",
             prompt=True,
         ),
     ],
@@ -1089,10 +1079,11 @@ def template_create_version(
         ),
     ] = None,
     data_granularity: Annotated[
-        str | None,
+        DataGranularity | None,
         typer.Option(
             "--data-granularity",
             help="Data granularity: span, trace, or session",
+            case_sensitive=False,
         ),
     ] = None,
     space: Annotated[
@@ -1175,7 +1166,6 @@ def code_create_version(
         typer.Option(
             "--commit-message",
             help="Commit message describing the changes in this version",
-            prompt=True,
         ),
     ],
     code_type: Annotated[
@@ -1257,10 +1247,11 @@ def code_create_version(
         ),
     ] = None,
     data_granularity: Annotated[
-        str | None,
+        DataGranularity | None,
         typer.Option(
             "--data-granularity",
             help="Data granularity: span, trace, or session",
+            case_sensitive=False,
         ),
     ] = None,
     space: Annotated[

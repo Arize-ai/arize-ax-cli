@@ -12,6 +12,7 @@ from ax.auth.auth_guards import require_api_key_auth
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError, AxError
+from ax.utils.annotations import parse_annotations
 from ax.utils.console import (
     setup_logging,
     spinner,
@@ -283,3 +284,107 @@ def export_spans(
         raise
     except Exception as e:
         raise APIError(f"Failed to export spans: {e}") from e
+
+
+@app.command("annotate")
+@handle_errors
+def annotate_spans(
+    project: Annotated[
+        str,
+        typer.Argument(help="Project name or ID"),
+    ],
+    file: Annotated[
+        str | None,
+        typer.Option(
+            "--file",
+            "-f",
+            help="Path to a file containing annotation records (JSON, JSONL, CSV, Parquet), or '-' for stdin",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required when project is a name)",
+        ),
+    ] = None,
+    start_time: Annotated[
+        str | None,
+        typer.Option(
+            "--start-time",
+            help="Start of span lookup window (ISO 8601). If omitted, the server default applies.",
+        ),
+    ] = None,
+    end_time: Annotated[
+        str | None,
+        typer.Option(
+            "--end-time",
+            help="End of span lookup window (ISO 8601). Defaults to now.",
+        ),
+    ] = None,
+    days: Annotated[
+        int | None,
+        typer.Option(
+            "--days",
+            help=(
+                "Lookback window in days (alternative to --start-time). "
+                "Ignored when --start-time is set. "
+                "When combined with --end-time, lookback is relative to --end-time."
+            ),
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Annotate a batch of spans in a project.
+
+    Provide annotations via --file (JSON, JSONL, CSV, or Parquet; use '-' for stdin).
+    Each array item must have a ``record_id`` (the span ID) and ``values``
+    (a list of annotation dicts with at least ``name``, plus optionally
+    ``score``, ``label``, or ``text``).
+
+    Annotations are upserted — resubmitting the same annotation config name
+    for the same span overwrites the previous value. Up to 1000 spans may be
+    annotated per request. If any span ID is not found within the time window,
+    the entire request is rejected.
+    """
+    setup_logging(verbose)
+
+    annotations = parse_annotations(file)
+
+    client, _ = make_client()
+
+    end_dt = parse_optional_iso8601(end_time)
+    if start_time:
+        start_dt = parse_optional_iso8601(start_time)
+    elif days is not None:
+        if days <= 0:
+            raise typer.BadParameter("--days must be a positive integer.")
+        resolved_end = end_dt or datetime.now(tz=timezone.utc)
+        start_dt = resolved_end - timedelta(days=days)
+    else:
+        start_dt = None
+
+    try:
+        with spinner(
+            "Annotating spans",
+            success_msg=f"Annotated {len(annotations)} span(s) successfully",
+        ):
+            client.spans.annotate_spans(
+                project=project,
+                space=space,
+                annotations=annotations,
+                start_time=start_dt,
+                end_time=end_dt,
+            )
+    except AxError:
+        raise
+    except Exception as e:
+        raise APIError(f"Failed to annotate spans: {e}") from e

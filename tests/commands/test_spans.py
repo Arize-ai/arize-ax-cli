@@ -19,6 +19,11 @@ class TestSpanCommands:
         names = [cmd.name for cmd in app.registered_commands]
         assert "export" in names
 
+    def test_annotate_command_registered(self) -> None:
+        """Test that 'annotate' subcommand exists."""
+        names = [cmd.name for cmd in app.registered_commands]
+        assert "annotate" in names
+
     def test_list_command_not_registered(self) -> None:
         """List was merged into export and should no longer exist."""
         names = [cmd.name for cmd in app.registered_commands]
@@ -83,14 +88,7 @@ class TestBuildSpanFilter:
 
 
 class TestExportSpans:
-    """Tests for the 'ax spans export' command.
-
-    When a typer.Typer group has a single registered command, typer
-    auto-promotes it so the subcommand name is not needed in CliRunner
-    invocations.  The tests below therefore omit 'export' from the arg
-    list.  In production the spans Typer is a sub-group of the main
-    ``ax`` app, so users still type ``ax spans export <project> ...``.
-    """
+    """Tests for the 'ax spans export' command."""
 
     def test_requires_project_arg(
         self,
@@ -99,7 +97,7 @@ class TestExportSpans:
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
         """Project is a required positional argument."""
-        result = cli_runner.invoke(app, ["--stdout"])
+        result = cli_runner.invoke(app, ["export", "--stdout"])
         assert result.exit_code != 0
 
     def test_export_all_spans_to_stdout(
@@ -113,7 +111,7 @@ class TestExportSpans:
         response.spans = []
         mock_client.spans.list.return_value = response
 
-        result = cli_runner.invoke(app, ["TW9kZWw6MTIz", "--stdout"])
+        result = cli_runner.invoke(app, ["export", "TW9kZWw6MTIz", "--stdout"])
         assert result.exit_code == 0
         call_kwargs = mock_client.spans.list.call_args.kwargs
         assert call_kwargs["filter"] is None
@@ -132,7 +130,7 @@ class TestExportSpans:
 
         result = cli_runner.invoke(
             app,
-            ["TW9kZWw6MTIz", "--trace-id", "t1", "--stdout"],
+            ["export", "TW9kZWw6MTIz", "--trace-id", "t1", "--stdout"],
         )
         assert result.exit_code == 0
         mock_client.spans.list.assert_called_once()
@@ -152,7 +150,13 @@ class TestExportSpans:
 
         result = cli_runner.invoke(
             app,
-            ["TW9kZWw6MTIz", "--filter", "status_code = 'ERROR'", "--stdout"],
+            [
+                "export",
+                "TW9kZWw6MTIz",
+                "--filter",
+                "status_code = 'ERROR'",
+                "--stdout",
+            ],
         )
         assert result.exit_code == 0
         call_kwargs = mock_client.spans.list.call_args.kwargs
@@ -172,6 +176,7 @@ class TestExportSpans:
         result = cli_runner.invoke(
             app,
             [
+                "export",
                 "TW9kZWw6MTIz",
                 "--trace-id",
                 "t1",
@@ -199,7 +204,7 @@ class TestExportSpans:
 
         result = cli_runner.invoke(
             app,
-            ["TW9kZWw6MTIz", "--limit", "50", "--stdout"],
+            ["export", "TW9kZWw6MTIz", "--limit", "50", "--stdout"],
         )
         assert result.exit_code == 0
         call_kwargs = mock_client.spans.list.call_args.kwargs
@@ -225,6 +230,7 @@ class TestExportSpans:
                 result = cli_runner.invoke(
                     app,
                     [
+                        "export",
                         "TW9kZWw6MTIz",
                         "--session-id",
                         "sess-1",
@@ -251,7 +257,15 @@ class TestExportSpans:
 
         result = cli_runner.invoke(
             app,
-            ["TW9kZWw6MTIz", "--trace-id", "t1", "--days", "7", "--stdout"],
+            [
+                "export",
+                "TW9kZWw6MTIz",
+                "--trace-id",
+                "t1",
+                "--days",
+                "7",
+                "--stdout",
+            ],
         )
         assert result.exit_code == 0
         call_kwargs = mock_client.spans.list.call_args.kwargs
@@ -266,7 +280,7 @@ class TestExportSpans:
     ) -> None:
         """--limit 0 or negative is rejected."""
         result = cli_runner.invoke(
-            app, ["TW9kZWw6MTIz", "--limit", "0", "--stdout"]
+            app, ["export", "TW9kZWw6MTIz", "--limit", "0", "--stdout"]
         )
         assert result.exit_code != 0
 
@@ -278,7 +292,7 @@ class TestExportSpans:
     ) -> None:
         """--days 0 or negative is rejected."""
         result = cli_runner.invoke(
-            app, ["TW9kZWw6MTIz", "--days", "0", "--stdout"]
+            app, ["export", "TW9kZWw6MTIz", "--days", "0", "--stdout"]
         )
         assert result.exit_code != 0
 
@@ -291,7 +305,15 @@ class TestExportSpans:
         """Providing more than one ID flag raises an error via CLI."""
         result = cli_runner.invoke(
             app,
-            ["TW9kZWw6MTIz", "--trace-id", "t1", "--span-id", "s1", "--stdout"],
+            [
+                "export",
+                "TW9kZWw6MTIz",
+                "--trace-id",
+                "t1",
+                "--span-id",
+                "s1",
+                "--stdout",
+            ],
         )
         assert result.exit_code != 0
 
@@ -301,14 +323,14 @@ class TestExportSpans:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Project arg is forwarded to spans.list as 'project' (SDK handles name-or-ID)."""
+        """Project arg is forwarded to spans.list as 'project'."""
         spans_response = MagicMock()
         spans_response.spans = []
         mock_client.spans.list.return_value = spans_response
 
         result = cli_runner.invoke(
             app,
-            ["TW9kZWw6MTIz", "--trace-id", "t1", "--stdout"],
+            ["export", "TW9kZWw6MTIz", "--trace-id", "t1", "--stdout"],
         )
         assert result.exit_code == 0
         call_kwargs = mock_client.spans.list.call_args.kwargs
@@ -337,7 +359,14 @@ class TestExportSpansAll:
 
         result = cli_runner.invoke(
             app,
-            ["my-project", "--all", "--space", "space-abc", "--stdout"],
+            [
+                "export",
+                "my-project",
+                "--all",
+                "--space",
+                "space-abc",
+                "--stdout",
+            ],
         )
         assert result.exit_code == 0
         mock_client.spans.export_to_df.assert_called_once()
@@ -355,7 +384,7 @@ class TestExportSpansAll:
         """--all without --space should fail."""
         result = cli_runner.invoke(
             app,
-            ["my-project", "--all", "--stdout"],
+            ["export", "my-project", "--all", "--stdout"],
         )
         assert result.exit_code != 0
 
@@ -371,6 +400,7 @@ class TestExportSpansAll:
         result = cli_runner.invoke(
             app,
             [
+                "export",
                 "my-project",
                 "--all",
                 "--space",
@@ -399,7 +429,14 @@ class TestExportSpansAll:
 
         result = cli_runner.invoke(
             app,
-            ["my-project", "--all", "--space", "space-abc", "--stdout"],
+            [
+                "export",
+                "my-project",
+                "--all",
+                "--space",
+                "space-abc",
+                "--stdout",
+            ],
         )
         assert result.exit_code == 0
         json_start = result.output.index("[")
@@ -426,6 +463,7 @@ class TestExportSpansAll:
             result = cli_runner.invoke(
                 app,
                 [
+                    "export",
                     "my-project",
                     "--all",
                     "--space",
@@ -450,6 +488,7 @@ class TestExportSpansAll:
         result = cli_runner.invoke(
             app,
             [
+                "export",
                 "my-project",
                 "--all",
                 "--space",
@@ -475,8 +514,188 @@ class TestExportSpansAll:
 
         result = cli_runner.invoke(
             app,
-            ["TW9kZWw6MTIz", "--stdout"],
+            ["export", "TW9kZWw6MTIz", "--stdout"],
         )
         assert result.exit_code == 0
         mock_client.spans.list.assert_called_once()
         mock_client.spans.export_to_df.assert_not_called()
+
+
+_ANNOTATIONS_JSON = (
+    '[{"record_id":"span-1","values":[{"name":"quality","score":0.9}]}]'
+)
+
+
+class TestAnnotateSpans:
+    """Tests for the 'ax spans annotate' command."""
+
+    def test_annotate_with_stdin_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--file - reads annotations from stdin and calls annotate_spans."""
+        mock_client.spans.annotate_spans.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate", "my-project", "--file", "-"],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.spans.annotate_spans.assert_called_once()
+        call_kwargs = mock_client.spans.annotate_spans.call_args.kwargs
+        assert call_kwargs["project"] == "my-project"
+        assert len(call_kwargs["annotations"]) == 1
+        assert call_kwargs["annotations"][0].record_id == "span-1"
+
+    def test_annotate_with_file_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """--file with a valid JSON file calls client.spans.annotate_spans."""
+        mock_client.spans.annotate_spans.return_value = None
+        json_file = tmp_path / "annotations.json"
+        json_file.write_text(_ANNOTATIONS_JSON)
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate", "my-project", "--file", str(json_file)],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.spans.annotate_spans.assert_called_once()
+
+    def test_annotate_with_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--space is forwarded to the SDK."""
+        mock_client.spans.annotate_spans.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "annotate",
+                "my-project",
+                "--file",
+                "-",
+                "--space",
+                "my-space",
+            ],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.spans.annotate_spans.call_args.kwargs
+        assert call_kwargs["space"] == "my-space"
+
+    def test_annotate_with_start_and_end_time(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--start-time and --end-time are parsed and forwarded."""
+        mock_client.spans.annotate_spans.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "annotate",
+                "my-project",
+                "--file",
+                "-",
+                "--start-time",
+                "2024-01-01T00:00:00Z",
+                "--end-time",
+                "2024-01-31T00:00:00Z",
+            ],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.spans.annotate_spans.call_args.kwargs
+        assert call_kwargs["start_time"] is not None
+        assert call_kwargs["end_time"] is not None
+
+    def test_annotate_with_days(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--days computes start_time relative to now; end_time stays None."""
+        from datetime import datetime, timezone
+
+        mock_client.spans.annotate_spans.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "annotate",
+                "my-project",
+                "--file",
+                "-",
+                "--days",
+                "7",
+            ],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.spans.annotate_spans.call_args.kwargs
+        assert call_kwargs["start_time"] is not None
+        # end_time is None — the SDK will default to now server-side
+        assert call_kwargs["end_time"] is None
+        # start_time should be ~7 days before now
+        now = datetime.now(tz=timezone.utc)
+        delta = now - call_kwargs["start_time"]
+        assert 6 <= delta.days <= 8
+
+    def test_annotate_requires_file(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Providing no --file results in a non-zero exit."""
+        result = cli_runner.invoke(app, ["annotate", "my-project"])
+        assert result.exit_code != 0
+
+    def test_annotate_sdk_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """An SDK error results in a non-zero exit code."""
+        mock_client.spans.annotate_spans.side_effect = RuntimeError("API error")
+        json_file = tmp_path / "annotations.json"
+        json_file.write_text(_ANNOTATIONS_JSON)
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate", "my-project", "--file", str(json_file)],
+        )
+        assert result.exit_code != 0
+
+    def test_annotate_success_message(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """A success message is shown after annotating."""
+        mock_client.spans.annotate_spans.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate", "my-project", "--file", "-"],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        assert "span" in result.output.lower()

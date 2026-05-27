@@ -29,6 +29,82 @@ app = typer.Typer(
 )
 
 
+@app.command("list")
+@handle_errors
+def list_role_bindings(
+    resource_type: Annotated[
+        RoleBindingResourceType,
+        typer.Option(
+            "--resource-type",
+            help="Resource type to list bindings for: 'SPACE' or 'PROJECT'",
+        ),
+    ],
+    user_id: Annotated[
+        str | None,
+        typer.Option(
+            "--user-id",
+            help="Filter by user ID (global ID)",
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            "-l",
+            help="Maximum number of role bindings to return",
+        ),
+    ] = 100,
+    cursor: Annotated[
+        str | None,
+        typer.Option(
+            "--cursor",
+            "-c",
+            help="Pagination cursor for next page",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """List role bindings for the authenticated user's account."""
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner("Fetching role bindings"):
+            response = client.role_bindings.list(
+                resource_type=resource_type,
+                user_id=user_id,
+                limit=limit,
+                cursor=cursor,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to list role bindings: {e}") from e
+    else:
+        output_data(
+            response,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
 @app.command("create")
 @handle_errors
 def create_role_binding(

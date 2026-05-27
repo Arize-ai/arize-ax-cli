@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from arize.role_bindings.types import RoleBindingResourceType
 from typer.testing import CliRunner, Result
 
 from ax.cli import app
@@ -19,6 +20,14 @@ _USER_ID = "VXNlcjoxMjM="
 _ROLE_ID = "Um9sZTo0NTY="
 _RESOURCE_ID = "UHJvamVjdDoxMjM="
 _CREATED_AT = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _make_role_binding_list_response(*bindings: MagicMock) -> MagicMock:
+    """Build a RoleBindingsList200Response mock."""
+    mock = MagicMock()
+    mock.role_bindings = list(bindings)
+    mock.pagination.has_more = False
+    return mock
 
 
 def _make_role_binding(
@@ -72,6 +81,109 @@ def _invoke(
         ),
     ):
         return runner.invoke(app, args, input=cli_input)
+
+
+# ---------------------------------------------------------------------------
+# ax role-bindings list
+# ---------------------------------------------------------------------------
+
+
+class TestListRoleBindings:
+    """Tests for `ax role-bindings list`."""
+
+    def test_list_returns_bindings_in_output(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that listed bindings appear in the output."""
+        mock_client.role_bindings.list.return_value = (
+            _make_role_binding_list_response(
+                _make_role_binding(),
+                _make_role_binding(binding_id="role_binding_test_2"),
+            )
+        )
+
+        result = _invoke(
+            [
+                "role-bindings",
+                "list",
+                "--resource-type",
+                "PROJECT",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+
+    def test_list_passes_filters_to_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --resource-type, --user-id, --limit, --cursor are forwarded."""
+        mock_client.role_bindings.list.return_value = (
+            _make_role_binding_list_response()
+        )
+
+        _invoke(
+            [
+                "role-bindings",
+                "list",
+                "--resource-type",
+                "SPACE",
+                "--user-id",
+                _USER_ID,
+                "--limit",
+                "5",
+                "--cursor",
+                "tok",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        mock_client.role_bindings.list.assert_called_once_with(
+            resource_type=RoleBindingResourceType.SPACE,
+            user_id=_USER_ID,
+            limit=5,
+            cursor="tok",
+        )
+
+    def test_list_resource_type_required(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that omitting --resource-type fails validation."""
+        result = _invoke(
+            ["role-bindings", "list"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.role_bindings.list.assert_not_called()
+
+    def test_list_invalid_resource_type_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that an invalid --resource-type fails Typer validation."""
+        result = _invoke(
+            ["role-bindings", "list", "--resource-type", "INVALID"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.role_bindings.list.assert_not_called()
+
+    def test_list_sdk_error_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that an SDK error results in a non-zero exit code."""
+        mock_client.role_bindings.list.side_effect = RuntimeError("API error")
+        result = _invoke(
+            ["role-bindings", "list", "--resource-type", "PROJECT"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
 
 
 # ---------------------------------------------------------------------------

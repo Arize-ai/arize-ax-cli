@@ -589,7 +589,7 @@ Once installed, test tab completion:
 
 ```bash
 ax <TAB>         # Shows available commands (cache, datasets, experiments, profiles, projects, spans, traces)
-ax datasets <TAB> # Shows dataset subcommands (list, get, export, create, append, delete)
+ax datasets <TAB> # Shows dataset subcommands (list, get, export, create, append, update, delete)
 ax datasets list --<TAB>  # Shows available options
 ```
 
@@ -831,6 +831,9 @@ ax datasets append <dataset> --file new_examples.csv [--version-id <version-id>]
 
 # Append examples from stdin
 ax datasets append <dataset> --file -
+
+# Update a dataset (e.g. rename)
+ax datasets update <dataset> --new-name "New Name" [--space <space>]
 
 # Delete a dataset
 ax datasets delete <dataset> [--force]
@@ -1399,6 +1402,16 @@ ax tasks trigger-run <task-id> \
   --max-examples 200 \
   --tracing-metadata '{"env": "prod"}'
 
+# Run against specific example IDs instead of all/N examples
+ax tasks trigger-run <task-id> \
+  --experiment-name "My Experiment" \
+  --example-ids <example-id-1>,<example-id-2>
+
+# Chain evaluation tasks to run after the experiment completes
+ax tasks trigger-run <task-id> \
+  --experiment-name "My Experiment" \
+  --evaluation-task-ids <eval-task-id-1>,<eval-task-id-2>
+
 # ── Run management ────────────────────────────────────────────────────────────
 
 # List runs for a task (optionally filtered by status)
@@ -1470,8 +1483,10 @@ ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 | `--experiment-ids` | Comma-separated experiment IDs; dataset-based evaluation tasks only |
 | `--experiment-name` | Display name for the experiment to be created (`run_experiment` tasks only) |
 | `--dataset-version-id` | Dataset version ID; defaults to latest (`run_experiment` tasks only) |
-| `--max-examples` | Maximum examples to run (`run_experiment` tasks only) |
+| `--max-examples` | Maximum examples to run (`run_experiment` tasks only). Mutually exclusive with `--example-ids` |
+| `--example-ids` | Comma-separated example IDs to run against (`run_experiment` tasks only). Mutually exclusive with `--max-examples` |
 | `--tracing-metadata` | JSON object or `@file.json` of key/value pairs for experiment traces (`run_experiment` tasks only) |
+| `--evaluation-task-ids` | Comma-separated evaluation task IDs to trigger after the run completes (`run_experiment` tasks only) |
 | `--wait`, `-w` | Block until the run reaches a terminal state |
 | `--poll-interval` | Seconds between polling attempts when `--wait` is set (default: 5) |
 | `--timeout` | Maximum seconds to wait when `--wait` is set (default: 600) |

@@ -4,8 +4,8 @@ Required environment variables:
   - ARIZE_API_KEY: valid Arize API key (always required)
 
 Required for lifecycle tests (create / get / update / delete):
-  - ARIZE_TEST_USER_ID: global ID (base64) of the user to bind a role to
-  - ARIZE_TEST_ROLE_ID: global ID (base64) of the role to assign
+  - ARIZE_TEST_USER_ID: identifier (base64) of the user to bind a role to
+  - ARIZE_TEST_ROLE_ID: identifier (base64) of the role to assign
   - ARIZE_TEST_SPACE: space name or ID used as the binding resource
     (falls back to the first space returned by ``ax spaces list``)
 

@@ -13,8 +13,9 @@ if TYPE_CHECKING:
 from ax.auth.auth_guards import require_api_key_auth
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
-from ax.core.exceptions import APIError
+from ax.core.exceptions import APIError, AxError
 from ax.core.output import output_data
+from ax.utils.annotations import parse_annotations
 from ax.utils.console import (
     confirm,
     info,
@@ -505,6 +506,74 @@ def append_examples(
         )
 
 
+@app.command("update")
+@handle_errors
+def update_dataset(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Dataset name or ID"),
+    ],
+    new_name: Annotated[
+        str,
+        typer.Option(
+            "--name",
+            help="New name for the dataset",
+            prompt=True,
+        ),
+    ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Update a dataset."""
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Updating dataset",
+            success_msg=f"Dataset renamed to '{new_name}'",
+        ):
+            dataset = client.datasets.update(
+                dataset=name_or_id,
+                space=space,
+                name=new_name,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to rename dataset: {e}") from e
+    else:
+        output_data(
+            dataset,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
 @app.command("delete")
 @handle_errors
 def delete_dataset(
@@ -561,3 +630,68 @@ def delete_dataset(
             )
     except Exception as e:
         raise APIError(f"Failed to delete dataset: {e}") from e
+
+
+@app.command("annotate-examples")
+@handle_errors
+def annotate_examples(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Dataset name or ID"),
+    ],
+    file: Annotated[
+        str | None,
+        typer.Option(
+            "--file",
+            "-f",
+            help="Path to a file containing annotation records (JSON, JSONL, CSV, Parquet), or '-' for stdin",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required when dataset is a name)",
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Annotate a batch of examples in a dataset.
+
+    Provide annotations via --file (JSON, JSONL, CSV, or Parquet; use '-' for stdin).
+    Each array item must have a ``record_id`` (the dataset example ID) and
+    ``values`` (a list of annotation dicts with at least ``name``, plus
+    optionally ``score``, ``label``, or ``text``).
+
+    Annotations are upserted — resubmitting the same annotation config name
+    for the same example overwrites the previous value. Up to 1000 examples
+    may be annotated per request. Unmatched record IDs are silently ignored.
+    """
+    setup_logging(verbose)
+
+    annotations = parse_annotations(file)
+
+    client, _ = make_client()
+
+    try:
+        with spinner(
+            "Annotating dataset examples",
+            success_msg=f"Annotated {len(annotations)} example(s) successfully",
+        ):
+            client.datasets.annotate_examples(
+                dataset=name_or_id,
+                space=space,
+                annotations=annotations,
+            )
+    except AxError:
+        raise
+    except Exception as e:
+        raise APIError(f"Failed to annotate dataset examples: {e}") from e

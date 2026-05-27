@@ -159,7 +159,7 @@ def get_annotation_config(
         raise APIError(f"Failed to get annotation config: {e}") from e
     else:
         output_data(
-            annotation_config.actual_instance,  # type: ignore[arg-type]
+            annotation_config,
             format_type=output_format,
             output_file=output_file,
         )
@@ -279,7 +279,7 @@ def create_annotation_config(
         raise APIError(f"Failed to create annotation config: {e}") from e
     else:
         output_data(
-            annotation_config.actual_instance,  # type: ignore[arg-type]
+            annotation_config,
             format_type=output_format,
             output_file=output_file,
         )

@@ -14,9 +14,17 @@ class TestDatasetCommands:
     """Verify dataset subcommands are registered with the correct names."""
 
     def test_expected_commands_registered(self) -> None:
-        """Check that get, export, append, list, create, delete are present."""
+        """Check that get, export, append, list, create, delete, rename are present."""
         names = [cmd.name for cmd in app.registered_commands]
-        for expected in ("get", "export", "append", "list", "create", "delete"):
+        for expected in (
+            "get",
+            "export",
+            "append",
+            "list",
+            "create",
+            "delete",
+            "update",
+        ):
             assert expected in names
         assert "list_examples" not in names
         assert "list-examples" not in names
@@ -571,6 +579,71 @@ class TestDeleteDataset:
         assert result.exit_code != 0
 
 
+class TestUpdateDataset:
+    """Tests for the 'ax datasets update' command."""
+
+    def test_update_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify update forwards name_or_id and --name to the SDK."""
+        mock_client.datasets.update.return_value = MagicMock(
+            model_dump=MagicMock(
+                return_value={"id": "ds-1", "name": "new-name"}
+            )
+        )
+        result = cli_runner.invoke(
+            app, ["update", "ds-1", "--name", "new-name"]
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.update.assert_called_once_with(
+            dataset="ds-1", space=None, name="new-name"
+        )
+
+    def test_update_with_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --space is forwarded when updating by name."""
+        mock_client.datasets.update.return_value = MagicMock(
+            model_dump=MagicMock(
+                return_value={"id": "ds-1", "name": "new-name"}
+            )
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "update",
+                "my-dataset",
+                "--name",
+                "new-name",
+                "--space",
+                "space-abc",
+            ],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.update.assert_called_once_with(
+            dataset="my-dataset", space="space-abc", name="new-name"
+        )
+
+    def test_update_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """API failure results in a non-zero exit code."""
+        mock_client.datasets.update.side_effect = Exception("not found")
+        result = cli_runner.invoke(
+            app, ["update", "ds-1", "--name", "new-name"]
+        )
+        assert result.exit_code != 0
+
+
 class TestValidateExamplesStructure:
     """Tests for the _validate_examples_structure function."""
 
@@ -595,3 +668,134 @@ class TestValidateExamplesStructure:
         """Empty, non-dict, and empty-dict examples should raise."""
         with pytest.raises(Exception, match=match):
             _validate_examples_structure(examples)
+
+
+# ---------------------------------------------------------------------------
+# ax datasets annotate-examples
+# ---------------------------------------------------------------------------
+
+_ANNOTATIONS_JSON = (
+    '[{"record_id":"ex-1","values":[{"name":"quality","score":0.9}]}]'
+)
+
+
+class TestAnnotateDatasetExamples:
+    """Tests for the 'ax datasets annotate-examples' command."""
+
+    def test_annotate_command_registered(self) -> None:
+        """Verify 'annotate-examples' is registered as a subcommand."""
+        names = [cmd.name for cmd in app.registered_commands]
+        assert "annotate-examples" in names
+        assert "annotate" not in names
+
+    def test_annotate_with_stdin_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--file - reads annotations from stdin and calls annotate_examples."""
+        mock_client.datasets.annotate_examples.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate-examples", "my-dataset", "--file", "-"],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.datasets.annotate_examples.assert_called_once()
+        call_kwargs = mock_client.datasets.annotate_examples.call_args.kwargs
+        assert call_kwargs["dataset"] == "my-dataset"
+        assert len(call_kwargs["annotations"]) == 1
+        assert call_kwargs["annotations"][0].record_id == "ex-1"
+
+    def test_annotate_with_file_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """--file with a valid JSON file calls client.datasets.annotate_examples."""
+        mock_client.datasets.annotate_examples.return_value = None
+        json_file = tmp_path / "annotations.json"
+        json_file.write_text(_ANNOTATIONS_JSON)
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate-examples", "my-dataset", "--file", str(json_file)],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.datasets.annotate_examples.assert_called_once()
+
+    def test_annotate_with_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--space is forwarded to the SDK."""
+        mock_client.datasets.annotate_examples.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "annotate-examples",
+                "my-dataset",
+                "--file",
+                "-",
+                "--space",
+                "my-space",
+            ],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.datasets.annotate_examples.call_args.kwargs
+        assert call_kwargs["space"] == "my-space"
+
+    def test_annotate_requires_file(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Providing no --file results in a non-zero exit."""
+        result = cli_runner.invoke(app, ["annotate-examples", "my-dataset"])
+        assert result.exit_code != 0
+
+    def test_annotate_sdk_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """An SDK error results in a non-zero exit code."""
+        mock_client.datasets.annotate_examples.side_effect = RuntimeError(
+            "API error"
+        )
+        json_file = tmp_path / "annotations.json"
+        json_file.write_text(_ANNOTATIONS_JSON)
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate-examples", "my-dataset", "--file", str(json_file)],
+        )
+        assert result.exit_code != 0
+
+    def test_annotate_success_message(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """A success message is shown after annotating."""
+        mock_client.datasets.annotate_examples.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            ["annotate-examples", "my-dataset", "--file", "-"],
+            input=_ANNOTATIONS_JSON,
+        )
+        assert result.exit_code == 0, result.output
+        assert "example" in result.output.lower()

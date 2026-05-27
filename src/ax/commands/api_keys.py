@@ -1,10 +1,15 @@
 """API key management commands."""
 
-from enum import StrEnum
 from typing import Annotated
 
 import typer
-from arize.api_keys.types import ApiKeyStatus
+from arize.api_keys.types import (
+    ApiKeyAccountRole,
+    ApiKeyOrganizationRole,
+    ApiKeySpaceRole,
+    ApiKeyStatus,
+    ApiKeyType,
+)
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
@@ -19,14 +24,6 @@ from ax.utils.console import (
 )
 from ax.utils.datetime_parse import parse_optional_iso8601
 from ax.utils.file_io import parse_output_option
-
-
-class ApiKeyType(StrEnum):
-    """API key type strings accepted by the API."""
-
-    USER = "user"
-    SERVICE = "service"
-
 
 # Create api-keys subcommand app
 app = typer.Typer(
@@ -98,7 +95,7 @@ def list_api_keys(
     try:
         with spinner("Fetching API keys"):
             response = client.api_keys.list(
-                key_type=key_type.value if key_type is not None else None,
+                key_type=key_type,
                 status=status,
                 limit=limit,
                 cursor=cursor,
@@ -131,16 +128,6 @@ def create_api_key(
             help="Optional description (max 1000 characters)",
         ),
     ] = None,
-    key_type: Annotated[
-        ApiKeyType,
-        typer.Option(
-            "--key-type",
-            help=(
-                "Key type: 'user' (authenticates as you, no space required) "
-                "or 'service' (scoped to a space, requires --space-id)"
-            ),
-        ),
-    ] = ApiKeyType.USER,
     expires_at: Annotated[
         str | None,
         typer.Option(
@@ -149,14 +136,6 @@ def create_api_key(
                 "Expiration datetime in ISO 8601 format "
                 "(e.g. '2025-12-31T23:59:59'). If omitted, key never expires."
             ),
-        ),
-    ] = None,
-    space: Annotated[
-        str | None,
-        typer.Option(
-            "--space",
-            "-s",
-            help="Space name or ID (required when --key-type is 'service')",
         ),
     ] = None,
     output: Annotated[
@@ -176,18 +155,12 @@ def create_api_key(
         ),
     ] = False,
 ) -> None:
-    r"""Create a new API key.
+    """Create a new user API key.
 
-    Two types are available:
+    Authenticates as you with your full permissions. The raw key value is
+    printed once after creation — save it securely, it will not be shown again.
 
-    \b
-    - user:    Authenticates as you with your full permissions.
-               --space must NOT be set.
-    - service: Scoped to a specific space with limited roles.
-               --space is REQUIRED.
-
-    The raw key value is printed once after creation. Save it securely —
-    it will not be shown again.
+    To create a space-scoped service key, use ``create-service-key`` instead.
     """
     expires_at_dt = parse_optional_iso8601(expires_at)
 
@@ -205,12 +178,127 @@ def create_api_key(
             key_created = client.api_keys.create(
                 name=name,
                 description=description,
-                key_type=key_type.value,
                 expires_at=expires_at_dt,
-                space=space,
             )
     except Exception as e:
         raise APIError(f"Failed to create API key: {e}") from e
+    else:
+        warning("Save this API key now — it will not be shown again.")
+        output_data(
+            key_created,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@app.command("create-service-key")
+@handle_errors
+def create_service_api_key(
+    name: Annotated[
+        str,
+        typer.Option(
+            "--name",
+            "-n",
+            help="Name for the API key (max 256 characters)",
+        ),
+    ],
+    space: Annotated[
+        str,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID the service key is scoped to",
+        ),
+    ],
+    description: Annotated[
+        str | None,
+        typer.Option(
+            "--description",
+            help="Optional description (max 1000 characters)",
+        ),
+    ] = None,
+    expires_at: Annotated[
+        str | None,
+        typer.Option(
+            "--expires-at",
+            help=(
+                "Expiration datetime in ISO 8601 format "
+                "(e.g. '2025-12-31T23:59:59'). If omitted, key never expires."
+            ),
+        ),
+    ] = None,
+    space_role: Annotated[
+        ApiKeySpaceRole | None,
+        typer.Option(
+            "--space-role",
+            help="Space role for the bot user: admin, member, or read-only",
+        ),
+    ] = None,
+    org_role: Annotated[
+        ApiKeyOrganizationRole | None,
+        typer.Option(
+            "--org-role",
+            help="Organization role for the bot user: admin, member, or read-only",
+        ),
+    ] = None,
+    account_role: Annotated[
+        ApiKeyAccountRole | None,
+        typer.Option(
+            "--account-role",
+            help="Account role for the bot user: admin or member",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Create a new service API key scoped to a space.
+
+    Service keys are backed by a dedicated bot user with configurable roles.
+    When no roles are specified the server applies its defaults
+    (space_role=member, org_role=read-only, account_role=member).
+
+    The raw key value is printed once after creation — save it securely,
+    it will not be shown again.
+    """
+    expires_at_dt = parse_optional_iso8601(expires_at)
+
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Creating service API key",
+            success_msg="Service API key created successfully",
+        ):
+            key_created = client.api_keys.create_service_key(
+                name=name,
+                space=space,
+                description=description,
+                expires_at=expires_at_dt,
+                space_role=space_role,
+                org_role=org_role,
+                account_role=account_role,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to create service API key: {e}") from e
     else:
         warning("Save this API key now — it will not be shown again.")
         output_data(

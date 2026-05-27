@@ -78,8 +78,8 @@ def _build_run_configuration(
     return result  # type: ignore[return-value]
 
 
-def _parse_experiment_ids(value: str | None) -> list[str] | None:
-    """Parse a comma-separated string of experiment IDs into a list."""
+def _parse_comma_separated_ids(value: str | None) -> list[str] | None:
+    """Parse a comma-separated string of IDs into a list."""
     if not value:
         return None
     return [e.strip() for e in value.split(",") if e.strip()]
@@ -297,7 +297,7 @@ def create_task(
         str | None,
         typer.Option(
             "--experiment-ids",
-            help="Comma-separated experiment global IDs (evaluation tasks only)",
+            help="Comma-separated experiment identifiers (evaluation tasks only)",
         ),
     ] = None,
     sampling_rate: Annotated[
@@ -422,7 +422,9 @@ def create_task(
                         project=project,
                         dataset=dataset,
                         space=space,
-                        experiment_ids=_parse_experiment_ids(experiment_ids),
+                        experiment_ids=_parse_comma_separated_ids(
+                            experiment_ids
+                        ),
                         sampling_rate=sampling_rate,
                         is_continuous=is_continuous,
                         query_filter=query_filter,
@@ -493,7 +495,7 @@ def create_evaluation_task_cmd(
         str | None,
         typer.Option(
             "--experiment-ids",
-            help="Comma-separated experiment global IDs (required for dataset-based tasks)",
+            help="Comma-separated experiment identifiers (required for dataset-based tasks)",
         ),
     ] = None,
     sampling_rate: Annotated[
@@ -564,7 +566,7 @@ def create_evaluation_task_cmd(
                 project=project,
                 dataset=dataset,
                 space=space,
-                experiment_ids=_parse_experiment_ids(experiment_ids),
+                experiment_ids=_parse_comma_separated_ids(experiment_ids),
                 sampling_rate=sampling_rate,
                 is_continuous=is_continuous,
                 query_filter=query_filter,
@@ -868,7 +870,27 @@ def trigger_run(
         str | None,
         typer.Option(
             "--experiment-ids",
-            help="Comma-separated experiment global IDs; dataset-based evaluation tasks only",
+            help="Comma-separated experiment identifiers; dataset-based evaluation tasks only",
+        ),
+    ] = None,
+    example_ids: Annotated[
+        str | None,
+        typer.Option(
+            "--example-ids",
+            help=(
+                "Comma-separated dataset example global IDs to run against "
+                "(run_experiment tasks only). Mutually exclusive with --max-examples."
+            ),
+        ),
+    ] = None,
+    evaluation_task_ids: Annotated[
+        str | None,
+        typer.Option(
+            "--evaluation-task-ids",
+            help=(
+                "Comma-separated task global IDs of evaluation tasks to trigger "
+                "after the experiment run completes (run_experiment tasks only)"
+            ),
         ),
     ] = None,
     experiment_name: Annotated[
@@ -886,7 +908,7 @@ def trigger_run(
         typer.Option(
             "--dataset-version-id",
             help=(
-                "Dataset version global ID (base64); defaults to the latest version "
+                "Dataset version identifier (base64); defaults to the latest version "
                 "(run_experiment tasks only)"
             ),
         ),
@@ -955,6 +977,10 @@ def trigger_run(
             "--data-start-time and --data-end-time are ignored when --experiment-ids is provided; "
             "experiment tasks fetch data directly from the experiment, not a time-based scan"
         )
+    if example_ids and max_examples is not None:
+        raise UsageError(
+            "--example-ids and --max-examples are mutually exclusive; provide at most one"
+        )
 
     parsed_tracing_metadata: dict[str, Any] | None = None
     if tracing_metadata is not None:
@@ -977,11 +1003,15 @@ def trigger_run(
                 data_end_time=data_end_time,
                 max_spans=max_spans,
                 override_evaluations=override_evaluations,
-                experiment_ids=_parse_experiment_ids(experiment_ids),
+                experiment_ids=_parse_comma_separated_ids(experiment_ids),
+                example_ids=_parse_comma_separated_ids(example_ids),
                 experiment_name=experiment_name,
                 dataset_version_id=dataset_version_id,
                 max_examples=max_examples,
                 tracing_metadata=parsed_tracing_metadata,
+                evaluation_task_ids=_parse_comma_separated_ids(
+                    evaluation_task_ids
+                ),
             )
     except (typer.BadParameter, UsageError):
         raise
@@ -1072,7 +1102,7 @@ def list_runs(
 @app.command("get-run")
 @handle_errors
 def get_run(
-    run_id: Annotated[str, typer.Argument(help="Task run global ID (base64)")],
+    run_id: Annotated[str, typer.Argument(help="Task run identifier (base64)")],
     output: Annotated[
         str,
         typer.Option(
@@ -1106,7 +1136,7 @@ def get_run(
 @app.command("cancel-run")
 @handle_errors
 def cancel_run(
-    run_id: Annotated[str, typer.Argument(help="Task run global ID (base64)")],
+    run_id: Annotated[str, typer.Argument(help="Task run identifier (base64)")],
     force: Annotated[
         bool,
         typer.Option("--force", "-f", help="Skip confirmation prompt"),
@@ -1151,7 +1181,7 @@ def cancel_run(
 @app.command("wait-for-run")
 @handle_errors
 def wait_for_run(
-    run_id: Annotated[str, typer.Argument(help="Task run global ID (base64)")],
+    run_id: Annotated[str, typer.Argument(help="Task run identifier (base64)")],
     poll_interval: Annotated[
         float,
         typer.Option(

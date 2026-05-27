@@ -27,6 +27,7 @@ console = Console()
 
 
 _NO_WRAP_SUBSTRINGS: set[str] = {"id", "cursor", "token", "key"}
+_EMPTY_VALUE = "[dim]—[/dim]"
 
 _STATUS_COLORS: dict[str, str] = {
     "active": "green",
@@ -107,6 +108,8 @@ class BaseModelTableFormatter:
             show_header=True,
             header_style="bold cyan",
             title=f"[bold]{field_name.title()} ({len(items)})[/bold]",
+            expand=True,
+            show_lines=True,
         )
 
         # Add columns
@@ -130,14 +133,32 @@ class BaseModelTableFormatter:
             Formatted string
         """
         if value is None:
-            return "[dim]None[/dim]"
+            return _EMPTY_VALUE
+        if value is pd.NaT:
+            return _EMPTY_VALUE
+        # pandas converts Python None → float('nan') or pd.NA inside DataFrames
+        if isinstance(value, float) and pd.isna(value):
+            return _EMPTY_VALUE
+        if value is pd.NA:
+            return _EMPTY_VALUE
         if isinstance(value, bool):
             return "[green]True[/green]" if value else "[red]False[/red]"
-        if isinstance(value, datetime):
+        if isinstance(value, (datetime, pd.Timestamp)):
+            try:
+                if pd.isna(value):
+                    return _EMPTY_VALUE
+            except (TypeError, ValueError):
+                pass
+            if value.year <= 1:
+                return _EMPTY_VALUE
             return value.strftime("%Y-%m-%d %H:%M:%S")
         if isinstance(value, list):
-            # Empty list or list of scalars
-            return f"[dim]{len(value)} items[/dim]" if value else "[dim][]"
+            if not value:
+                return _EMPTY_VALUE
+            formatted = [self._format_value(item) for item in value]
+            if len(formatted) <= 3:
+                return " | ".join(formatted)
+            return "\n".join(formatted)
         # Unwrap SDK domain types that have __str__ (e.g. PredefinedOrgRole, PredefinedUserRole)
         if isinstance(value, BaseModel):
             return str(value)
@@ -157,6 +178,18 @@ class BaseModelTableFormatter:
                 if "id" in actual:
                     return self._format_value(actual["id"])
             return self._format_value(actual)
+        # Expand generic nested dicts as "key=value, ..." — skipping None and empty containers.
+        if isinstance(value, dict):
+            parts = []
+            for k, v in value.items():
+                if (
+                    v is None
+                    or (isinstance(v, dict) and not v)
+                    or (isinstance(v, list) and not v)
+                ):
+                    continue
+                parts.append(f"{k}={self._format_value(v)}")
+            return ", ".join(parts) if parts else "[dim]{}[/dim]"
         # Unwrap enum instances (e.g. ApiKeyStatus.ACTIVE → "active") before display
         if isinstance(value, Enum):
             value = value.value
@@ -208,10 +241,20 @@ class TableFormatter(OutputFormatter):
         # Special handling for list responses - show items + pagination
         if is_list_response_model(data):
             df = self._to_dataframe(data)
+            # Prioritize 'name' column: move it immediately before 'id' if both present
+            if "name" in df.columns and "id" in df.columns:
+                cols = [c for c in df.columns if c != "name"]
+                cols.insert(cols.index("id"), "name")
+                df = df[cols]
             # Show items as table
             if len(df) > 0:
                 # Render table
-                table = Table(show_header=True, header_style="bold cyan")
+                table = Table(
+                    show_header=True,
+                    header_style="bold cyan",
+                    expand=True,
+                    show_lines=True,
+                )
                 for col in df.columns:
                     table.add_column(str(col), no_wrap=_col_no_wrap(col))
                 formatter = BaseModelTableFormatter()

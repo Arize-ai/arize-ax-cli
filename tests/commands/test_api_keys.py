@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from arize.api_keys.types import ApiKeySpaceRole, ApiKeyStatus, ApiKeyType
 from typer.testing import CliRunner, Result
 
 from ax.cli import app
@@ -29,11 +30,13 @@ def _make_api_key_list_response(*keys: MagicMock) -> MagicMock:
 def _make_api_key(
     key_id: str = _KEY_ID,
     name: str = "My Key",
+    last_used_at: datetime | None = None,
 ) -> MagicMock:
     """Build a minimal ApiKey mock (listing)."""
     mock = MagicMock()
     mock.id = key_id
     mock.name = name
+    mock.last_used_at = last_used_at
     return mock
 
 
@@ -134,8 +137,8 @@ class TestListApiKeys:
         )
 
         mock_client.api_keys.list.assert_called_once_with(
-            key_type="service",
-            status="active",
+            key_type=ApiKeyType.SERVICE,
+            status=ApiKeyStatus.ACTIVE,
             limit=5,
             cursor="tok",
         )
@@ -184,7 +187,7 @@ class TestCreateApiKey:
     def test_create_calls_sdk_correctly(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that create passes name and key_type to the SDK."""
+        """Test that create passes name to the SDK."""
         mock_client.api_keys.create.return_value = _make_api_key_created(
             name="Prod Key"
         )
@@ -195,8 +198,6 @@ class TestCreateApiKey:
                 "create",
                 "--name",
                 "Prod Key",
-                "--key-type",
-                "user",
                 "--output",
                 "json",
             ],
@@ -207,36 +208,26 @@ class TestCreateApiKey:
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.api_keys.create.call_args.kwargs
         assert call_kwargs["name"] == "Prod Key"
-        assert call_kwargs["key_type"] == "user"
-        assert call_kwargs["space"] is None
 
-    def test_create_with_space_passes_to_sdk(
+    def test_create_space_flag_not_accepted(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that --space is forwarded to the SDK as space=."""
-        mock_client.api_keys.create.return_value = _make_api_key_created()
-
+        """--space is not accepted by create (use create-service-key instead)."""
         result = _invoke(
             [
                 "api-keys",
                 "create",
                 "--name",
-                "Svc Key",
-                "--key-type",
-                "service",
+                "Key",
                 "--space",
                 "my-space",
-                "--output",
-                "json",
             ],
             mock_config,
             mock_client,
         )
 
-        assert result.exit_code == 0, result.output
-        assert (
-            mock_client.api_keys.create.call_args.kwargs["space"] == "my-space"
-        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create.assert_not_called()
 
     def test_create_space_id_flag_no_longer_accepted(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -272,24 +263,6 @@ class TestCreateApiKey:
         assert result.exit_code == 0, result.output
         assert "Save this API key now" in result.output
 
-    def test_create_invalid_key_type_exits_nonzero(
-        self, mock_config: MagicMock, mock_client: MagicMock
-    ) -> None:
-        """Test that an invalid --key-type causes a non-zero exit."""
-        result = _invoke(
-            [
-                "api-keys",
-                "create",
-                "--name",
-                "Bad Key",
-                "--key-type",
-                "admin",
-            ],
-            mock_config,
-            mock_client,
-        )
-        assert result.exit_code != 0
-
     def test_create_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
@@ -297,6 +270,131 @@ class TestCreateApiKey:
         mock_client.api_keys.create.side_effect = RuntimeError("Forbidden")
         result = _invoke(
             ["api-keys", "create", "--name", "Key"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax api-keys create-service-key
+# ---------------------------------------------------------------------------
+
+
+class TestCreateServiceApiKey:
+    """Tests for `ax api-keys create-service-key`."""
+
+    def test_create_service_key_calls_sdk_correctly(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Happy path: name, space, and optional role are forwarded to the SDK."""
+        mock_client.api_keys.create_service_key.return_value = (
+            _make_api_key_created(name="Svc Key")
+        )
+
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Svc Key",
+                "--space",
+                "my-space",
+                "--space-role",
+                "member",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.api_keys.create_service_key.call_args.kwargs
+        assert call_kwargs["name"] == "Svc Key"
+        assert call_kwargs["space"] == "my-space"
+        assert call_kwargs["space_role"] == ApiKeySpaceRole.MEMBER
+
+    def test_create_service_key_missing_space_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--space is required; omitting it must fail."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Svc Key",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_invalid_space_role_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Invalid --space-role value fails Typer validation."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Svc Key",
+                "--space",
+                "my-space",
+                "--space-role",
+                "superadmin",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_displays_save_warning(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """A 'save this key' warning must appear after creating a service key."""
+        mock_client.api_keys.create_service_key.return_value = (
+            _make_api_key_created()
+        )
+
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "My Key",
+                "--space",
+                "my-space",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Save this API key now" in result.output
+
+    def test_create_service_key_sdk_error_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """SDK error during create-service-key must produce a non-zero exit."""
+        mock_client.api_keys.create_service_key.side_effect = RuntimeError(
+            "Forbidden"
+        )
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Svc Key",
+                "--space",
+                "my-space",
+            ],
             mock_config,
             mock_client,
         )

@@ -240,6 +240,12 @@ def create_annotation_queue(
         )
         raise typer.Exit(code=1)
 
+    if not annotator_emails:
+        error(
+            "--annotator-email is required; specify at least one annotator email"
+        )
+        raise typer.Exit(code=1)
+
     client, config = make_client()
 
     output_format, output_file = parse_output_option(

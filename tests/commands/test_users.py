@@ -174,7 +174,7 @@ class TestGetUser:
             mock_client,
         )
         assert result.exit_code == 0, result.output
-        mock_client.users.get.assert_called_once_with(user_id=_USER_ID)
+        mock_client.users.get.assert_called_once_with(user=_USER_ID)
 
     def test_get_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock

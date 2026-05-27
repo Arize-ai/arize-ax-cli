@@ -113,17 +113,24 @@ def _resolve_agents(
         new_line()
 
     all_agent_names = list(AGENTS.keys())
-    result: list[str] | None = questionary.checkbox(
-        "Which agents to install skills for?",
-        choices=[
-            questionary.Choice(
-                title=f"{name}  (detected)" if name in detected else name,
-                value=name,
-                checked=(name in detected),
-            )
-            for name in all_agent_names
-        ],
-    ).ask()
+    try:
+        result: list[str] | None = questionary.checkbox(
+            "Which agents to install skills for?",
+            choices=[
+                questionary.Choice(
+                    title=f"{name}  (detected)" if name in detected else name,
+                    value=name,
+                    checked=(name in detected),
+                )
+                for name in all_agent_names
+            ],
+        ).ask()
+    except Exception:
+        raise UsageError(
+            "Interactive selection requires a TTY. "
+            f"Specify agents non-interactively: --agent claude-code --yes  "
+            f"(valid agents: {', '.join(AGENT_SLUGS)})"
+        ) from None
     if result is None:
         raise typer.Abort()
     return result
@@ -134,13 +141,19 @@ def _select_skills(yes: bool, available: list[str]) -> list[str]:
     if yes:
         return list(available)
 
-    result: list[str] | None = questionary.checkbox(
-        "Which skills to install?",
-        choices=[
-            questionary.Choice(title=s, value=s, checked=True)
-            for s in available
-        ],
-    ).ask()
+    try:
+        result: list[str] | None = questionary.checkbox(
+            "Which skills to install?",
+            choices=[
+                questionary.Choice(title=s, value=s, checked=True)
+                for s in available
+            ],
+        ).ask()
+    except Exception:
+        raise UsageError(
+            "Interactive selection requires a TTY. "
+            "Use --yes to install all available skills non-interactively."
+        ) from None
     if result is None:
         raise typer.Abort()
     return result

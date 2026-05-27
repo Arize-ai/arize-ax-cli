@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from arize.annotation_configs.types import (
     AnnotationConfig,
-    AnnotationConfigsList200Response,
+    AnnotationConfigListResponse,
     AnnotationConfigType,
     CategoricalAnnotationConfig,
     CategoricalAnnotationValue,
@@ -78,8 +78,8 @@ def _categorical(
 
 def _list_response(
     *configs: AnnotationConfig, has_more: bool = False
-) -> AnnotationConfigsList200Response:
-    return AnnotationConfigsList200Response(
+) -> AnnotationConfigListResponse:
+    return AnnotationConfigListResponse(
         annotation_configs=list(configs),
         pagination=PaginationMetadata(has_more=has_more),
     )

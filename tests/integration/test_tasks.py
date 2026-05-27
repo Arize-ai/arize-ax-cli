@@ -41,7 +41,7 @@ class TestTasksList:
 class TestTasksLifecycle:
     """Full task lifecycle: create → get → update → delete.
 
-    Requires ``ARIZE_TEST_EVALUATOR_ID`` env var (an evaluator global ID in
+    Requires ``ARIZE_TEST_EVALUATOR_ID`` env var (an evaluator identifier in
     the target space) and at least one project in the test space.
     """
 

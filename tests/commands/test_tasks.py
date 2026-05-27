@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 from ax.commands.tasks import (
     _build_evaluators,
     _build_run_configuration,
-    _parse_experiment_ids,
+    _parse_comma_separated_ids,
     app,
 )
 
@@ -180,27 +180,27 @@ class TestBuildRunConfiguration:
 
 
 class TestParseExperimentIds:
-    """Tests for the _parse_experiment_ids helper."""
+    """Tests for the _parse_comma_separated_ids helper."""
 
     @pytest.mark.unit
     def test_none_returns_none(self) -> None:
         """None input returns None."""
-        assert _parse_experiment_ids(None) is None
+        assert _parse_comma_separated_ids(None) is None
 
     @pytest.mark.unit
     def test_empty_string_returns_none(self) -> None:
         """Empty string returns None."""
-        assert _parse_experiment_ids("") is None
+        assert _parse_comma_separated_ids("") is None
 
     @pytest.mark.unit
     def test_single_id(self) -> None:
         """Single ID string returns a one-element list."""
-        assert _parse_experiment_ids("exp-1") == ["exp-1"]
+        assert _parse_comma_separated_ids("exp-1") == ["exp-1"]
 
     @pytest.mark.unit
     def test_multiple_ids(self) -> None:
         """Comma-separated IDs are split into a list."""
-        assert _parse_experiment_ids("exp-1,exp-2,exp-3") == [
+        assert _parse_comma_separated_ids("exp-1,exp-2,exp-3") == [
             "exp-1",
             "exp-2",
             "exp-3",
@@ -209,7 +209,10 @@ class TestParseExperimentIds:
     @pytest.mark.unit
     def test_strips_whitespace(self) -> None:
         """Leading/trailing whitespace around each ID is stripped."""
-        assert _parse_experiment_ids(" exp-1 , exp-2 ") == ["exp-1", "exp-2"]
+        assert _parse_comma_separated_ids(" exp-1 , exp-2 ") == [
+            "exp-1",
+            "exp-2",
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -1158,10 +1161,12 @@ class TestTriggerRun:
             max_spans=None,
             override_evaluations=None,
             experiment_ids=None,
+            example_ids=None,
             experiment_name=None,
             dataset_version_id=None,
             max_examples=None,
             tracing_metadata=None,
+            evaluation_task_ids=None,
         )
 
     @pytest.mark.unit
@@ -1234,6 +1239,83 @@ class TestTriggerRun:
         assert call_kwargs["dataset_version_id"] == "ver-123"
         assert call_kwargs["max_examples"] == 50
         assert call_kwargs["tracing_metadata"] == {"env": "prod"}
+
+    @pytest.mark.unit
+    def test_example_ids_parsed_and_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Comma-separated --example-ids are parsed into a list and forwarded."""
+        mock_client.tasks.trigger_run.return_value = _make_run()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "trigger-run",
+                "task-1",
+                "--experiment-name",
+                "my-exp",
+                "--example-ids",
+                "ex-1,ex-2",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.tasks.trigger_run.call_args.kwargs
+        assert call_kwargs["example_ids"] == ["ex-1", "ex-2"]
+
+    @pytest.mark.unit
+    def test_evaluation_task_ids_parsed_and_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Comma-separated --evaluation-task-ids are parsed into a list and forwarded."""
+        mock_client.tasks.trigger_run.return_value = _make_run()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "trigger-run",
+                "task-1",
+                "--experiment-name",
+                "my-exp",
+                "--evaluation-task-ids",
+                "eval-task-1,eval-task-2",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.tasks.trigger_run.call_args.kwargs
+        assert call_kwargs["evaluation_task_ids"] == [
+            "eval-task-1",
+            "eval-task-2",
+        ]
+
+    @pytest.mark.unit
+    def test_example_ids_and_max_examples_mutually_exclusive(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--example-ids and --max-examples together should exit non-zero."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "trigger-run",
+                "task-1",
+                "--experiment-name",
+                "my-exp",
+                "--example-ids",
+                "ex-1",
+                "--max-examples",
+                "10",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output.lower()
 
     @pytest.mark.unit
     def test_api_error_exits_nonzero(

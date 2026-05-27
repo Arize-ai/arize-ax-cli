@@ -7,11 +7,11 @@ import pytest
 from arize.annotation_queues.types import (
     AnnotationInput,
     AnnotationQueue,
+    AnnotationQueueListResponse,
     AnnotationQueueRecord,
     AnnotationQueueRecordAnnotateResult,
     AnnotationQueueRecordAssignResult,
-    AnnotationQueueRecordsList200Response,
-    AnnotationQueuesList200Response,
+    AnnotationQueueRecordListResponse,
     AssignmentMethod,
     PaginationMetadata,
 )
@@ -46,8 +46,8 @@ def _make_queue(
 
 def _make_queue_list_response(
     *queues: AnnotationQueue, has_more: bool = False
-) -> AnnotationQueuesList200Response:
-    return AnnotationQueuesList200Response(
+) -> AnnotationQueueListResponse:
+    return AnnotationQueueListResponse(
         annotation_queues=list(queues),
         pagination=PaginationMetadata(has_more=has_more),
     )
@@ -70,8 +70,8 @@ def _make_record(
 
 def _make_record_list_response(
     *records: AnnotationQueueRecord, has_more: bool = False
-) -> AnnotationQueueRecordsList200Response:
-    return AnnotationQueueRecordsList200Response(
+) -> AnnotationQueueRecordListResponse:
+    return AnnotationQueueRecordListResponse(
         records=list(records),
         pagination=PaginationMetadata(has_more=has_more),
     )
@@ -263,6 +263,8 @@ class TestCreateAnnotationQueue:
                 "sp_abc",
                 "--annotation-config-id",
                 "ac_1",
+                "--annotator-email",
+                "user@example.com",
                 "--output",
                 "json",
             ],

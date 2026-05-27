@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.20.0...arize-ax-cli/v0.21.0) (2026-05-27)
+
+
+### 🎁 New Features
+
+* **annotations:** add batch annotate commands for spans, datasets, and experiments ([#71998](https://github.com/Arize-ai/arize/issues/71998)) ([0eea49b](https://github.com/Arize-ai/arize/commit/0eea49b2a2ccda69f14a09fe35d674724dd5f82c))
+* **datasets:** add 'ax datasets update' command ([#72272](https://github.com/Arize-ai/arize/issues/72272)) ([c93869c](https://github.com/Arize-ai/arize/commit/c93869c22b287aaef3cb7e2acd1f23486291411c))
+
+### 🐛 Bug Fixes
+
+* resolve type-check errors in evaluators and annotation-queues ([c93869c](https://github.com/Arize-ai/arize/commit/c93869c22b287aaef3cb7e2acd1f23486291411c))
+* resolve type-check errors in users, api-keys, evaluators, annotation-configs, tasks ([#72432](https://github.com/Arize-ai/arize/issues/72432)) ([ea899a1](https://github.com/Arize-ai/arize/commit/ea899a1ad478deafd9d3a14123ddd3cb90492860))
+* **rest-api:** use base64 Relay global IDs in OpenAPI spec examples ([#71993](https://github.com/Arize-ai/arize/issues/71993)) ([5903e5b](https://github.com/Arize-ai/arize/commit/5903e5b6bea4b149906f1fc45eb7aa8993eac2c9)), closes [#71246](https://github.com/Arize-ai/arize/issues/71246)
+* update output parsing for easier to read table outputs ([c93869c](https://github.com/Arize-ai/arize/commit/c93869c22b287aaef3cb7e2acd1f23486291411c))
+
 ## [0.20.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.19.0...arize-ax-cli/v0.20.0) (2026-05-14)
 
 

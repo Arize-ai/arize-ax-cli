@@ -586,11 +586,11 @@ class TestBuildTemplateConfig:
     @pytest.mark.unit
     def test_invalid_invocation_params_raises_bad_parameter(self) -> None:
         """_build_template_config raises BadParameter for invalid JSON."""
-        import click
+        import typer
 
         from ax.commands.evaluators import _build_template_config
 
-        with pytest.raises(click.exceptions.BadParameter):
+        with pytest.raises(typer.BadParameter):
             _build_template_config(
                 template_name="test",
                 template="template",
@@ -608,11 +608,11 @@ class TestBuildTemplateConfig:
     @pytest.mark.unit
     def test_invalid_provider_params_raises_bad_parameter(self) -> None:
         """_build_template_config raises BadParameter for invalid provider JSON."""
-        import click
+        import typer
 
         from ax.commands.evaluators import _build_template_config
 
-        with pytest.raises(click.exceptions.BadParameter):
+        with pytest.raises(typer.BadParameter):
             _build_template_config(
                 template_name="test",
                 template="template",
@@ -746,30 +746,6 @@ class TestBuildTemplateConfig:
         assert result.exit_code != 0
 
     @pytest.mark.unit
-    def test_invalid_data_granularity_raises_usage_error(self) -> None:
-        """data_granularity must be span, trace, or session."""
-        from ax.commands.evaluators import _build_template_config
-        from ax.core.exceptions import UsageError
-
-        with pytest.raises(
-            UsageError,
-            match="--data-granularity must be span, trace, or session",
-        ):
-            _build_template_config(
-                template_name="test",
-                template="template",
-                ai_integration_id="integ-1",
-                model_name="gpt-4o",
-                include_explanations=True,
-                use_function_calling=True,
-                invocation_params_str="{}",
-                provider_params_str="{}",
-                classification_choices_str=None,
-                direction=None,
-                data_granularity="record",
-            )
-
-    @pytest.mark.unit
     def test_classification_choices_bool_value_raises_usage_error(self) -> None:
         """JSON booleans must not be used as numeric scores."""
         from ax.commands.evaluators import _build_template_config
@@ -799,15 +775,6 @@ class TestBuildTemplateConfig:
         assert OptimizationDirection.MAXIMIZE == "maximize"
         assert OptimizationDirection.MINIMIZE == "minimize"
         assert OptimizationDirection.NONE == "none"
-
-    @pytest.mark.unit
-    def test_data_granularity_normalized_to_lowercase(self) -> None:
-        """Mixed-case granularity values are accepted and normalized."""
-        from ax.commands.evaluators import _parse_optional_data_granularity
-
-        assert _parse_optional_data_granularity("Span") == "span"
-        assert _parse_optional_data_granularity("TRACE") == "trace"
-        assert _parse_optional_data_granularity("Session") == "session"
 
 
 class TestParseStaticParams:
