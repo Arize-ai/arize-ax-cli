@@ -86,7 +86,7 @@ def create(
     # --- Routing ---
     region: Annotated[
         str | None,
-        typer.Option("--region", help="Routing region (e.g. us-east-1b)."),
+        typer.Option("--region", help="Routing region. Use 'US' (default), 'EU', or a zone ID (e.g. us-east-1b, eu-west-1a)."),
     ] = None,
     single_host: Annotated[
         str | None,
@@ -363,7 +363,7 @@ def update(
     # --- Routing ---
     region: Annotated[
         str | None,
-        typer.Option("--region", help="Routing region (e.g. us-east-1b)."),
+        typer.Option("--region", help="Routing region. Use 'US' (default), 'EU', or a zone ID (e.g. us-east-1b, eu-west-1a)."),
     ] = None,
     single_host: Annotated[
         str | None,

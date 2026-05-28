@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from arize import Region, SDKConfiguration
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -188,16 +188,25 @@ class RoutingConfig(BaseModel):
         default="grpc+tls", description="Custom Flight scheme"
     )
 
+    # Friendly aliases accepted by the --region flag and validator.
+    # "US" maps to "" (UNSET → api.arize.com); "EU" maps to the EU zone ID.
+    _REGION_ALIASES: ClassVar[dict[str, str]] = {
+        "US": "",
+        "EU": "eu-west-1a",
+    }
+
     @field_validator("region")
     @classmethod
     def validate_region(cls, v: str) -> str:
         """Validate region value.
 
         Args:
-            v: Region string
+            v: Region string. Accepts friendly aliases ``US`` and ``EU``
+               (case-insensitive) in addition to the canonical zone IDs
+               returned by ``Region.list_regions()``.
 
         Returns:
-            Validated region string
+            Validated region string (aliases are normalised to canonical values)
 
         Raises:
             ValueError: If region is invalid
@@ -209,11 +218,16 @@ class RoutingConfig(BaseModel):
         if v.startswith("${") and v.endswith("}"):
             return v
 
+        # Resolve friendly aliases (case-insensitive)
+        alias_target = RoutingConfig._REGION_ALIASES.get(v.upper())
+        if alias_target is not None:
+            return alias_target
+
         # Validate as a literal region
         valid_regions = Region.list_regions()
         if v not in valid_regions:
             raise ValueError(
-                f"Invalid region: {v}. Must be empty string or one of: "
+                f"Invalid region: {v}. Use 'US' (default), 'EU', or one of: "
                 f"{', '.join(valid_regions)}"
             )
         return v

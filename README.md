@@ -261,7 +261,7 @@ When you run `ax profiles create` without flags, you'll be prompted to choose be
 The simple setup only asks for the essentials:
 
 - **API Key**: Your Arize API key
-- **Region**: US, EU, or leave unset (auto-detect)
+- **Region**: `US` or `EU` alias, a zone ID (e.g. `eu-west-1a`), or leave unset (auto-detect, default US)
 - **Output Format**: table, json, csv, or parquet
 
 **Example:**
@@ -275,9 +275,11 @@ API Key: Insert value
 API Key (e.g., ak-123...): [hidden input]
 
 Region:
-> (leave empty for unset)
-  US
-  EU
+> (default - no region needed for US)
+  ca-central-1a
+  eu-west-1a
+  us-central-1a
+  us-east-1b
   Use environment variable
 
 Default output format:
@@ -297,7 +299,7 @@ name = "default"
 api_key = "ak_your_api_key_here"
 
 [routing]
-region = "US"
+region = "eu-west-1a"
 
 [output]
 format = "table"
@@ -312,7 +314,7 @@ The advanced setup provides full control over:
 1. **API Key**: Your Arize credentials
 2. **Routing**: Choose from multiple strategies:
    - No override (use defaults)
-   - Region-based routing (US, EU)
+   - Region-based routing (`US`/`EU` aliases or zone IDs like `eu-west-1a`)
    - Single endpoint (on-premise deployments)
    - Base domain (Private Connect)
    - Custom endpoints & ports (granular control)
@@ -403,7 +405,7 @@ ax profiles update staging --from-file ./staging.toml --api-key ak_override
 | ------------------- | ----------------------------------------------------------- |
 | `--from-file`, `-f` | TOML file to load; completely replaces the existing profile |
 | `--api-key`         | Arize API key                                               |
-| `--region`          | Routing region (e.g. `us-east-1b`, `US`, `EU`)              |
+| `--region`          | Routing region. Use `US` (default), `EU`, or a zone ID (e.g. `eu-west-1a`) |
 | `--output-format`   | Default output format (`table`, `json`, `csv`, `parquet`)   |
 | `--verbose`, `-v`   | Enable verbose logs                                         |
 
@@ -427,7 +429,9 @@ api_key = "${ARIZE_API_KEY}"
 ```toml
 [routing]
 # Option 1: Region-based (recommended for cloud)
-region = "US"  # or "EU"
+# Use a zone ID, or the 'US'/'EU' aliases accepted by the CLI flag.
+# Leave unset (or use 'US') for the default US endpoint (api.arize.com).
+region = "eu-west-1a"  # EU; omit or set to "" for US (default)
 
 # Option 2: Single endpoint (on-premise)
 single_host = "arize.yourcompany.com"

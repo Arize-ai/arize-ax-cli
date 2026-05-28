@@ -93,6 +93,16 @@ class TestRoutingConfig:
         routing = RoutingConfig(region="")
         assert routing.region == ""
 
+    def test_region_alias_us_normalizes_to_empty(self) -> None:
+        """Test that 'US' alias normalizes to empty string (default endpoint)."""
+        assert RoutingConfig(region="US").region == ""
+        assert RoutingConfig(region="us").region == ""
+
+    def test_region_alias_eu_normalizes_to_zone_id(self) -> None:
+        """Test that 'EU' alias normalizes to eu-west-1a."""
+        assert RoutingConfig(region="EU").region == "eu-west-1a"
+        assert RoutingConfig(region="eu").region == "eu-west-1a"
+
     def test_invalid_region_raises_error(self) -> None:
         """Test that invalid region raises ValidationError."""
         with pytest.raises(ValidationError, match="Invalid region"):
