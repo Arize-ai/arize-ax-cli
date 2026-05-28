@@ -63,9 +63,12 @@ def mock_client() -> MagicMock:
 
 @pytest.fixture
 def mock_config() -> MagicMock:
-    """Return a mock Config whose output.format is 'json'."""
+    """Return a mock Config whose output.format is 'json' and auth is api-key."""
+    from ax.config.schema import AuthMethod
+
     config = MagicMock()
     config.output.format = "json"
+    config.auth.auth_method = AuthMethod.API_KEY
     return config
 
 
@@ -171,6 +174,44 @@ class TestListApiKeys:
         )
         assert result.exit_code != 0
         mock_client.api_keys.list.assert_not_called()
+
+    def test_list_empty_with_api_key_shows_service_key_hint(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that an empty result with an API key credential shows a service key hint."""
+        mock_client.api_keys.list.return_value = _make_api_key_list_response()
+
+        result = _invoke(["api-keys", "list"], mock_config, mock_client)
+
+        assert result.exit_code == 0, result.output
+        assert "Service keys" in result.output
+
+    def test_list_empty_with_oauth_does_not_show_service_key_hint(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that an empty result with OAuth does not show the service key hint."""
+        from ax.config.schema import AuthMethod
+
+        mock_config.auth.auth_method = AuthMethod.OAUTH
+        mock_client.api_keys.list.return_value = _make_api_key_list_response()
+
+        result = _invoke(["api-keys", "list"], mock_config, mock_client)
+
+        assert result.exit_code == 0, result.output
+        assert "Service keys" not in result.output
+
+    def test_list_nonempty_does_not_show_service_key_hint(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that a non-empty result does not show the service key hint."""
+        mock_client.api_keys.list.return_value = _make_api_key_list_response(
+            _make_api_key(name="My Key"),
+        )
+
+        result = _invoke(["api-keys", "list"], mock_config, mock_client)
+
+        assert result.exit_code == 0, result.output
+        assert "Service keys" not in result.output
 
 
 # ---------------------------------------------------------------------------

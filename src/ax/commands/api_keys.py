@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 from arize.api_keys.types import ApiKeyStatus
 
+from ax.config.schema import AuthMethod
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError
@@ -106,6 +107,14 @@ def list_api_keys(
     except Exception as e:
         raise APIError(f"Failed to list API keys: {e}") from e
     else:
+        if (
+            not response.api_keys
+            and config.auth.auth_method == AuthMethod.API_KEY
+        ):
+            info(
+                "Service keys can only view keys within their scoped space. "
+                "Use a user key to list all API keys for your account."
+            )
         output_data(
             response,
             format_type=output_format,
