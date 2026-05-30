@@ -1,8 +1,10 @@
 """Output formatters for different formats (table, json, csv, parquet)."""
 
 import json
+import re
 import sys
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -13,6 +15,7 @@ from pydantic import BaseModel
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from ax.core.exceptions import FileIOError
 from ax.core.pydantic import (
@@ -26,8 +29,20 @@ from ax.utils.console import new_line, success, text_dimmed
 console = Console()
 
 
-_NO_WRAP_SUBSTRINGS: set[str] = {"id", "cursor", "token", "key"}
+# Column-name tokens that mark id-like columns (ids, cursors, tokens, keys).
+# Matched against `_`-delimited tokens, not as substrings, so "provider" and
+# "provider_metadata" are NOT treated as id-like just because they contain "id".
+_NO_WRAP_TOKENS: set[str] = {"id", "cursor", "token", "key"}
 _EMPTY_VALUE = "[dim]—[/dim]"
+
+# Render width large enough that a non-expanding table never has to shrink its
+# columns to fit. rich emits the table at its natural width (it does not pad out
+# to the console width), so the terminal wraps any overflow instead of rich
+# collapsing columns and scattering ellipses.
+_UNBOUNDED_WIDTH = 1_000_000
+# Cap per-column width for prose columns; longer cells wrap (fold) within it so
+# a single outlier value can't blow out the whole table width.
+_MAX_COL_WIDTH = 30
 
 _STATUS_COLORS: dict[str, str] = {
     "active": "green",
@@ -39,9 +54,94 @@ _STATUS_COLORS: dict[str, str] = {
 
 
 def _col_no_wrap(col_name: str) -> bool:
-    """Return True for columns that should not wrap (IDs, tokens, cursors)."""
-    lower = col_name.lower()
-    return any(sub in lower for sub in _NO_WRAP_SUBSTRINGS)
+    """Return True for id-like columns that should stay on one line.
+
+    Splits the column name into tokens (on any non-alphanumeric boundary) and
+    matches whole tokens against ``_NO_WRAP_TOKENS`` — e.g. ``id``,
+    ``created_by_user_id``, ``next_cursor``, ``has_api_key`` match, while
+    ``provider`` and ``provider_metadata`` (which merely *contain* "id") do not.
+    """
+    tokens = re.split(r"[^a-z0-9]+", col_name.lower())
+    return any(token in _NO_WRAP_TOKENS for token in tokens)
+
+
+def _add_columns(table: Table, columns: Sequence[str]) -> None:
+    """Add columns, capping prose columns and leaving id-like columns intact.
+
+    id/cursor/token/key columns render on a single line (``no_wrap``) so values
+    you may need to copy are never chopped into fixed-width chunks across rows.
+    All other columns are capped at ``_MAX_COL_WIDTH`` and fold (wrap) so a long
+    outlier value cannot blow out the entire table width.
+
+    Args:
+        table: Rich table to add columns to.
+        columns: Column names (DataFrame columns).
+    """
+    for col in columns:
+        if _col_no_wrap(col):
+            table.add_column(str(col), no_wrap=True)
+        else:
+            table.add_column(
+                str(col), max_width=_MAX_COL_WIDTH, overflow="fold"
+            )
+
+
+def _visible_width(rendered: str) -> int:
+    """Return the widest visible line, ignoring ANSI control codes.
+
+    Args:
+        rendered: Captured table output, possibly containing ANSI styling.
+    """
+    return max(
+        (Text.from_ansi(line).cell_len for line in rendered.splitlines()),
+        default=0,
+    )
+
+
+def _print_overflow_hint() -> None:
+    """Nudge an interactive user when a table is too wide for their terminal."""
+    new_line()
+    text_dimmed(
+        "The table is wider than your terminal. To see it all, choose one of "
+        "the following options:\n"
+        "1. zoom out\n"
+        "2. re-run with `-o json`\n"
+        "3. pipe output to a pager (e.g. `| less -SR`)\n"
+        "4. redirect to a file (e.g. `> out.txt`) and open it in an editor"
+    )
+
+
+def _print_table(table: Table) -> None:
+    """Print a table at its full natural width, never shrinking columns.
+
+    A non-expanding rich table renders at its natural width regardless of the
+    console width, so rendering through a console widened past any real terminal
+    means rich never collapses columns or inserts ellipses. The terminal wraps
+    long lines; capped columns still fold within ``_MAX_COL_WIDTH``. The table is
+    rendered once (into a capture buffer) so its visible width is known without a
+    second pass; if that exceeds an interactive terminal, a muted hint is printed
+    to stderr telling the user how to view the full table.
+
+    Args:
+        table: Rich table to render.
+    """
+    render_console = Console(
+        file=console.file,
+        width=_UNBOUNDED_WIDTH,
+        force_terminal=console.is_terminal,
+    )
+    with render_console.capture() as capture:
+        render_console.print(table)
+    rendered = capture.get()
+    render_console.file.write(rendered)
+    # Manual write bypasses rich's flush; flush so the table lands before the
+    # stderr hint below (otherwise the streams can interleave out of order).
+    render_console.file.flush()
+
+    # Only nudge an interactive user whose terminal is too narrow; piped or
+    # redirected output already received the full table cleanly.
+    if console.is_terminal and _visible_width(rendered) > console.width:
+        _print_overflow_hint()
 
 
 class BaseModelTableFormatter:
@@ -108,20 +208,18 @@ class BaseModelTableFormatter:
             show_header=True,
             header_style="bold cyan",
             title=f"[bold]{field_name.title()} ({len(items)})[/bold]",
-            expand=True,
             show_lines=True,
         )
 
         # Add columns
-        for col in df.columns:
-            table.add_column(str(col), no_wrap=_col_no_wrap(col))
+        _add_columns(table, list(df.columns))
 
         # Add rows with formatted values
         for _, row in df.iterrows():
             formatted_row = [self._format_value(val) for val in row]
             table.add_row(*formatted_row)
 
-        console.print(table)
+        _print_table(table)
 
     def _format_value(self, value: object) -> str:
         """Format a value for display in table or panel.
@@ -252,17 +350,15 @@ class TableFormatter(OutputFormatter):
                 table = Table(
                     show_header=True,
                     header_style="bold cyan",
-                    expand=True,
                     show_lines=True,
                 )
-                for col in df.columns:
-                    table.add_column(str(col), no_wrap=_col_no_wrap(col))
+                _add_columns(table, list(df.columns))
                 formatter = BaseModelTableFormatter()
                 for _, row in df.iterrows():
                     table.add_row(
                         *[formatter._format_value(val) for val in row]
                     )
-                console.print(table)
+                _print_table(table)
             else:
                 text_dimmed("No items to display")
 

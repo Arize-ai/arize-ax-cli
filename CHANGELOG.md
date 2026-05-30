@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.21.0...arize-ax-cli/v0.22.0) (2026-05-30)
+
+
+### 🎁 New Features
+
+* **output:** enhance table formatting with no-wrap tokens and natural-width rendering ([#73062](https://github.com/Arize-ai/arize/issues/73062)) ([946e5b3](https://github.com/Arize-ai/arize/commit/946e5b35c8c65ac4b9789c3a084c9c9c82e0892c))
+
 ## [0.21.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.20.0...arize-ax-cli/v0.21.0) (2026-05-27)
 
 

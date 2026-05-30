@@ -8,7 +8,10 @@ import json
 
 import pytest
 from pydantic import BaseModel
+from rich.console import Console
+from rich.table import Table
 
+from ax.core import output
 from ax.core.output import (
     BaseModelTableFormatter,
     CSVFormatter,
@@ -395,3 +398,179 @@ class TestPromptWithVersionTableRendering:
         out = capsys.readouterr().out
         assert "open_ai" in out
         assert "f_string" in out
+
+
+# Ellipsis character rich inserts when it shrinks/crops a column.
+_ELLIPSIS = "…"
+
+
+def _render_table(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+    columns: list[str],
+    rows: list[list[str]],
+    *,
+    console: Console | None = None,
+) -> "pytest.CaptureResult[str]":
+    """Render a table via the real _add_columns/_print_table; return capture.
+
+    The module-level console is replaced (default: a non-terminal one so output
+    is deterministic with no ANSI styling). Returns the readouterr() result so
+    callers can inspect both ``.out`` (the table) and ``.err`` (the hint).
+    """
+    monkeypatch.setattr(
+        output, "console", console or Console(force_terminal=False)
+    )
+
+    table = Table(show_header=True, show_lines=True)
+    output._add_columns(table, columns)
+    for row in rows:
+        table.add_row(*row)
+    output._print_table(table)
+    return capsys.readouterr()
+
+
+class TestPrintTableFullWidth:
+    """_print_table renders at natural width — no shrinking, no scattered '…'."""
+
+    def test_wide_table_shows_all_values_without_ellipsis(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """A table far wider than the terminal renders every value in full."""
+        long_id = "TGxtSW50ZWdyYXRpb246MjcyODpXSVNF"
+        user_id = "VXNlcjo1NDA6RGtaNQ=="
+        columns = [
+            "name",
+            "id",
+            "provider",
+            "has_api_key",
+            "auth_type",
+            "created_by_user_id",
+        ]
+        rows = [["PARKER TEST", long_id, "openAI", "True", "default", user_id]]
+
+        out = _render_table(monkeypatch, capsys, columns, rows).out
+
+        # Full id / user-id present in full, and no ellipsis.
+        assert long_id in out
+        assert user_id in out
+        assert _ELLIPSIS not in out
+
+    def test_prose_column_folds_within_cap(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """A long non-id value wraps (fold) rather than truncating with '…'."""
+        # 12 words, > 60 chars — capped column must fold it across lines.
+        prose = (
+            "alpha bravo charlie delta echo foxtrot "
+            "golf hotel india juliet kilo lima"
+        )
+        out = _render_table(
+            monkeypatch, capsys, ["provider_metadata"], [[prose]]
+        ).out
+
+        # Every word survives, no truncation, but it did not stay on one line.
+        assert "alpha" in out
+        assert "lima" in out
+        assert _ELLIPSIS not in out
+        assert prose not in out  # folded across multiple lines
+
+    def test_id_like_column_stays_on_one_line(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """An id/cursor value longer than the cap is never chopped into chunks."""
+        cursor = "C" * 80  # well beyond the prose cap
+        out = _render_table(monkeypatch, capsys, ["cursor"], [[cursor]]).out
+
+        # Contiguous — a no_wrap, uncapped column keeps the value intact.
+        assert cursor in out
+        assert _ELLIPSIS not in out
+
+    def test_small_table_renders_cleanly(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """A small table renders its values without ellipsis."""
+        out = _render_table(
+            monkeypatch,
+            capsys,
+            ["name", "provider"],
+            [["PARKER", "openAI"]],
+        ).out
+        assert "PARKER" in out
+        assert "openAI" in out
+        assert _ELLIPSIS not in out
+
+
+# A table guaranteed wider than a 40-col terminal: 6 columns of 20 chars each.
+_WIDE_COLS = ["a", "b", "c", "d", "e", "f"]
+_WIDE_ROW = [["x" * 20] * 6]
+_HINT = "wider than your terminal"
+
+
+class TestOverflowHint:
+    """A muted hint is shown only when a too-wide table hits a real terminal."""
+
+    def test_hint_shown_when_too_wide_for_terminal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """Narrow interactive terminal -> hint printed to stderr."""
+        result = _render_table(
+            monkeypatch,
+            capsys,
+            _WIDE_COLS,
+            _WIDE_ROW,
+            console=Console(force_terminal=True, width=40),
+        )
+        assert _HINT in result.err
+
+    def test_no_hint_when_table_fits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """Wide terminal that fits the table -> no hint."""
+        result = _render_table(
+            monkeypatch,
+            capsys,
+            _WIDE_COLS,
+            _WIDE_ROW,
+            console=Console(force_terminal=True, width=10_000),
+        )
+        assert _HINT not in result.err
+
+    def test_no_hint_when_not_a_terminal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ) -> None:
+        """Piped/redirected (non-terminal) -> full table, no hint noise."""
+        result = _render_table(
+            monkeypatch,
+            capsys,
+            _WIDE_COLS,
+            _WIDE_ROW,
+            console=Console(force_terminal=False, width=40),
+        )
+        assert _HINT not in result.err
+
+
+class TestNoDebugOutput:
+    """Leftover DEBUGPRINT statements must not be shipped."""
+
+    def test_format_emits_no_debugprint(
+        self, capsys: pytest.CaptureFixture
+    ) -> None:
+        model = _make_prompt_with_version()
+        TableFormatter().format(model)
+        out = capsys.readouterr().out
+        assert "DEBUGPRINT" not in out
