@@ -251,6 +251,41 @@ class TestUsersResendInvitation:
 # ---------------------------------------------------------------------------
 
 
+class TestUsersBulkDelete:
+    """ax users delete (bulk) — smoke tests."""
+
+    @pytest.mark.integration
+    def test_bulk_delete_single_user(self, api_key: str) -> None:
+        """Create a user, delete by their ID, verify exit 0."""
+        name = _unique_name()
+        email = _unique_email()
+
+        created = ax_json(
+            "users",
+            "create",
+            "--full-name",
+            name,
+            "--email",
+            email,
+            "--role",
+            "member",
+            "--invite-mode",
+            "none",
+        )
+        user_id = created["id"]
+
+        result = ax("users", "delete", "--id", user_id, "--force")
+        assert result.returncode == 0, f"users delete failed:\n{result.stderr}"
+
+    @pytest.mark.integration
+    def test_bulk_delete_missing_user_id_exits_nonzero(
+        self, api_key: str
+    ) -> None:
+        """Delete with no --id or --email should exit non-zero."""
+        result = ax("users", "delete", "--force")
+        assert result.returncode != 0
+
+
 class TestOrganizationUserMembership:
     """ax organizations add-user / remove-user — smoke tests."""
 

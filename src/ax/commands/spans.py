@@ -14,6 +14,9 @@ from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError, AxError
 from ax.utils.annotations import parse_annotations
 from ax.utils.console import (
+    confirm,
+    error,
+    info,
     setup_logging,
     spinner,
     success,
@@ -377,7 +380,7 @@ def annotate_spans(
             "Annotating spans",
             success_msg=f"Annotated {len(annotations)} span(s) successfully",
         ):
-            client.spans.annotate_spans(
+            client.spans.annotate(
                 project=project,
                 space=space,
                 annotations=annotations,
@@ -388,3 +391,94 @@ def annotate_spans(
         raise
     except Exception as e:
         raise APIError(f"Failed to annotate spans: {e}") from e
+
+
+@app.command("delete")
+@handle_errors
+def delete_spans(
+    project: Annotated[
+        str,
+        typer.Argument(help="Project name or ID"),
+    ],
+    span_ids: Annotated[
+        list[str],
+        typer.Option(
+            "--span-id",
+            help=(
+                "Span ID to delete"
+                "(--span-id id1,id2,id3); the flag can also be repeated "
+                "(--span-id id1 --span-id id2)."
+            ),
+        ),
+    ] = [],  # noqa: B006
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required when project is a name)",
+        ),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Skip confirmation prompt",
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Permanently delete spans by ID.
+
+    This operation is irreversible. Spans not found within the supported
+    lookback window are silently ignored.
+    """
+    setup_logging(verbose)
+
+    flat_ids = [
+        sid.strip() for s in span_ids for sid in s.split(",") if sid.strip()
+    ]
+
+    if not flat_ids:
+        error("--span-id is required; specify at least one span ID")
+        raise typer.Exit(code=1)
+
+    client, _ = make_client()
+
+    if not force:
+        warning(f"This will permanently delete {len(flat_ids)} span(s)")
+
+        if not confirm("Are you sure?", default=False):
+            info("Spans not deleted")
+            raise typer.Exit()
+
+    try:
+        with spinner("Deleting spans"):
+            result = client.spans.delete(
+                project=project,
+                span_ids=flat_ids,
+                space=space,
+            )
+    except AxError:
+        raise
+    except Exception as e:
+        raise APIError(f"Failed to delete spans: {e}") from e
+
+    if result is None:
+        # HTTP 204 — all spans deleted
+        success(f"Deleted {len(flat_ids)} span(s) successfully")
+    else:
+        # HTTP 200 — partial deletion
+        deleted = getattr(result, "deleted_span_ids", []) or []
+        warning(
+            f"Partial deletion: {len(deleted)} of {len(flat_ids)} "
+            "span(s) deleted. Retry for the remainder."
+        )

@@ -1,6 +1,6 @@
 """Annotation queue management commands."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from arize.annotation_queues.types import AnnotationInput, AssignmentMethod
@@ -18,6 +18,7 @@ from ax.utils.console import (
     warning,
 )
 from ax.utils.file_io import parse_output_option
+from ax.utils.json_source import load_json
 
 # Create annotation-queues subcommand app
 app = typer.Typer(
@@ -211,6 +212,20 @@ def create_annotation_queue(
             help="How records are assigned to annotators (all, random)",
         ),
     ] = None,
+    record_sources: Annotated[
+        str | None,
+        typer.Option(
+            "--record-sources",
+            help=(
+                "JSON file path or inline JSON array of initial record sources. "
+                "Each source must have a 'record_type' field set to 'span' or "
+                "'example', plus type-specific fields. "
+                "Span source: project_id, start_time (ISO 8601), end_time "
+                "(ISO 8601), and optional span_ids. "
+                "Example source: dataset_id and example_ids."
+            ),
+        ),
+    ] = None,
     output: Annotated[
         str,
         typer.Option(
@@ -246,6 +261,15 @@ def create_annotation_queue(
         )
         raise typer.Exit(code=1)
 
+    parsed_record_sources: list[Any] | None = None
+    if record_sources is not None:
+        parsed = load_json(record_sources)
+        if not isinstance(parsed, list):
+            raise typer.BadParameter(
+                "--record-sources must be a JSON array of record source objects."
+            )
+        parsed_record_sources = parsed
+
     client, config = make_client()
 
     output_format, output_file = parse_output_option(
@@ -264,6 +288,7 @@ def create_annotation_queue(
                 annotator_emails=annotator_emails,
                 instructions=instructions,
                 assignment_method=assignment_method,
+                record_sources=parsed_record_sources,
             )
     except Exception as e:
         raise APIError(f"Failed to create annotation queue: {e}") from e
@@ -746,6 +771,100 @@ def assign_record(
             )
     except Exception as e:
         raise APIError(f"Failed to assign record: {e}") from e
+    else:
+        output_data(
+            result,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@app.command("add-records")
+@handle_errors
+def add_records(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Annotation queue name or ID"),
+    ],
+    record_sources: Annotated[
+        str,
+        typer.Option(
+            "--record-sources",
+            help=(
+                "JSON file path or inline JSON array of record sources. "
+                "Each source must have a 'record_type' field set to 'span' or "
+                "'example', plus type-specific fields. "
+                "Span source: project_id, start_time (ISO 8601), end_time "
+                "(ISO 8601), and optional span_ids. "
+                "Example source: dataset_id and example_ids."
+            ),
+        ),
+    ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using queue name instead of ID)",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    r"""Add records to an annotation queue.
+
+    Records may come from spans (project time range) or dataset examples.
+
+    \b
+    Examples:
+        # Add spans from a project time range (sources in a file)
+        ax annotation-queues add-records my-queue \\
+          --record-sources sources.json
+
+        # Add specific dataset examples (inline JSON)
+        ax annotation-queues add-records my-queue \\
+          --record-sources '[{"record_type": "example", "dataset_id": "ds-1",
+          "example_ids": ["ex-1", "ex-2"]}]'
+    """
+    parsed_sources: list[Any] = load_json(record_sources)  # type: ignore[assignment]
+    if not isinstance(parsed_sources, list):
+        raise typer.BadParameter(
+            "--record-sources must be a JSON array of record source objects."
+        )
+
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Adding records to annotation queue",
+            success_msg="Records added successfully",
+        ):
+            result = client.annotation_queues.add_records(
+                annotation_queue=name_or_id,
+                space=space,
+                record_sources=parsed_sources,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to add records to annotation queue: {e}") from e
     else:
         output_data(
             result,

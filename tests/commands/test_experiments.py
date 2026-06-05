@@ -22,11 +22,10 @@ class TestExperimentCommands:
         names = [cmd.name for cmd in app.registered_commands]
         assert "export" in names
 
-    def test_list_runs_command_not_registered(self) -> None:
-        """Test that old 'list_runs' subcommand no longer exists."""
+    def test_list_runs_command_registered(self) -> None:
+        """Test that 'list-runs' subcommand is registered."""
         names = [cmd.name for cmd in app.registered_commands]
-        assert "list_runs" not in names
-        assert "list-runs" not in names
+        assert "list-runs" in names
 
     def test_list_command_registered(self) -> None:
         """Test that 'list' subcommand exists."""
@@ -283,6 +282,111 @@ class TestDeleteExperiment:
         mock_client.experiments.delete.side_effect = Exception("not found")
         result = cli_runner.invoke(app, ["delete", "exp-1", "--force"])
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax experiments list-runs
+# ---------------------------------------------------------------------------
+
+
+class TestListRuns:
+    """Tests for the 'ax experiments list-runs' command."""
+
+    def test_calls_client_with_defaults(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Invoke list-runs with just the experiment ID and verify defaults."""
+        mock_client.experiments.list_runs.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"experiment_runs": []})
+        )
+
+        result = cli_runner.invoke(app, ["list-runs", "exp-1"])
+        assert result.exit_code == 0, result.output
+        mock_client.experiments.list_runs.assert_called_once_with(
+            experiment="exp-1",
+            dataset=None,
+            space=None,
+            limit=15,
+            all=False,
+        )
+
+    def test_forwards_dataset_and_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--dataset and --space are forwarded to the SDK."""
+        mock_client.experiments.list_runs.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"experiment_runs": []})
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "list-runs",
+                "my-exp",
+                "--dataset",
+                "ds-1",
+                "--space",
+                "space-abc",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.experiments.list_runs.assert_called_once_with(
+            experiment="my-exp",
+            dataset="ds-1",
+            space="space-abc",
+            limit=15,
+            all=False,
+        )
+
+    def test_custom_limit_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--limit is forwarded to the SDK."""
+        mock_client.experiments.list_runs.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"experiment_runs": []})
+        )
+
+        result = cli_runner.invoke(
+            app,
+            ["list-runs", "exp-1", "--limit", "5"],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.experiments.list_runs.call_args.kwargs
+        assert call_kwargs["limit"] == 5
+
+    def test_sdk_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """SDK error results in a non-zero exit code."""
+        mock_client.experiments.list_runs.side_effect = Exception("not found")
+        result = cli_runner.invoke(app, ["list-runs", "exp-1"])
+        assert result.exit_code != 0
+
+    def test_always_passes_all_false(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """list-runs always passes all=False (unlike export which exposes --all)."""
+        mock_client.experiments.list_runs.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"experiment_runs": []})
+        )
+        cli_runner.invoke(app, ["list-runs", "exp-1"])
+        call_kwargs = mock_client.experiments.list_runs.call_args.kwargs
+        assert call_kwargs["all"] is False
 
 
 class TestCreateExperiment:

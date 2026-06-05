@@ -6,13 +6,15 @@ import typer
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
-from ax.core.exceptions import APIError
+from ax.core.exceptions import APIError, AxError
 from ax.core.output import output_data
 from ax.utils.console import (
     confirm,
+    error,
     info,
     setup_logging,
     spinner,
+    success,
     warning,
 )
 from ax.utils.file_io import parse_output_option
@@ -336,11 +338,30 @@ def update_user(
 
 @app.command("delete")
 @handle_errors
-def delete_user(
-    user_id: Annotated[
-        str,
-        typer.Argument(help="User ID"),
-    ],
+def delete_users(
+    user_ids: Annotated[
+        list[str],
+        typer.Option(
+            "--id",
+            help=(
+                "User ID to delete"
+                "(--id id1,id2,id3); the flag can also be repeated "
+                "(--id id1 --id id2)."
+            ),
+        ),
+    ] = [],  # noqa: B006
+    emails: Annotated[
+        list[str],
+        typer.Option(
+            "--email",
+            "-e",
+            help=(
+                "User email to resolve and delete"
+                "values (--email a@b.com,c@d.com); the flag can also be "
+                "repeated (--email a@b.com --email c@d.com)."
+            ),
+        ),
+    ] = [],  # noqa: B006
     force: Annotated[
         bool,
         typer.Option(
@@ -349,6 +370,14 @@ def delete_user(
             help="Skip confirmation prompt",
         ),
     ] = False,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
     verbose: Annotated[
         bool,
         typer.Option(
@@ -358,32 +387,84 @@ def delete_user(
         ),
     ] = False,
 ) -> None:
-    """Delete a user by ID.
+    r"""Delete one or more users by ID or email address.
 
-    This deletes the user and cascades to organization memberships,
-    space memberships, API keys, and role bindings.
+    Provide --id and/or --email flags. Both accept repeated flags or
+    comma-separated values. Emails are resolved to user IDs before deletion.
+
+    Each deletion is attempted independently; the results table shows the
+    outcome (deleted, failed, not_found) for each user.
+
+    \b
+    Examples:
+        ax users delete --id usr_abc123
+        ax users delete --id id1,id2,id3
+        ax users delete --email user@example.com
+        ax users delete --id id1 --email user@example.com
     """
     setup_logging(verbose)
-    client, _ = make_client()
+
+    flat_ids = [
+        uid.strip() for s in user_ids for uid in s.split(",") if uid.strip()
+    ]
+    flat_emails = [
+        em.strip() for s in emails for em in s.split(",") if em.strip()
+    ]
+
+    if not flat_ids and not flat_emails:
+        error("At least one --id or --email must be provided")
+        raise typer.Exit(code=1)
+
+    total = len(flat_ids) + len(flat_emails)
+
+    client, config = make_client()
 
     if not force:
         warning(
-            "This will permanently delete the user and cascade to all"
+            f"This will permanently delete {total} user(s) and cascade to all"
             " memberships, API keys, and role bindings"
         )
 
         if not confirm("Are you sure?", default=False):
-            info("User not deleted")
+            info("Users not deleted")
             raise typer.Exit()
 
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
     try:
-        with spinner(
-            "Deleting user",
-            success_msg=f"User '{user_id}' deleted successfully",
-        ):
-            client.users.delete(user_id=user_id)
+        with spinner("Deleting users"):
+            results = client.users.bulk_delete(
+                user_ids=flat_ids or None,
+                emails=flat_emails or None,
+            )
+    except AxError:
+        raise
     except Exception as e:
-        raise APIError(f"Failed to delete user: {e}") from e
+        raise APIError(f"Failed to delete users: {e}") from e
+
+    from arize.users.types import BulkDeleteResponse
+
+    deleted = sum(1 for r in results if r.status.value == "deleted")
+    failed = sum(1 for r in results if r.status.value == "failed")
+    not_found = sum(1 for r in results if r.status.value == "not_found")
+
+    success(
+        f"Delete complete: {deleted} deleted, "
+        f"{failed} failed, {not_found} not found"
+    )
+
+    output_data(
+        BulkDeleteResponse(results=results),
+        format_type=output_format,
+        output_file=output_file,
+        status_colors={
+            "deleted": "green",
+            "failed": "red",
+            "not_found": "yellow",
+        },
+    )
 
 
 @app.command("resend-invitation")

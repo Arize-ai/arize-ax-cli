@@ -6,7 +6,7 @@ import typer
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
-from ax.core.exceptions import APIError
+from ax.core.exceptions import APIError, AxError
 from ax.core.output import output_data
 from ax.utils.console import confirm, info, setup_logging, spinner, warning
 from ax.utils.file_io import parse_output_option
@@ -411,3 +411,59 @@ def remove_user_from_organization(
             )
     except Exception as e:
         raise APIError(f"Failed to remove user from organization: {e}") from e
+
+
+@app.command("delete")
+@handle_errors
+def delete_organization(
+    organization: Annotated[
+        str,
+        typer.Argument(help="Organization name or ID"),
+    ],
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Skip confirmation prompt",
+        ),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Delete an organization by name or ID.
+
+    This operation is irreversible and will permanently delete the organization
+    and ALL resources within it (spaces, projects, experiments, datasets, etc.).
+    """
+    setup_logging(verbose)
+    client, _ = make_client()
+
+    if not force:
+        warning(
+            f"This will permanently delete organization '{organization}' and "
+            "ALL resources within it (spaces, projects, experiments, datasets, etc.)"
+        )
+
+        if not confirm("Are you sure?", default=False):
+            info("Organization not deleted")
+            raise typer.Exit()
+
+    try:
+        with spinner(
+            "Deleting organization",
+            success_msg=f"Organization '{organization}' deleted successfully",
+        ):
+            client.organizations.delete(
+                organization=organization,
+            )
+    except AxError:
+        raise
+    except Exception as e:
+        raise APIError(f"Failed to delete organization: {e}") from e

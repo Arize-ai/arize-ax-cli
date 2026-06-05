@@ -284,3 +284,81 @@ def delete_project(
             )
     except Exception as e:
         raise APIError(f"Failed to delete project: {e}") from e
+
+
+@app.command("update")
+@handle_errors
+def update_project(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Project name or ID"),
+    ],
+    name: Annotated[
+        str,
+        typer.Option(
+            "--name",
+            "-n",
+            help="New name for the project",
+            prompt=True,
+        ),
+    ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using project name instead of ID)",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Update a project by name or ID.
+
+    Use --space when resolving by project name instead of ID.
+    """
+    setup_logging(verbose)
+
+    if not (name := name.strip()):
+        raise typer.BadParameter(
+            "Project name cannot be empty.", param_hint="'--name'"
+        )
+
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Updating project",
+            success_msg="Project updated successfully",
+        ):
+            project = client.projects.update(
+                project=name_or_id,
+                space=space,
+                name=name,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to update project: {e}") from e
+    else:
+        output_data(
+            project,
+            format_type=output_format,
+            output_file=output_file,
+        )

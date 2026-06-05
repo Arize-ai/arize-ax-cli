@@ -122,15 +122,18 @@ def flatten_basemodel_for_export(model: BaseModel) -> dict[str, Any]:
 
 
 def is_list_response_model(model: BaseModel) -> bool:
-    """Check if BaseModel is a list response with pagination.
+    """Check if BaseModel is a list response that can be rendered as a table.
 
-    Returns True for *List200Response objects from SDK which have
-    a pagination field containing PaginationMetadata.
+    Returns True for models that expose a ``to_df()`` method — the convention
+    used by list-response types across the SDK (e.g. ``UserListResponse``,
+    ``BulkDeleteResponse``).  Pagination metadata is handled separately by
+    :class:`~ax.core.output.TableFormatter`, which checks for a ``pagination``
+    attribute independently.
 
     Args:
         model: Pydantic BaseModel instance
 
     Returns:
-        True if model has pagination field (is a list response)
+        True if the model has a callable ``to_df`` method
     """
-    return hasattr(model, "pagination")
+    return callable(getattr(model, "to_df", None))

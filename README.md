@@ -638,7 +638,7 @@ ax ai-integrations list [--name <substring>] [--space <space>] [--limit 15] [--c
 ax ai-integrations get <integration>
 
 # Create an integration (OpenAI example)
-ax ai-integrations create --name "OpenAI Prod" --provider openAI \
+ax ai-integrations create --name "OpenAI Prod" --provider open_ai \
   --api-key <key> --model-name gpt-4o --model-name gpt-4o-mini
 
 # Create an integration with custom headers
@@ -726,6 +726,11 @@ ax annotation-queues create --name "My Queue" --space <space> \
   --instructions "Please evaluate carefully" \
   --assignment-method random
 
+# Create a queue and seed it with initial records from a file
+ax annotation-queues create --name "My Queue" --space <space> \
+  --annotation-config-id <config-id> \
+  --record-sources sources.json
+
 # Update a queue (list fields fully replace existing values)
 ax annotation-queues update <queue> [--name <name>] [--instructions <text>] \
   [--annotation-config-id <id>] [--annotator-email <email>]
@@ -749,6 +754,21 @@ ax annotation-queues assign-record <queue> <record-id> \
 
 # Remove all assignments from a record
 ax annotation-queues assign-record <queue> <record-id>
+
+# Add records to a queue from a file
+ax annotation-queues add-records <queue> \
+  --space <space> \
+  --record-sources sources.json
+
+# Add records inline (span source)
+ax annotation-queues add-records <queue> \
+  --record-sources '[{"record_type": "span", "project_id": "<proj>",
+    "start_time": "2024-01-01T00:00:00Z", "end_time": "2024-01-02T00:00:00Z"}]'
+
+# Add records inline (dataset example source)
+ax annotation-queues add-records <queue> \
+  --record-sources '[{"record_type": "example", "dataset_id": "<ds>",
+    "example_ids": ["ex-1", "ex-2"]}]'
 ```
 
 **Assignment methods:**
@@ -1005,8 +1025,8 @@ ax experiments create --name "My Experiment" --dataset <dataset> --file runs.csv
 # Create an experiment from stdin
 ax experiments create --name "My Experiment" --dataset <dataset> --file -
 
-# List runs for an experiment
-ax experiments list_runs <experiment> [--limit 30]
+# List runs for an experiment (paginated)
+ax experiments list-runs <experiment> [--limit 30] [--cursor <cursor>]
 
 # Delete an experiment
 ax experiments delete <experiment> [--force]
@@ -1045,6 +1065,9 @@ ax organizations add-user <organization> --user-id <user-id> --role <role>
 
 # Remove a user from an organization (also removes them from all child spaces)
 ax organizations remove-user <organization> --user-id <user-id> [--force]
+
+# Delete an organization (irreversible)
+ax organizations delete <organization> [--force]
 ```
 
 **Organization roles:** `admin`, `member`, `read-only`, `annotator`
@@ -1062,6 +1085,9 @@ ax projects get <project>
 
 # Create a new project
 ax projects create --name "My Project" --space <space>
+
+# Update a project (by ID or name)
+ax projects update <project> --name "Updated Name" [--space <space>]
 
 # Delete a project
 ax projects delete <project> [--force]
@@ -1086,10 +1112,22 @@ ax prompts get <prompt> --label production
 ax prompts create \
   --name "My Prompt" \
   --space <space> \
-  --provider openAI \
+  --provider open_ai \
   --input-variable-format f_string \
   --messages messages.json \
   --commit-message "Initial version"
+
+# Create a prompt with invocation and provider parameters
+ax prompts create \
+  --name "My Prompt" \
+  --space <space> \
+  --provider open_ai \
+  --model gpt-4o \
+  --input-variable-format f_string \
+  --messages messages.json \
+  --commit-message "Initial version" \
+  --invocation-params '{"temperature": 0.7, "max_tokens": 512}' \
+  --provider-params '{"deployment": "my-deployment"}'
 
 # Update a prompt's description
 ax prompts update <prompt> --description "Updated description"
@@ -1102,17 +1140,27 @@ ax prompts list-versions <prompt> [--limit 15] [--cursor <cursor>]
 
 # Create a new version
 ax prompts create-version <prompt> \
-  --provider openAI \
+  --provider open_ai \
   --input-variable-format f_string \
   --messages messages_v2.json \
   --commit-message "Improved system prompt"
 
 # Create a new version (inline messages JSON)
 ax prompts create-version <prompt> \
-  --provider openAI \
+  --provider open_ai \
   --input-variable-format f_string \
   --messages '[{"role": "user", "content": "Your prompt here"}]' \
   --commit-message "Minimal inline JSON example"
+
+# Create a new version with invocation and provider parameters
+ax prompts create-version <prompt> \
+  --provider open_ai \
+  --model gpt-4o \
+  --input-variable-format f_string \
+  --messages messages_v2.json \
+  --commit-message "Tuned parameters" \
+  --invocation-params '{"temperature": 0.5}' \
+  --provider-params '{"deployment": "my-deployment"}'
 
 
 # Resolve a label to its version
@@ -1135,6 +1183,13 @@ ax prompts remove-version-label <version-id> --label staging
   {"role": "tool", "tool_call_id": "tool-call-1", "content": "This is the result of the search function."},
 ]
 ```
+
+**`create` / `create-version` options:**
+
+| Option | Description |
+| --- | --- |
+| `--invocation-params` | JSON object (or `@file.json`) of model invocation parameters (e.g. `temperature`, `max_tokens`, `top_p`) |
+| `--provider-params` | JSON object (or `@file.json`) of provider-specific parameters (e.g. Azure deployment name, Bedrock region) |
 
 **Input variable formats:**
 
@@ -1304,6 +1359,21 @@ ax spans export <project-id> --filter "latency_ms > 1000"
 ax spans export <project-id> --trace-id abc123 --filter "latency_ms > 1000"
 ax spans export <project-id> --start-time 2024-01-01T00:00:00Z --end-time 2024-01-02T00:00:00Z
 ```
+
+**Deleting spans:**
+
+```bash
+# Delete one or more spans by ID (prompts for confirmation)
+ax spans delete <project-id> --span-id <span-id> [--span-id <span-id> ...] [--space <space>]
+
+# Delete without confirmation
+ax spans delete <project-id> --span-id <span-id> --force
+
+# Comma-separated IDs are also accepted
+ax spans delete <project-id> --span-id id1,id2,id3 --force
+```
+
+> **Note:** `ax spans delete` is irreversible. Spans not found within the supported lookback window are silently ignored (exit code 0). Partial failures are reported but do not change the exit code.
 
 ### Tasks
 
@@ -1542,8 +1612,15 @@ ax users update <user-id> --full-name "Jane Smith"
 ax users update <user-id> --is-developer
 ax users update <user-id> --no-is-developer
 
-# Delete a user (cascades to memberships, API keys, and role bindings)
-ax users delete <user-id> [--force]
+# Delete one or more users by ID (comma-separated or repeated flag)
+ax users delete --id <user-id> [--force]
+ax users delete --id id1,id2,id3 [--force]
+
+# Delete by email address (resolves to user ID before deletion)
+ax users delete --email user@example.com [--force]
+
+# Mix IDs and emails; each deletion is attempted independently
+ax users delete --id id1 --email user@example.com [--force]
 
 # Resend an invitation email to a pending user
 ax users resend-invitation <user-id>
@@ -1562,7 +1639,7 @@ ax users reset-password <user-id>
 | `email_link`         | Send an invitation email with a sign-in link         |
 | `temporary_password` | Send an email with a one-time temporary password     |
 
-> **Note:** `ax users delete` deletes the user and cascades to all organization memberships, space memberships, API keys, and role bindings.
+> **Note:** `ax users delete` accepts `--id` and/or `--email` flags (both accept comma-separated values or repeated flags). Emails are resolved to user IDs before deletion. Each deletion is attempted independently; the results table reports the outcome (`deleted`, `failed`, `not_found`) per user. Deletion cascades to all organization memberships, space memberships, API keys, and role bindings.
 
 ## Usage Examples
 

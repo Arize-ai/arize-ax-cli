@@ -147,6 +147,16 @@ def _print_table(table: Table) -> None:
 class BaseModelTableFormatter:
     """Formatter for rendering BaseModel objects as Rich tables with metadata panels."""
 
+    def __init__(self, status_colors: dict[str, str] | None = None) -> None:
+        """Initialise the formatter.
+
+        Args:
+            status_colors: Optional mapping of status string → Rich color name.
+                Merged on top of the module-level ``_STATUS_COLORS`` defaults,
+                so callers only need to supply overrides.
+        """
+        self._status_colors = status_colors or _STATUS_COLORS
+
     def format(self, model: BaseModel) -> None:
         """Format and display a BaseModel with metadata panel and list field tables.
 
@@ -292,7 +302,7 @@ class BaseModelTableFormatter:
         if isinstance(value, Enum):
             value = value.value
         if isinstance(value, str):
-            color = _STATUS_COLORS.get(value.lower())
+            color = self._status_colors.get(value.lower())
             if color:
                 return f"[{color}]{value}[/{color}]"
         return str(value)
@@ -329,6 +339,15 @@ class OutputFormatter(ABC):
 class TableFormatter(OutputFormatter):
     """Rich table formatter for beautiful terminal output."""
 
+    def __init__(self, status_colors: dict[str, str] | None = None) -> None:
+        """Initialise the formatter.
+
+        Args:
+            status_colors: Optional status-color overrides forwarded to
+                :class:`BaseModelTableFormatter`.
+        """
+        self._status_colors = status_colors
+
     def format(self, data: BaseModel, output_file: str = "") -> None:
         """Format data as a Rich table."""
         if output_file:
@@ -353,7 +372,9 @@ class TableFormatter(OutputFormatter):
                     show_lines=True,
                 )
                 _add_columns(table, list(df.columns))
-                formatter = BaseModelTableFormatter()
+                formatter = BaseModelTableFormatter(
+                    status_colors=self._status_colors
+                )
                 for _, row in df.iterrows():
                     table.add_row(
                         *[formatter._format_value(val) for val in row]
@@ -362,16 +383,17 @@ class TableFormatter(OutputFormatter):
             else:
                 text_dimmed("No items to display")
 
-            # Show pagination info below
-            if data.pagination.has_more:  # type: ignore
+            # Show pagination info below (only for models that carry pagination)
+            pagination = getattr(data, "pagination", None)
+            if pagination is not None and pagination.has_more:
                 new_line()
-                if data.pagination.next_cursor:  # type: ignore
+                if pagination.next_cursor:
                     text_dimmed(
                         "More items available. To fetch the next page, add:"
                     )
                     console.print(
                         f"  [bold cyan]--cursor[/bold cyan] "
-                        f"[yellow]{data.pagination.next_cursor}[/yellow]"  # type: ignore
+                        f"[yellow]{pagination.next_cursor}[/yellow]"
                     )
                 else:
                     text_dimmed(
@@ -382,7 +404,9 @@ class TableFormatter(OutputFormatter):
 
         # Special handling for BaseModel - use BaseModelTableFormatter
         if isinstance(data, BaseModel):
-            formatter = BaseModelTableFormatter()
+            formatter = BaseModelTableFormatter(
+                status_colors=self._status_colors
+            )
             formatter.format(data)
             return
 
@@ -456,11 +480,17 @@ class ParquetFormatter(OutputFormatter):
             success(f"Saved to {output_file}")
 
 
-def get_formatter(format_type: str) -> OutputFormatter:
+def get_formatter(
+    format_type: str,
+    status_colors: dict[str, str] | None = None,
+) -> OutputFormatter:
     """Factory function to get formatter by type.
 
     Args:
         format_type: Format type (table, json, csv, parquet)
+        status_colors: Optional status-color overrides for the table formatter.
+            Merged on top of the module-level defaults; only the table formatter
+            uses this — other formatters ignore it.
 
     Returns:
         OutputFormatter instance
@@ -468,18 +498,21 @@ def get_formatter(format_type: str) -> OutputFormatter:
     Raises:
         ValueError: If format_type is not supported
     """
+    format_type_lower = format_type.lower()
+    if format_type_lower == "table":
+        return TableFormatter(status_colors=status_colors)
+
     formatters: dict[str, type[OutputFormatter]] = {
-        "table": TableFormatter,
         "json": JSONFormatter,
         "csv": CSVFormatter,
         "parquet": ParquetFormatter,
     }
 
-    formatter_class = formatters.get(format_type.lower())
+    formatter_class = formatters.get(format_type_lower)
     if not formatter_class:
         raise ValueError(
             f"Unsupported format: {format_type}. "
-            f"Supported formats: {', '.join(formatters.keys())}"
+            f"Supported formats: table, {', '.join(formatters.keys())}"
         )
 
     return formatter_class()
@@ -489,6 +522,7 @@ def output_data(
     data: BaseModel,
     format_type: str = "table",
     output_file: str = "",
+    status_colors: dict[str, str] | None = None,
 ) -> None:
     """Convenience function to format and output data.
 
@@ -496,10 +530,16 @@ def output_data(
         data: Data to output
         format_type: Output format (table, json, csv, parquet)
         output_file: Optional output file path
+        status_colors: Optional status-color overrides for table output.
+            Merged on top of the module-level defaults so callers only need
+            to supply the values they want to change. For example,
+            ``{"deleted": "green", "not_found": "yellow"}`` turns the
+            ``"deleted"`` status green in a bulk-delete result table without
+            affecting other commands.
 
     Example:
         >>> output_data(df, format_type="json", output_file="data.json")
         >>> output_data(df, format_type="table")
     """
-    formatter = get_formatter(format_type)
+    formatter = get_formatter(format_type, status_colors=status_colors)
     formatter.format(data, output_file)

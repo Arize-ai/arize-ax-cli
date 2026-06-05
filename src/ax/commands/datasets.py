@@ -557,7 +557,7 @@ def update_dataset(
     try:
         with spinner(
             "Updating dataset",
-            success_msg=f"Dataset renamed to '{new_name}'",
+            success_msg="Dataset updated successfully",
         ):
             dataset = client.datasets.update(
                 dataset=name_or_id,
@@ -565,7 +565,7 @@ def update_dataset(
                 name=new_name,
             )
     except Exception as e:
-        raise APIError(f"Failed to rename dataset: {e}") from e
+        raise APIError(f"Failed to update dataset: {e}") from e
     else:
         output_data(
             dataset,

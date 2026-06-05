@@ -464,3 +464,69 @@ class TestRemoveUserFromOrganization:
             mock_client,
         )
         assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax organizations delete
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDeleteOrganization:
+    """Tests for `ax organizations delete <org>`."""
+
+    def test_delete_force_skips_confirmation(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--force should bypass the confirmation prompt and call the SDK."""
+        mock_client.organizations.delete.return_value = None
+        result = _invoke(
+            ["organizations", "delete", _ORG_ID, "--force"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.organizations.delete.assert_called_once_with(
+            organization=_ORG_ID
+        )
+
+    def test_delete_confirms_yes_calls_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Confirming the prompt should proceed with deletion."""
+        mock_client.organizations.delete.return_value = None
+        result = _invoke(
+            ["organizations", "delete", _ORG_ID],
+            mock_config,
+            mock_client,
+            cli_input="y\n",
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.organizations.delete.assert_called_once_with(
+            organization=_ORG_ID
+        )
+
+    def test_delete_declines_does_not_call_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Declining the confirmation prompt should abort the deletion."""
+        result = _invoke(
+            ["organizations", "delete", _ORG_ID],
+            mock_config,
+            mock_client,
+            cli_input="n\n",
+        )
+        assert result.exit_code == 0
+        mock_client.organizations.delete.assert_not_called()
+
+    def test_delete_sdk_error_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """SDK error should cause the command to exit non-zero."""
+        mock_client.organizations.delete.side_effect = RuntimeError("Not found")
+        result = _invoke(
+            ["organizations", "delete", _ORG_ID, "--force"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0

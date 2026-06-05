@@ -535,8 +535,8 @@ class TestAnnotateSpans:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """--file - reads annotations from stdin and calls annotate_spans."""
-        mock_client.spans.annotate_spans.return_value = None
+        """--file - reads annotations from stdin and calls annotate."""
+        mock_client.spans.annotate.return_value = None
 
         result = cli_runner.invoke(
             app,
@@ -544,8 +544,8 @@ class TestAnnotateSpans:
             input=_ANNOTATIONS_JSON,
         )
         assert result.exit_code == 0, result.output
-        mock_client.spans.annotate_spans.assert_called_once()
-        call_kwargs = mock_client.spans.annotate_spans.call_args.kwargs
+        mock_client.spans.annotate.assert_called_once()
+        call_kwargs = mock_client.spans.annotate.call_args.kwargs
         assert call_kwargs["project"] == "my-project"
         assert len(call_kwargs["annotations"]) == 1
         assert call_kwargs["annotations"][0].record_id == "span-1"
@@ -557,8 +557,8 @@ class TestAnnotateSpans:
         patch_config_and_client: tuple[MagicMock, MagicMock],
         tmp_path: Path,
     ) -> None:
-        """--file with a valid JSON file calls client.spans.annotate_spans."""
-        mock_client.spans.annotate_spans.return_value = None
+        """--file with a valid JSON file calls client.spans.annotate."""
+        mock_client.spans.annotate.return_value = None
         json_file = tmp_path / "annotations.json"
         json_file.write_text(_ANNOTATIONS_JSON)
 
@@ -567,7 +567,7 @@ class TestAnnotateSpans:
             ["annotate", "my-project", "--file", str(json_file)],
         )
         assert result.exit_code == 0, result.output
-        mock_client.spans.annotate_spans.assert_called_once()
+        mock_client.spans.annotate.assert_called_once()
 
     def test_annotate_with_space(
         self,
@@ -576,7 +576,7 @@ class TestAnnotateSpans:
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
         """--space is forwarded to the SDK."""
-        mock_client.spans.annotate_spans.return_value = None
+        mock_client.spans.annotate.return_value = None
 
         result = cli_runner.invoke(
             app,
@@ -591,7 +591,7 @@ class TestAnnotateSpans:
             input=_ANNOTATIONS_JSON,
         )
         assert result.exit_code == 0, result.output
-        call_kwargs = mock_client.spans.annotate_spans.call_args.kwargs
+        call_kwargs = mock_client.spans.annotate.call_args.kwargs
         assert call_kwargs["space"] == "my-space"
 
     def test_annotate_with_start_and_end_time(
@@ -601,7 +601,7 @@ class TestAnnotateSpans:
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
         """--start-time and --end-time are parsed and forwarded."""
-        mock_client.spans.annotate_spans.return_value = None
+        mock_client.spans.annotate.return_value = None
 
         result = cli_runner.invoke(
             app,
@@ -618,7 +618,7 @@ class TestAnnotateSpans:
             input=_ANNOTATIONS_JSON,
         )
         assert result.exit_code == 0, result.output
-        call_kwargs = mock_client.spans.annotate_spans.call_args.kwargs
+        call_kwargs = mock_client.spans.annotate.call_args.kwargs
         assert call_kwargs["start_time"] is not None
         assert call_kwargs["end_time"] is not None
 
@@ -631,7 +631,7 @@ class TestAnnotateSpans:
         """--days computes start_time relative to now; end_time stays None."""
         from datetime import datetime, timezone
 
-        mock_client.spans.annotate_spans.return_value = None
+        mock_client.spans.annotate.return_value = None
 
         result = cli_runner.invoke(
             app,
@@ -646,7 +646,7 @@ class TestAnnotateSpans:
             input=_ANNOTATIONS_JSON,
         )
         assert result.exit_code == 0, result.output
-        call_kwargs = mock_client.spans.annotate_spans.call_args.kwargs
+        call_kwargs = mock_client.spans.annotate.call_args.kwargs
         assert call_kwargs["start_time"] is not None
         # end_time is None — the SDK will default to now server-side
         assert call_kwargs["end_time"] is None
@@ -673,7 +673,7 @@ class TestAnnotateSpans:
         tmp_path: Path,
     ) -> None:
         """An SDK error results in a non-zero exit code."""
-        mock_client.spans.annotate_spans.side_effect = RuntimeError("API error")
+        mock_client.spans.annotate.side_effect = RuntimeError("API error")
         json_file = tmp_path / "annotations.json"
         json_file.write_text(_ANNOTATIONS_JSON)
 
@@ -690,7 +690,7 @@ class TestAnnotateSpans:
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
         """A success message is shown after annotating."""
-        mock_client.spans.annotate_spans.return_value = None
+        mock_client.spans.annotate.return_value = None
 
         result = cli_runner.invoke(
             app,
@@ -699,3 +699,175 @@ class TestAnnotateSpans:
         )
         assert result.exit_code == 0, result.output
         assert "span" in result.output.lower()
+
+
+@pytest.mark.unit
+class TestDeleteSpans:
+    """Tests for 'ax spans delete' command."""
+
+    def test_delete_command_registered(self) -> None:
+        """Test that 'delete' subcommand is registered."""
+        names = [cmd.name for cmd in app.registered_commands]
+        assert "delete" in names
+
+    def test_delete_requires_span_id(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Omitting --span-id exits with code 1."""
+        result = cli_runner.invoke(
+            app,
+            ["delete", "my-project", "--force"],
+        )
+        assert result.exit_code == 1
+
+    def test_delete_with_force_skips_confirmation(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--force skips the confirmation prompt."""
+        mock_client.spans.delete.return_value = None  # HTTP 204
+
+        result = cli_runner.invoke(
+            app,
+            ["delete", "my-project", "--span-id", "sp_1", "--force"],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.spans.delete.assert_called_once_with(
+            project="my-project",
+            span_ids=["sp_1"],
+            space=None,
+        )
+
+    def test_delete_multiple_span_ids(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Multiple --span-id flags are collected into a list."""
+        mock_client.spans.delete.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete",
+                "my-project",
+                "--span-id",
+                "sp_1",
+                "--span-id",
+                "sp_2",
+                "--force",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.spans.delete.assert_called_once_with(
+            project="my-project",
+            span_ids=["sp_1", "sp_2"],
+            space=None,
+        )
+
+    def test_delete_with_confirmation_yes(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Answering 'y' at confirmation prompt proceeds with deletion."""
+        mock_client.spans.delete.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            ["delete", "my-project", "--span-id", "sp_1"],
+            input="y\n",
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.spans.delete.assert_called_once()
+
+    def test_delete_with_confirmation_no(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Answering 'n' at confirmation prompt exits without deleting."""
+        result = cli_runner.invoke(
+            app,
+            ["delete", "my-project", "--span-id", "sp_1"],
+            input="n\n",
+        )
+        assert result.exit_code == 0
+        mock_client.spans.delete.assert_not_called()
+
+    def test_delete_partial_response_shows_warning(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """HTTP 200 partial response surfaces a warning."""
+        partial = MagicMock()
+        partial.deleted_span_ids = ["sp_1"]
+        mock_client.spans.delete.return_value = partial
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete",
+                "my-project",
+                "--span-id",
+                "sp_1",
+                "--span-id",
+                "sp_2",
+                "--force",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert "partial" in result.output.lower()
+
+    def test_delete_with_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--space is forwarded to the SDK."""
+        mock_client.spans.delete.return_value = None
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete",
+                "my-project",
+                "--span-id",
+                "sp_1",
+                "--space",
+                "sp_abc",
+                "--force",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.spans.delete.assert_called_once_with(
+            project="my-project",
+            span_ids=["sp_1"],
+            space="sp_abc",
+        )
+
+    def test_delete_sdk_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """SDK exception surfaces as a non-zero exit code."""
+        mock_client.spans.delete.side_effect = RuntimeError("server error")
+
+        result = cli_runner.invoke(
+            app,
+            ["delete", "my-project", "--span-id", "sp_1", "--force"],
+        )
+        assert result.exit_code != 0

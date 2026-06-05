@@ -507,6 +507,164 @@ class TestCreatePrompt:
         )
         assert result.exit_code != 0
 
+    def test_create_with_invocation_params(
+        self,
+        mock_config: MagicMock,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that --invocation-params JSON is parsed and forwarded to the SDK."""
+        messages_file = tmp_path / "messages.json"
+        messages_file.write_text(
+            json.dumps([{"role": "user", "content": "Hello"}])
+        )
+        mock_client.prompts.create.return_value = _make_prompt_with_version()
+
+        result = _invoke(
+            [
+                "prompts",
+                "create",
+                "--name",
+                "P",
+                "--space",
+                "sp_abc",
+                "--provider",
+                "open_ai",
+                "--input-variable-format",
+                "f_string",
+                "--messages",
+                str(messages_file),
+                "--commit-message",
+                "Init",
+                "--invocation-params",
+                '{"temperature": 0.7, "max_tokens": 100}',
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.prompts.create.call_args.kwargs
+        assert call_kwargs["invocation_params"] is not None
+        assert call_kwargs["invocation_params"].temperature == 0.7
+        assert call_kwargs["invocation_params"].max_tokens == 100
+
+    def test_create_with_invocation_params_array_exits_nonzero(
+        self,
+        mock_config: MagicMock,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that a JSON array for --invocation-params exits non-zero."""
+        messages_file = tmp_path / "messages.json"
+        messages_file.write_text(
+            json.dumps([{"role": "user", "content": "Hello"}])
+        )
+
+        result = _invoke(
+            [
+                "prompts",
+                "create",
+                "--name",
+                "P",
+                "--space",
+                "sp_abc",
+                "--provider",
+                "open_ai",
+                "--input-variable-format",
+                "f_string",
+                "--messages",
+                str(messages_file),
+                "--commit-message",
+                "Init",
+                "--invocation-params",
+                '[{"temperature": 0.7}]',
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code != 0
+        mock_client.prompts.create.assert_not_called()
+
+    def test_create_with_provider_params(
+        self,
+        mock_config: MagicMock,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that --provider-params JSON is parsed and forwarded to the SDK."""
+        messages_file = tmp_path / "messages.json"
+        messages_file.write_text(
+            json.dumps([{"role": "user", "content": "Hello"}])
+        )
+        mock_client.prompts.create.return_value = _make_prompt_with_version()
+
+        result = _invoke(
+            [
+                "prompts",
+                "create",
+                "--name",
+                "P",
+                "--space",
+                "sp_abc",
+                "--provider",
+                "open_ai",
+                "--input-variable-format",
+                "f_string",
+                "--messages",
+                str(messages_file),
+                "--commit-message",
+                "Init",
+                "--provider-params",
+                "{}",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.prompts.create.call_args.kwargs
+        assert call_kwargs["provider_params"] is not None
+
+    def test_create_without_invocation_params_passes_none(
+        self,
+        mock_config: MagicMock,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that omitting --invocation-params passes None to the SDK."""
+        messages_file = tmp_path / "messages.json"
+        messages_file.write_text(
+            json.dumps([{"role": "user", "content": "Hello"}])
+        )
+        mock_client.prompts.create.return_value = _make_prompt_with_version()
+
+        _invoke(
+            [
+                "prompts",
+                "create",
+                "--name",
+                "P",
+                "--space",
+                "sp_abc",
+                "--provider",
+                "open_ai",
+                "--input-variable-format",
+                "f_string",
+                "--messages",
+                str(messages_file),
+                "--commit-message",
+                "Init",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        call_kwargs = mock_client.prompts.create.call_args.kwargs
+        assert call_kwargs["invocation_params"] is None
+        assert call_kwargs["provider_params"] is None
+
 
 # ---------------------------------------------------------------------------
 # ax prompts update
@@ -783,6 +941,114 @@ class TestCreateVersion:
         )
         assert result.exit_code != 0
 
+    def test_create_version_with_invocation_params(
+        self,
+        mock_config: MagicMock,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that --invocation-params is parsed and forwarded to the SDK."""
+        messages_file = tmp_path / "messages.json"
+        messages_file.write_text(
+            json.dumps([{"role": "user", "content": "Hello"}])
+        )
+        mock_client.prompts.create_version.return_value = _make_prompt_version()
+
+        result = _invoke(
+            [
+                "prompts",
+                "create-version",
+                _PROMPT_ID,
+                "--provider",
+                "open_ai",
+                "--input-variable-format",
+                "f_string",
+                "--messages",
+                str(messages_file),
+                "--commit-message",
+                "v2",
+                "--invocation-params",
+                '{"temperature": 0.5}',
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.prompts.create_version.call_args.kwargs
+        assert call_kwargs["invocation_params"] is not None
+        assert call_kwargs["invocation_params"].temperature == 0.5
+
+    def test_create_version_invocation_params_array_exits_nonzero(
+        self,
+        mock_config: MagicMock,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that a JSON array for --invocation-params exits non-zero."""
+        messages_file = tmp_path / "messages.json"
+        messages_file.write_text(
+            json.dumps([{"role": "user", "content": "Hello"}])
+        )
+
+        result = _invoke(
+            [
+                "prompts",
+                "create-version",
+                _PROMPT_ID,
+                "--provider",
+                "open_ai",
+                "--input-variable-format",
+                "f_string",
+                "--messages",
+                str(messages_file),
+                "--commit-message",
+                "v2",
+                "--invocation-params",
+                '[{"temperature": 0.5}]',
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code != 0
+        mock_client.prompts.create_version.assert_not_called()
+
+    def test_create_version_without_invocation_params_passes_none(
+        self,
+        mock_config: MagicMock,
+        mock_client: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test that omitting --invocation-params passes None to the SDK."""
+        messages_file = tmp_path / "messages.json"
+        messages_file.write_text(
+            json.dumps([{"role": "user", "content": "Hello"}])
+        )
+        mock_client.prompts.create_version.return_value = _make_prompt_version()
+
+        _invoke(
+            [
+                "prompts",
+                "create-version",
+                _PROMPT_ID,
+                "--provider",
+                "open_ai",
+                "--input-variable-format",
+                "f_string",
+                "--messages",
+                str(messages_file),
+                "--commit-message",
+                "v2",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        call_kwargs = mock_client.prompts.create_version.call_args.kwargs
+        assert call_kwargs["invocation_params"] is None
+        assert call_kwargs["provider_params"] is None
+
 
 # ---------------------------------------------------------------------------
 # ax prompts get-version-by-label
@@ -796,7 +1062,9 @@ class TestGetVersionByLabel:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that get-version-by-label forwards prompt_id and label_name."""
-        mock_client.prompts.get_label.return_value = _make_prompt_version()
+        mock_client.prompts.get_version_by_label.return_value = (
+            _make_prompt_version()
+        )
 
         _invoke(
             [
@@ -810,7 +1078,7 @@ class TestGetVersionByLabel:
             mock_client,
         )
 
-        mock_client.prompts.get_label.assert_called_once_with(
+        mock_client.prompts.get_version_by_label.assert_called_once_with(
             prompt=_PROMPT_ID,
             space=None,
             label_name="production",
@@ -820,7 +1088,9 @@ class TestGetVersionByLabel:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that an SDK error causes a non-zero exit."""
-        mock_client.prompts.get_label.side_effect = RuntimeError("Not found")
+        mock_client.prompts.get_version_by_label.side_effect = RuntimeError(
+            "Not found"
+        )
         result = _invoke(
             [
                 "prompts",

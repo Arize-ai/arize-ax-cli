@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from arize.users.types import BulkUserDeletionResult, DeletionStatus
 from typer.testing import CliRunner, Result
 
 from ax.cli import app
@@ -359,61 +360,177 @@ class TestUpdateUser:
 # ---------------------------------------------------------------------------
 
 
+def _make_deletion_result(
+    user_id: str = "user_1",
+    status_value: str = "deleted",
+    error: str | None = None,
+) -> BulkUserDeletionResult:
+    """Build a BulkUserDeletionResult."""
+    return BulkUserDeletionResult(
+        user_id=user_id,
+        status=DeletionStatus(status_value),
+        error=error,
+    )
+
+
 @pytest.mark.unit
 class TestDeleteUser:
-    """Tests for `ax users delete <user_id>`."""
+    """Tests for `ax users delete` (merged single/bulk delete command)."""
 
     def test_delete_force_skips_confirmation(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """--force should bypass the confirmation prompt."""
-        mock_client.users.delete.return_value = None
+        mock_client.users.bulk_delete.return_value = [
+            _make_deletion_result(_USER_ID, "deleted"),
+        ]
         result = _invoke(
-            ["users", "delete", _USER_ID, "--force"],
+            ["users", "delete", "--id", _USER_ID, "--force"],
             mock_config,
             mock_client,
         )
         assert result.exit_code == 0, result.output
-        mock_client.users.delete.assert_called_once_with(user_id=_USER_ID)
+        mock_client.users.bulk_delete.assert_called_once_with(
+            user_ids=[_USER_ID], emails=None
+        )
 
     def test_delete_with_confirmation_yes(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Confirming the prompt should proceed with deletion."""
-        mock_client.users.delete.return_value = None
+        mock_client.users.bulk_delete.return_value = [
+            _make_deletion_result(_USER_ID, "deleted"),
+        ]
         result = _invoke(
-            ["users", "delete", _USER_ID],
+            ["users", "delete", "--id", _USER_ID],
             mock_config,
             mock_client,
             cli_input="y\n",
         )
         assert result.exit_code == 0, result.output
-        mock_client.users.delete.assert_called_once_with(user_id=_USER_ID)
+        mock_client.users.bulk_delete.assert_called_once()
 
     def test_delete_with_confirmation_no(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Declining the confirmation prompt should abort the deletion."""
         result = _invoke(
-            ["users", "delete", _USER_ID],
+            ["users", "delete", "--id", _USER_ID],
             mock_config,
             mock_client,
             cli_input="n\n",
         )
         assert result.exit_code == 0
-        mock_client.users.delete.assert_not_called()
+        mock_client.users.bulk_delete.assert_not_called()
+
+    def test_delete_requires_at_least_one_identifier(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Omitting both --id and --email exits non-zero."""
+        result = _invoke(
+            ["users", "delete", "--force"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.users.bulk_delete.assert_not_called()
 
     def test_delete_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """SDK error on delete should cause the command to exit non-zero."""
-        mock_client.users.delete.side_effect = RuntimeError("Not found")
+        mock_client.users.bulk_delete.side_effect = RuntimeError("Not found")
         result = _invoke(
-            ["users", "delete", _USER_ID, "--force"],
+            ["users", "delete", "--id", _USER_ID, "--force"],
             mock_config,
             mock_client,
         )
         assert result.exit_code != 0
+
+    def test_delete_by_ids_comma_separated(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Comma-separated --id values should be expanded to individual IDs."""
+        mock_client.users.bulk_delete.return_value = [
+            _make_deletion_result("user_1", "deleted"),
+            _make_deletion_result("user_2", "deleted"),
+        ]
+        result = _invoke(
+            ["users", "delete", "--id", "user_1,user_2", "--force"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.users.bulk_delete.assert_called_once_with(
+            user_ids=["user_1", "user_2"], emails=None
+        )
+
+    def test_delete_by_email(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--email flags are forwarded to the SDK."""
+        mock_client.users.bulk_delete.return_value = [
+            _make_deletion_result("user_1", "deleted"),
+        ]
+        result = _invoke(
+            ["users", "delete", "--email", "alice@example.com", "--force"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.users.bulk_delete.assert_called_once_with(
+            user_ids=None, emails=["alice@example.com"]
+        )
+
+    def test_delete_mixed_results_exits_zero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Mixed deleted/failed/not_found results still exits 0 (non-fatal)."""
+        mock_client.users.bulk_delete.return_value = [
+            _make_deletion_result("user_1", "deleted"),
+            _make_deletion_result("user_2", "failed", "Permission denied"),
+            _make_deletion_result("user_3", "not_found"),
+        ]
+        result = _invoke(
+            [
+                "users",
+                "delete",
+                "--id",
+                "user_1",
+                "--id",
+                "user_2",
+                "--id",
+                "user_3",
+                "--force",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code == 0, result.output
+
+    def test_delete_json_output(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--output json produces output containing id and status fields."""
+        mock_client.users.bulk_delete.return_value = [
+            _make_deletion_result("user_1", "deleted"),
+        ]
+        result = _invoke(
+            [
+                "users",
+                "delete",
+                "--id",
+                "user_1",
+                "--force",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code == 0, result.output
+        assert '"user_1"' in result.output
+        assert '"deleted"' in result.output
 
 
 # ---------------------------------------------------------------------------

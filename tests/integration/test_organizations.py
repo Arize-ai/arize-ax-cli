@@ -69,3 +69,15 @@ class TestOrganizationsGet:
         """Get with an unknown name should exit non-zero."""
         result = ax("organizations", "get", "nonexistent-org-xyz-12345")
         assert result.returncode != 0
+
+
+class TestOrganizationsDelete:
+    """ax organizations delete — error and abort tests."""
+
+    @pytest.mark.integration
+    def test_delete_nonexistent_exits_nonzero(self, api_key: str) -> None:
+        """Delete with an unknown ID should exit non-zero."""
+        result = ax(
+            "organizations", "delete", "nonexistent-org-xyz-12345", "--force"
+        )
+        assert result.returncode != 0

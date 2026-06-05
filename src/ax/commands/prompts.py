@@ -3,7 +3,13 @@
 from typing import Annotated, Any
 
 import typer
-from arize.prompts.types import InputVariableFormat, LLMMessage, LlmProvider
+from arize.prompts.types import (
+    InputVariableFormat,
+    InvocationParams,
+    LLMMessage,
+    LlmProvider,
+    ProviderParams,
+)
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
@@ -283,6 +289,26 @@ def create_prompt(
             help="Default model name for this version",
         ),
     ] = None,
+    invocation_params: Annotated[
+        str | None,
+        typer.Option(
+            "--invocation-params",
+            help=(
+                "JSON file path or inline JSON with invocation parameters "
+                "(e.g. temperature, max_tokens, top_p, stop)"
+            ),
+        ),
+    ] = None,
+    provider_params: Annotated[
+        str | None,
+        typer.Option(
+            "--provider-params",
+            help=(
+                "JSON file path or inline JSON with provider-specific parameters "
+                "(e.g. azure deployment name, Bedrock region)"
+            ),
+        ),
+    ] = None,
     output: Annotated[
         str,
         typer.Option(
@@ -319,6 +345,32 @@ def create_prompt(
     """
     parsed_messages = _build_llm_messages(load_json(messages))
 
+    parsed_invocation_params: InvocationParams | None = None
+    if invocation_params is not None:
+        _raw_inv = load_json(invocation_params)
+        if not isinstance(_raw_inv, dict):
+            raise typer.BadParameter(
+                "--invocation-params must be a JSON object."
+            )
+        try:
+            parsed_invocation_params = InvocationParams.from_dict(_raw_inv)
+        except Exception as exc:
+            raise typer.BadParameter(
+                f"Failed to parse --invocation-params: {exc}"
+            ) from exc
+
+    parsed_provider_params: ProviderParams | None = None
+    if provider_params is not None:
+        _raw_prov = load_json(provider_params)
+        if not isinstance(_raw_prov, dict):
+            raise typer.BadParameter("--provider-params must be a JSON object.")
+        try:
+            parsed_provider_params = ProviderParams.from_dict(_raw_prov)
+        except Exception as exc:
+            raise typer.BadParameter(
+                f"Failed to parse --provider-params: {exc}"
+            ) from exc
+
     setup_logging(verbose)
     client, config = make_client()
 
@@ -339,6 +391,8 @@ def create_prompt(
                 messages=parsed_messages,
                 description=description,
                 model=model,
+                invocation_params=parsed_invocation_params,
+                provider_params=parsed_provider_params,
             )
     except Exception as e:
         raise APIError(f"Failed to create prompt: {e}") from e
@@ -617,6 +671,26 @@ def create_version(
             help="Default model name for this version",
         ),
     ] = None,
+    invocation_params: Annotated[
+        str | None,
+        typer.Option(
+            "--invocation-params",
+            help=(
+                "JSON file path or inline JSON with invocation parameters "
+                "(e.g. temperature, max_tokens, top_p, stop)"
+            ),
+        ),
+    ] = None,
+    provider_params: Annotated[
+        str | None,
+        typer.Option(
+            "--provider-params",
+            help=(
+                "JSON file path or inline JSON with provider-specific parameters "
+                "(e.g. azure deployment name, Bedrock region)"
+            ),
+        ),
+    ] = None,
     output: Annotated[
         str,
         typer.Option(
@@ -646,6 +720,32 @@ def create_version(
     """
     parsed_messages = _build_llm_messages(load_json(messages))
 
+    parsed_invocation_params: InvocationParams | None = None
+    if invocation_params is not None:
+        _raw_inv = load_json(invocation_params)
+        if not isinstance(_raw_inv, dict):
+            raise typer.BadParameter(
+                "--invocation-params must be a JSON object."
+            )
+        try:
+            parsed_invocation_params = InvocationParams.from_dict(_raw_inv)
+        except Exception as exc:
+            raise typer.BadParameter(
+                f"Failed to parse --invocation-params: {exc}"
+            ) from exc
+
+    parsed_provider_params: ProviderParams | None = None
+    if provider_params is not None:
+        _raw_prov = load_json(provider_params)
+        if not isinstance(_raw_prov, dict):
+            raise typer.BadParameter("--provider-params must be a JSON object.")
+        try:
+            parsed_provider_params = ProviderParams.from_dict(_raw_prov)
+        except Exception as exc:
+            raise typer.BadParameter(
+                f"Failed to parse --provider-params: {exc}"
+            ) from exc
+
     setup_logging(verbose)
     client, config = make_client()
 
@@ -666,6 +766,8 @@ def create_version(
                 provider=provider,
                 messages=parsed_messages,
                 model=model,
+                invocation_params=parsed_invocation_params,
+                provider_params=parsed_provider_params,
             )
     except Exception as e:
         raise APIError(f"Failed to create prompt version: {e}") from e
@@ -726,7 +828,7 @@ def get_version_by_label(
 
     try:
         with spinner("Fetching prompt version by label"):
-            version = client.prompts.get_label(
+            version = client.prompts.get_version_by_label(
                 prompt=name_or_id,
                 space=space,
                 label_name=label,

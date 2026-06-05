@@ -288,3 +288,90 @@ class TestExperimentsAnnotateRuns:
             "nonexistent-experiment-id",
         )
         assert result.returncode != 0
+
+
+class TestExperimentsListRuns:
+    """ax experiments list-runs — smoke tests."""
+
+    def _make_runs_file(self, tmp_dir: str) -> str:
+        """Write a minimal experiment runs JSON file and return its path."""
+        runs = [{"example_id": "ex-1", "output": "answer A"}]
+        path = Path(tmp_dir) / "runs.json"
+        path.write_text(json.dumps(runs))
+        return str(path)
+
+    @pytest.mark.integration
+    def test_list_runs_nonexistent_exits_nonzero(self) -> None:
+        """``ax experiments list-runs`` with a bogus ID should exit non-zero."""
+        result = ax("experiments", "list-runs", "nonexistent-exp-id-xyz-12345")
+        assert result.returncode != 0
+
+    @pytest.mark.integration
+    def test_list_runs_on_created_experiment(self, test_space_id: str) -> None:
+        """Create a dataset + experiment, list-runs, verify structure, then clean up."""
+        ds_name = f"ax-cli-lr-ds-{uuid.uuid4().hex[:8]}"
+        exp_name = f"ax-cli-lr-exp-{uuid.uuid4().hex[:8]}"
+        examples = json.dumps([{"question": "Q1", "answer": "A1"}])
+
+        create_ds = ax(
+            "datasets",
+            "create",
+            "--name",
+            ds_name,
+            "--space",
+            test_space_id,
+            "--json",
+            examples,
+            "--output",
+            "json",
+        )
+        assert create_ds.returncode == 0, (
+            f"Dataset create failed:\n{create_ds.stderr}"
+        )
+        dataset_id = json.loads(create_ds.stdout).get("id") or json.loads(
+            create_ds.stdout
+        ).get("dataset_id")
+        assert dataset_id
+
+        experiment_id: str | None = None
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                runs_file = self._make_runs_file(tmp)
+                create_exp = ax(
+                    "experiments",
+                    "create",
+                    "--name",
+                    exp_name,
+                    "--dataset",
+                    dataset_id,
+                    "--file",
+                    runs_file,
+                    "--output",
+                    "json",
+                )
+            assert create_exp.returncode == 0, (
+                f"Experiment create failed:\n{create_exp.stderr}"
+            )
+            experiment_id = json.loads(create_exp.stdout).get("id")
+            assert experiment_id
+
+            data = ax_json(
+                "experiments",
+                "list-runs",
+                experiment_id,
+                "--output",
+                "json",
+            )
+            assert "experiment_runs" in data
+
+        finally:
+            if experiment_id:
+                ax("experiments", "delete", experiment_id, "--force")
+            ax(
+                "datasets",
+                "delete",
+                dataset_id,
+                "--space",
+                test_space_id,
+                "--force",
+            )

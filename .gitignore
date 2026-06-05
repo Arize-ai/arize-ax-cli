@@ -82,4 +82,8 @@ Thumbs.db
 # Project specific
 *.log
 .env
+.envrcdataset_*/
+
 .envrc
+# Dataset export artifacts from ax-cli pytest
+dataset_*/

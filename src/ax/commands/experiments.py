@@ -512,3 +512,82 @@ def annotate_runs(
         raise
     except Exception as e:
         raise APIError(f"Failed to annotate experiment runs: {e}") from e
+
+
+@app.command("list-runs")
+@handle_errors
+def list_runs(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Experiment name or ID"),
+    ],
+    dataset: Annotated[
+        str | None,
+        typer.Option(
+            "--dataset",
+            help="Dataset name or ID (required to resolve experiment by name)",
+        ),
+    ] = None,
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required when dataset is a name)",
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            "-l",
+            help="Maximum number of runs to return",
+        ),
+    ] = 15,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """List runs for an experiment (paginated table view).
+
+    For bulk export of all runs, use ``ax experiments export`` instead.
+    """
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner("Fetching experiment runs"):
+            response = client.experiments.list_runs(
+                experiment=name_or_id,
+                dataset=dataset,
+                space=space,
+                limit=limit,
+                all=False,
+            )
+    except AxError:
+        raise
+    except Exception as e:
+        raise APIError(f"Failed to list experiment runs: {e}") from e
+    else:
+        output_data(
+            response,
+            format_type=output_format,
+            output_file=output_file,
+        )

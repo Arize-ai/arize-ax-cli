@@ -310,6 +310,7 @@ class TestCreateAnnotationQueue:
             annotator_emails=["a@example.com"],
             instructions="Be thorough",
             assignment_method=AssignmentMethod("random"),
+            record_sources=None,
         )
 
     def test_create_without_annotation_config_id_exits_nonzero(
@@ -925,6 +926,212 @@ class TestAssignRecord:
         )
         result = _invoke(
             ["annotation-queues", "assign-record", "aq_1", "rec_999"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax annotation-queues create --record-sources
+# ---------------------------------------------------------------------------
+
+
+class TestCreateAnnotationQueueWithRecordSources:
+    """Tests for the --record-sources option of `ax annotation-queues create`."""
+
+    def test_create_with_record_sources_forwarded_to_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--record-sources JSON is parsed and forwarded to the SDK."""
+        mock_client.annotation_queues.create.return_value = _make_queue()
+
+        sources_json = '[{"record_type": "example", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
+        _invoke(
+            [
+                "annotation-queues",
+                "create",
+                "--name",
+                "Q",
+                "--space",
+                "sp_abc",
+                "--annotation-config-id",
+                "ac_1",
+                "--annotator-email",
+                "user@example.com",
+                "--record-sources",
+                sources_json,
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        call_kwargs = mock_client.annotation_queues.create.call_args.kwargs
+        assert call_kwargs["record_sources"] == [
+            {
+                "record_type": "example",
+                "dataset_id": "ds-1",
+                "example_ids": ["ex-1"],
+            }
+        ]
+
+    def test_create_with_invalid_record_sources_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Invalid JSON for --record-sources exits non-zero."""
+        result = _invoke(
+            [
+                "annotation-queues",
+                "create",
+                "--name",
+                "Q",
+                "--space",
+                "sp_abc",
+                "--annotation-config-id",
+                "ac_1",
+                "--annotator-email",
+                "user@example.com",
+                "--record-sources",
+                "not-valid-json",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# ax annotation-queues add-records
+# ---------------------------------------------------------------------------
+
+
+class TestAddRecords:
+    """Tests for `ax annotation-queues add-records <id>`."""
+
+    def test_add_records_calls_sdk_with_parsed_sources(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Inline JSON --record-sources is parsed and forwarded to the SDK."""
+        mock_client.annotation_queues.add_records.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"records": []})
+        )
+
+        sources_json = '[{"record_type": "example", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
+        result = _invoke(
+            [
+                "annotation-queues",
+                "add-records",
+                "aq_1",
+                "--record-sources",
+                sources_json,
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.annotation_queues.add_records.assert_called_once_with(
+            annotation_queue="aq_1",
+            space=None,
+            record_sources=[
+                {
+                    "record_type": "example",
+                    "dataset_id": "ds-1",
+                    "example_ids": ["ex-1"],
+                }
+            ],
+        )
+
+    def test_add_records_with_space_forwarded(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--space is forwarded to the SDK."""
+        mock_client.annotation_queues.add_records.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"records": []})
+        )
+
+        sources_json = '[{"record_type": "example", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
+        _invoke(
+            [
+                "annotation-queues",
+                "add-records",
+                "aq_1",
+                "--record-sources",
+                sources_json,
+                "--space",
+                "sp_abc",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        call_kwargs = mock_client.annotation_queues.add_records.call_args.kwargs
+        assert call_kwargs["space"] == "sp_abc"
+
+    def test_add_records_invalid_json_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Non-JSON --record-sources exits non-zero without calling the SDK."""
+        result = _invoke(
+            [
+                "annotation-queues",
+                "add-records",
+                "aq_1",
+                "--record-sources",
+                "not-valid-json",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.annotation_queues.add_records.assert_not_called()
+
+    def test_add_records_object_instead_of_array_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """A JSON object (not array) for --record-sources exits non-zero."""
+        result = _invoke(
+            [
+                "annotation-queues",
+                "add-records",
+                "aq_1",
+                "--record-sources",
+                '{"record_type": "example"}',
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.annotation_queues.add_records.assert_not_called()
+
+    def test_add_records_missing_record_sources_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Omitting --record-sources (required) exits non-zero."""
+        result = _invoke(
+            ["annotation-queues", "add-records", "aq_1"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.annotation_queues.add_records.assert_not_called()
+
+    def test_add_records_sdk_error_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """SDK error causes the command to exit non-zero."""
+        mock_client.annotation_queues.add_records.side_effect = RuntimeError(
+            "Server error"
+        )
+        sources_json = '[{"record_type": "example", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
+        result = _invoke(
+            [
+                "annotation-queues",
+                "add-records",
+                "aq_1",
+                "--record-sources",
+                sources_json,
+            ],
             mock_config,
             mock_client,
         )

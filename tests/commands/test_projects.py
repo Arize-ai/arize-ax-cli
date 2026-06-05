@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock
 
+import pytest
 from typer.testing import CliRunner
 
 from ax.commands.projects import app
@@ -11,9 +12,9 @@ class TestProjectCommands:
     """Verify project subcommands are registered with the correct names."""
 
     def test_expected_commands_registered(self) -> None:
-        """Check that list, get, create, delete subcommands exist."""
+        """Check that list, get, create, delete, update subcommands exist."""
         names = [cmd.name for cmd in app.registered_commands]
-        for expected in ("list", "get", "create", "delete"):
+        for expected in ("list", "get", "create", "delete", "update"):
             assert expected in names
 
 
@@ -252,3 +253,129 @@ class TestDeleteProject:
         mock_client.projects.delete.side_effect = Exception("not found")
         result = cli_runner.invoke(app, ["delete", "p-1", "--force"])
         assert result.exit_code != 0
+
+
+class TestUpdateProject:
+    """Tests for the 'ax projects update' command."""
+
+    @pytest.mark.parametrize(
+        "args,expected_kwargs",
+        [
+            (
+                ["update", "p-1", "--name", "new-name"],
+                {"project": "p-1", "space": None, "name": "new-name"},
+            ),
+            (
+                [
+                    "update",
+                    "my-project",
+                    "--space",
+                    "space-abc",
+                    "--name",
+                    "new-name",
+                ],
+                {
+                    "project": "my-project",
+                    "space": "space-abc",
+                    "name": "new-name",
+                },
+            ),
+            (
+                ["update", "my-project", "-s", "space-abc", "-n", "new-name"],
+                {
+                    "project": "my-project",
+                    "space": "space-abc",
+                    "name": "new-name",
+                },
+            ),
+        ],
+    )
+    def test_update_sdk_call(
+        self,
+        args: list[str],
+        expected_kwargs: dict,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify SDK is called with correct args (by ID, by name+space, short flags)."""
+        mock_client.projects.update.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "p-1", "name": "new-name"})
+        )
+
+        result = cli_runner.invoke(app, args)
+        assert result.exit_code == 0
+        mock_client.projects.update.assert_called_once_with(**expected_kwargs)
+
+    def test_update_name_prompt_when_omitted(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Omitting --name triggers an interactive prompt."""
+        mock_client.projects.update.return_value = MagicMock(
+            model_dump=MagicMock(
+                return_value={"id": "p-1", "name": "prompted-name"}
+            )
+        )
+
+        result = cli_runner.invoke(
+            app, ["update", "p-1"], input="prompted-name\n"
+        )
+        assert result.exit_code == 0
+        mock_client.projects.update.assert_called_once_with(
+            project="p-1", space=None, name="prompted-name"
+        )
+
+    def test_update_output_contains_project_data(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Success message appears in the command output after update."""
+        mock_client.projects.update.return_value = MagicMock(
+            model_dump=MagicMock(
+                return_value={"id": "p-1", "name": "renamed-project"}
+            )
+        )
+
+        result = cli_runner.invoke(
+            app, ["update", "p-1", "--name", "renamed-project"]
+        )
+        assert result.exit_code == 0
+        assert "Project updated successfully" in result.output
+
+    def test_update_missing_positional_arg_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Invoking update without the required positional arg exits non-zero."""
+        result = cli_runner.invoke(app, ["update", "--name", "new-name"])
+        assert result.exit_code != 0
+        mock_client.projects.update.assert_not_called()
+
+    def test_update_sdk_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """API failure results in a non-zero exit code."""
+        mock_client.projects.update.side_effect = Exception("not found")
+        result = cli_runner.invoke(app, ["update", "p-1", "--name", "new-name"])
+        assert result.exit_code != 0
+
+    def test_update_empty_name_not_forwarded_to_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """An empty --name is rejected by the CLI before reaching the SDK."""
+        result = cli_runner.invoke(app, ["update", "p-1", "--name", ""])
+        assert result.exit_code != 0
+        mock_client.projects.update.assert_not_called()

@@ -1353,7 +1353,7 @@ class TestListRuns:
     """Tests for the 'ax tasks list-runs' command."""
 
     @pytest.mark.unit
-    def test_calls_client_tasks_list_runs(
+    def test_calls_client_task_runs_list(
         self,
         cli_runner: CliRunner,
         mock_client: MagicMock,

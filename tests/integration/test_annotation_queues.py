@@ -283,3 +283,33 @@ class TestAnnotationQueuesIntegration:
             "--force",
         )
         assert delete_result.exit_code == 0, delete_result.output
+
+    def test_add_records_invalid_json_exits_nonzero(
+        self, created_queue_id: str
+    ) -> None:
+        """add-records with invalid JSON should exit non-zero."""
+        result = _invoke(
+            "annotation-queues",
+            "add-records",
+            created_queue_id,
+            "--space",
+            TEST_SPACE,
+            "--record-sources",
+            "not-valid-json",
+        )
+        assert result.exit_code != 0
+
+    def test_add_records_non_array_json_exits_nonzero(
+        self, created_queue_id: str
+    ) -> None:
+        """add-records with a JSON object (not array) should exit non-zero."""
+        result = _invoke(
+            "annotation-queues",
+            "add-records",
+            created_queue_id,
+            "--space",
+            TEST_SPACE,
+            "--record-sources",
+            '{"record_type": "span"}',
+        )
+        assert result.exit_code != 0

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.23.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.22.0...arize-ax-cli/v0.23.0) (2026-06-05)
+
+
+### 🎁 New Features
+
+* **annotation-queues:** Add add-records command ([#73116](https://github.com/Arize-ai/arize/issues/73116)) ([5201e30](https://github.com/Arize-ai/arize/commit/5201e30dab39fe373eaa0cceb11b2c74769c933e))
+* **experiments:** Add list-runs command ([#73116](https://github.com/Arize-ai/arize/issues/73116)) ([5201e30](https://github.com/Arize-ai/arize/commit/5201e30dab39fe373eaa0cceb11b2c74769c933e))
+* **organizations:** Add delete command ([#73116](https://github.com/Arize-ai/arize/issues/73116)) ([5201e30](https://github.com/Arize-ai/arize/commit/5201e30dab39fe373eaa0cceb11b2c74769c933e))
+* **projects:** Add update command ([#73318](https://github.com/Arize-ai/arize/issues/73318)) ([8fa395a](https://github.com/Arize-ai/arize/commit/8fa395af07d713706afe24d0d34ed3f6547f26fb))
+* **prompts:** Add missing invocation & provider params ([#73116](https://github.com/Arize-ai/arize/issues/73116)) ([5201e30](https://github.com/Arize-ai/arize/commit/5201e30dab39fe373eaa0cceb11b2c74769c933e))
+* **spans:** Add delete command ([#73116](https://github.com/Arize-ai/arize/issues/73116)) ([5201e30](https://github.com/Arize-ai/arize/commit/5201e30dab39fe373eaa0cceb11b2c74769c933e))
+* **users:** Add delete command ([#73116](https://github.com/Arize-ai/arize/issues/73116)) ([5201e30](https://github.com/Arize-ai/arize/commit/5201e30dab39fe373eaa0cceb11b2c74769c933e))
+
 ## [0.22.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.21.0...arize-ax-cli/v0.22.0) (2026-05-30)
 
 
