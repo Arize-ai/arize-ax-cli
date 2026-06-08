@@ -5,7 +5,6 @@ from typing import Annotated
 import typer
 from arize.experiments.types import ExperimentTaskFieldNames
 
-from ax.auth.auth_guards import require_api_key_auth
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError, AxError
@@ -178,7 +177,6 @@ def get_experiment(
 
 
 @app.command("export")
-@require_api_key_auth("--all")
 @handle_errors
 def export_experiment(
     name_or_id: Annotated[

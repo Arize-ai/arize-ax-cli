@@ -492,6 +492,7 @@ class TestRefreshApiKey:
         mock_client.api_keys.refresh.assert_called_once_with(
             api_key_id=_KEY_ID,
             expires_at=None,
+            grace_period_seconds=None,
         )
 
     def test_refresh_displays_save_warning(
@@ -552,3 +553,39 @@ class TestRefreshApiKey:
             mock_client,
         )
         assert result.exit_code != 0
+
+    def test_refresh_passes_grace_period_seconds(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --grace-period-seconds is forwarded to the SDK."""
+        mock_client.api_keys.refresh.return_value = _make_api_key_created()
+
+        _invoke(
+            [
+                "api-keys",
+                "refresh",
+                _KEY_ID,
+                "--grace-period-seconds",
+                "300",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        call_kwargs = mock_client.api_keys.refresh.call_args.kwargs
+        assert call_kwargs["grace_period_seconds"] == 300
+
+    def test_refresh_grace_period_seconds_defaults_to_none(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that grace_period_seconds defaults to None when omitted."""
+        mock_client.api_keys.refresh.return_value = _make_api_key_created()
+
+        _invoke(
+            ["api-keys", "refresh", _KEY_ID, "--output", "json"],
+            mock_config,
+            mock_client,
+        )
+
+        call_kwargs = mock_client.api_keys.refresh.call_args.kwargs
+        assert call_kwargs["grace_period_seconds"] is None

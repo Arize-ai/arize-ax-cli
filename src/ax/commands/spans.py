@@ -8,7 +8,6 @@ from typing import Annotated
 
 import typer
 
-from ax.auth.auth_guards import require_api_key_auth
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError, AxError
@@ -87,7 +86,6 @@ def _build_span_filter(
 
 
 @app.command("export")
-@require_api_key_auth("--all")
 @handle_errors
 def export_spans(
     project_id: Annotated[

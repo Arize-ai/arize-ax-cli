@@ -64,8 +64,8 @@ def patch_config_and_client(
 
     Each command module imports ``make_client`` from ``ax.core.client_factory``,
     binding a local name at import time, so we patch per-module. We also patch
-    ``ConfigManager.load`` globally so guards that load config directly (e.g.
-    ``auth_guards.require_api_key_auth``) see the same mock config.
+    ``ConfigManager.load`` globally so commands that load config see the same
+    mock config.
     """
     with ExitStack() as stack:
         cfg_mock = stack.enter_context(

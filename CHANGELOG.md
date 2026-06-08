@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.23.0...arize-ax-cli/v0.24.0) (2026-06-08)
+
+
+### 🎁 New Features
+
+* **auth:** enable OAuth on Flight-backed export commands ([#74194](https://github.com/Arize-ai/arize/issues/74194)) ([a7c2cd3](https://github.com/Arize-ai/arize/commit/a7c2cd311cb9914d3bd38287a93ff497fd39c7b3)), closes [#71530](https://github.com/Arize-ai/arize/issues/71530)
+* **api-keys:** add grace period support to API key refresh ([#73351](https://github.com/Arize-ai/arize/issues/73351)) ([307a733](https://github.com/Arize-ai/arize/commit/307a7339a844571431af64c878d6ee55ae758ae6))
+
 ## [0.23.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.22.0...arize-ax-cli/v0.23.0) (2026-06-05)
 
 

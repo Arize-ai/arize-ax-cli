@@ -374,6 +374,17 @@ def refresh_api_key(
             ),
         ),
     ] = None,
+    grace_period_seconds: Annotated[
+        int | None,
+        typer.Option(
+            "--grace-period-seconds",
+            help=(
+                "Seconds the old key remains valid after refresh to allow "
+                "clients to rotate. If omitted or 0, the old key is "
+                "invalidated immediately."
+            ),
+        ),
+    ] = None,
     output: Annotated[
         str,
         typer.Option(
@@ -396,6 +407,9 @@ def refresh_api_key(
     Atomically revokes the old key and issues a replacement with the same
     name, description, type, and scope.
 
+    Use --grace-period-seconds to keep the old key temporarily valid while
+    clients rotate to the replacement key.
+
     The new raw key value is printed once. Save it securely —
     it will not be shown again.
     """
@@ -415,6 +429,7 @@ def refresh_api_key(
             key_created = client.api_keys.refresh(
                 api_key_id=id,
                 expires_at=expires_at_dt,
+                grace_period_seconds=grace_period_seconds,
             )
     except Exception as e:
         raise APIError(f"Failed to refresh API key: {e}") from e

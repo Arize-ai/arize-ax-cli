@@ -794,11 +794,19 @@ ax api-keys create --name "My Key" [--description "..."] [--expires-at 2025-12-3
 ax api-keys create --name "CI Key" --key-type service --space <space-name-or-id>
 
 # Refresh a key (revokes old key, issues replacement)
-ax api-keys refresh <key-id> [--expires-at 2025-12-31T23:59:59]
+ax api-keys refresh <key-id> [--expires-at 2025-12-31T23:59:59] \
+  [--grace-period-seconds 300]
 
 # Delete a key
 ax api-keys delete <key-id> [--force]
 ```
+
+**`refresh` options:**
+
+| Option | Description |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `--expires-at` | New expiration for the replacement key (ISO 8601). Omit for no expiration. |
+| `--grace-period-seconds`  | Seconds the old key stays valid after refresh so clients can rotate. Omit (or pass `0`) to revoke the old key immediately. |
 
 **Key types:**
 

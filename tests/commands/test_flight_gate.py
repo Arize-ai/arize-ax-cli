@@ -33,19 +33,6 @@ def _save_oauth_profile(name: str = "oauth-profile") -> None:
     ConfigManager.set_active_profile(name)
 
 
-def _save_api_key_profile(name: str = "apikey-profile") -> None:
-    ConfigManager.save(
-        Config(
-            profile=ProfileConfig(name=name),
-            auth=AuthConfig(
-                api_key="ak-00000000-0000-0000-0000-000000000000-AAAAA"
-            ),
-        ),
-        name,
-    )
-    ConfigManager.set_active_profile(name)
-
-
 @pytest.fixture(autouse=True)
 def _isolate_home(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -60,37 +47,6 @@ def _isolate_home(tmp_path: Path, monkeypatch):
     )
     (tmp_path / ".arize" / "profiles").mkdir(parents=True, exist_ok=True)
     yield
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        ("datasets", "export", "some-dataset-id"),
-        ("experiments", "export", "some-experiment-id"),
-        ("spans", "export", "some-project-id"),
-        ("traces", "export", "some-project-id"),
-    ],
-)
-def test_export_all_blocked_under_oauth(command):
-    _save_oauth_profile()
-    # Patch make_client in every target module so a fallthrough to the body
-    # would be visible as a make_client call.
-    with (
-        patch("ax.commands.datasets.make_client") as ds_make,
-        patch("ax.commands.experiments.make_client") as ex_make,
-        patch("ax.commands.spans.make_client") as sp_make,
-        patch("ax.commands.traces.make_client") as tr_make,
-    ):
-        result = runner.invoke(root_app, [*command, "--all"])
-    assert result.exit_code == 2, (
-        f"{command} did not exit(2); stdout: {result.stdout}"
-    )
-    # None of the SDK clients should have been built — gate fires before body.
-    ds_make.assert_not_called()
-    ex_make.assert_not_called()
-    sp_make.assert_not_called()
-    tr_make.assert_not_called()
-    assert "API key" in result.stdout
 
 
 def test_export_without_all_flag_not_blocked_under_oauth():
