@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.24.0...arize-ax-cli/v0.24.1) (2026-06-10)
+
+
+### ❔ Miscellaneous Chores
+
+* add default CLI identity headers into SDK configuration ([#74483](https://github.com/Arize-ai/arize/issues/74483)) ([7ceedac](https://github.com/Arize-ai/arize/commit/7ceedac6cc06f93483f36026ae28eca43479a621))
+
 ## [0.24.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.23.0...arize-ax-cli/v0.24.0) (2026-06-08)
 
 

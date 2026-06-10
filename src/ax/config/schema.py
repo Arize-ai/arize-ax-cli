@@ -8,6 +8,8 @@ from typing import Literal
 from arize import Region, SDKConfiguration
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ax.core.headers import cli_default_headers
+
 
 class AuthMethod(StrEnum):
     """Authentication method a profile uses."""
@@ -433,4 +435,5 @@ class Config(BaseModel):
                 self.transport.max_http_payload_size_mb
             ),
             request_verify=self.request_verify,
+            default_headers=cli_default_headers(),
         )

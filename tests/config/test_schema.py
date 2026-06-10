@@ -17,6 +17,7 @@ from ax.config.schema import (
     TransportConfig,
     UpdateConfig,
 )
+from ax.core.headers import cli_default_headers
 
 
 class TestProfileConfig:
@@ -381,6 +382,16 @@ class TestConfig:
         sdk_config = config.to_sdk_config()
 
         assert sdk_config.region == Region.UNSET
+
+    def test_to_sdk_config_includes_cli_default_headers(self) -> None:
+        """to_sdk_config wires the CLI identity headers into the SDK config."""
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="ak-test123"),
+        )
+        sdk_config = config.to_sdk_config()
+
+        assert sdk_config.default_headers == cli_default_headers()
 
 
 class TestUpdateConfig:
