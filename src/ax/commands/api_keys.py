@@ -48,7 +48,7 @@ def list_api_keys(
         ApiKeyStatus | None,
         typer.Option(
             "--status",
-            help="Filter by status: 'active' or 'deleted'",
+            help="Filter by status: 'active' or 'revoked'",
         ),
     ] = None,
     limit: Annotated[
@@ -308,9 +308,9 @@ def create_service_api_key(
         )
 
 
-@app.command("delete")
+@app.command("revoke")
 @handle_errors
-def delete_api_key(
+def revoke_api_key(
     id: Annotated[
         str,
         typer.Argument(help="API key ID"),
@@ -332,28 +332,30 @@ def delete_api_key(
         ),
     ] = False,
 ) -> None:
-    """Delete an API key.
+    """Revoke an API key.
 
-    The key is deleted immediately and permanently.
+    The key's status is set to revoked and it stops working immediately.
+    This operation is irreversible. Revoking an already-revoked key is a
+    no-op and still succeeds.
     """
     setup_logging(verbose)
     client, _ = make_client()
 
     if not force:
-        warning("This will permanently delete the API key")
+        warning("This will permanently revoke the API key")
 
         if not confirm("Are you sure?", default=False):
-            info("API key not deleted")
+            info("API key not revoked")
             raise typer.Exit()
 
     try:
         with spinner(
-            "Deleting API key",
-            success_msg=f"API key with ID '{id}' deleted successfully",
+            "Revoking API key",
+            success_msg=f"API key with ID '{id}' revoked successfully",
         ):
-            client.api_keys.delete(api_key_id=id)
+            client.api_keys.revoke(api_key_id=id)
     except Exception as e:
-        raise APIError(f"Failed to delete API key: {e}") from e
+        raise APIError(f"Failed to revoke API key: {e}") from e
 
 
 @app.command("refresh")

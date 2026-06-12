@@ -676,7 +676,7 @@ class TestProfilesCreateOAuth:
             mock_login.call_args.kwargs.get("base_url")
             or mock_login.call_args.args[0]
         )
-        assert urlparse(called_url).netloc == "arize.my-company.com"
+        assert urlparse(called_url).netloc == "arize.my-company.com:443"
 
         loaded = ConfigManager.load("onprem-oauth")
         assert loaded.routing.single_host == "arize.my-company.com"
@@ -742,7 +742,7 @@ class TestProfilesCreateOAuth:
             mock_login.call_args.kwargs.get("base_url")
             or mock_login.call_args.args[0]
         )
-        assert urlparse(called_url).netloc == "arize.my-company.com"
+        assert urlparse(called_url).netloc == "arize.my-company.com:443"
 
         loaded = ConfigManager.load("onprem-oauth-interactive")
         assert loaded.routing.single_host == "arize.my-company.com"

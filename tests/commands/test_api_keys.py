@@ -402,66 +402,66 @@ class TestCreateServiceApiKey:
 
 
 # ---------------------------------------------------------------------------
-# ax api-keys delete
+# ax api-keys revoke
 # ---------------------------------------------------------------------------
 
 
-class TestDeleteApiKey:
-    """Tests for `ax api-keys delete <id>`."""
+class TestRevokeApiKey:
+    """Tests for `ax api-keys revoke <id>`."""
 
-    def test_delete_force_skips_confirmation(
+    def test_revoke_force_skips_confirmation(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that --force bypasses the prompt and deletes the key."""
-        mock_client.api_keys.delete.return_value = None
+        """Test that --force bypasses the prompt and revokes the key."""
+        mock_client.api_keys.revoke.return_value = None
 
         result = _invoke(
-            ["api-keys", "delete", _KEY_ID, "--force"],
+            ["api-keys", "revoke", _KEY_ID, "--force"],
             mock_config,
             mock_client,
         )
 
         assert result.exit_code == 0, result.output
-        mock_client.api_keys.delete.assert_called_once_with(api_key_id=_KEY_ID)
+        mock_client.api_keys.revoke.assert_called_once_with(api_key_id=_KEY_ID)
 
-    def test_delete_confirms_yes_calls_sdk(
+    def test_revoke_confirms_yes_calls_sdk(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that confirming the prompt proceeds with deletion."""
-        mock_client.api_keys.delete.return_value = None
+        """Test that confirming the prompt proceeds with revocation."""
+        mock_client.api_keys.revoke.return_value = None
 
         result = _invoke(
-            ["api-keys", "delete", _KEY_ID],
+            ["api-keys", "revoke", _KEY_ID],
             mock_config,
             mock_client,
             cli_input="y\n",
         )
 
         assert result.exit_code == 0, result.output
-        assert "permanently delete" in result.output
-        mock_client.api_keys.delete.assert_called_once_with(api_key_id=_KEY_ID)
+        assert "permanently revoke" in result.output
+        mock_client.api_keys.revoke.assert_called_once_with(api_key_id=_KEY_ID)
 
-    def test_delete_declines_does_not_call_sdk(
+    def test_revoke_declines_does_not_call_sdk(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that declining the confirmation leaves the key untouched."""
         result = _invoke(
-            ["api-keys", "delete", _KEY_ID],
+            ["api-keys", "revoke", _KEY_ID],
             mock_config,
             mock_client,
             cli_input="n\n",
         )
 
         assert result.exit_code == 0
-        mock_client.api_keys.delete.assert_not_called()
+        mock_client.api_keys.revoke.assert_not_called()
 
-    def test_delete_sdk_error_exits_nonzero(
+    def test_revoke_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that an SDK error during delete causes a non-zero exit."""
-        mock_client.api_keys.delete.side_effect = RuntimeError("Not found")
+        """Test that an SDK error during revoke causes a non-zero exit."""
+        mock_client.api_keys.revoke.side_effect = RuntimeError("Not found")
         result = _invoke(
-            ["api-keys", "delete", _KEY_ID, "--force"],
+            ["api-keys", "revoke", _KEY_ID, "--force"],
             mock_config,
             mock_client,
         )

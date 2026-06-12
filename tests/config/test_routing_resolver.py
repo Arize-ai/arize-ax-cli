@@ -11,6 +11,10 @@ class TestResolveAppUrl:
             single_port="8443",
             api_scheme="https",
         )
+        assert r.resolve_app_url() == "https://arize.my-company.internal:8443"
+
+    def test_single_host_without_port_omits_port(self):
+        r = RoutingConfig(single_host="arize.my-company.internal")
         assert r.resolve_app_url() == "https://arize.my-company.internal"
 
     def test_base_domain_produces_app_subdomain(self):
@@ -33,7 +37,7 @@ class TestResolveAppUrl:
         r = RoutingConfig(
             single_host="onprem.local", single_port="9000", app_scheme="http"
         )
-        assert r.resolve_app_url() == "http://onprem.local"
+        assert r.resolve_app_url() == "http://onprem.local:9000"
 
     def test_custom_api_and_app_hosts_together(self):
         r = RoutingConfig(

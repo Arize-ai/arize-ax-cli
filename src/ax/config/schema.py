@@ -246,12 +246,21 @@ class RoutingConfig(BaseModel):
         """Derive the Arize app (OAuth login) URL from this routing config.
 
         Precedence (first match wins):
-          1. ``single_host`` (on-prem / testing override) — uses app_scheme + single_host
+          1. ``single_host`` (on-prem / testing override) — uses app_scheme +
+             single_host, appending ``:single_port`` when a port is set
           2. ``base_domain`` (Private Connect) — "https://app.<base_domain>"
           3. ``region`` (e.g., "eu-prod") — "https://app.<region>.arize.com"
           4. Explicit ``app_host`` + ``app_scheme`` fields — default "https://app.arize.com"
         """
         if self.single_host:
+            # single_port is part of the single-endpoint override: on-prem
+            # deployments serve the app (and thus OAuth) on this host:port.
+            # Dropping it here makes the browser flow fall back to the scheme
+            # default (80/443) even though the user configured e.g. :4040.
+            if self.single_port:
+                return (
+                    f"{self.app_scheme}://{self.single_host}:{self.single_port}"
+                )
             return f"{self.app_scheme}://{self.single_host}"
         if self.base_domain:
             return f"https://app.{self.base_domain}"

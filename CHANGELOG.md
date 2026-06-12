@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.25.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.24.1...arize-ax-cli/v0.25.0) (2026-06-12)
+
+
+### 🎁 New Features
+
+* **api-keys:** add revoke support ([#74112](https://github.com/Arize-ai/arize/issues/74112)) ([28198d3](https://github.com/Arize-ai/arize/commit/28198d3ee3e72502016af6b10b8ba2b98fcbbbd5))
+
+### 🐛 Bug Fixes
+
+* **oauth:** include `single_port` in OAuth app URL generation ([#74902](https://github.com/Arize-ai/arize/issues/74902)) ([96cd3e1](https://github.com/Arize-ai/arize/commit/96cd3e171aa4240e78c5c728e6e5928735e8e5e6))
+
+### 💫 Code Refactoring
+
+* **api-keys:** removed delete method ([#74112](https://github.com/Arize-ai/arize/issues/74112)) ([28198d3](https://github.com/Arize-ai/arize/commit/28198d3ee3e72502016af6b10b8ba2b98fcbbbd5))
+
 ## [0.24.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.24.0...arize-ax-cli/v0.24.1) (2026-06-10)
 
 

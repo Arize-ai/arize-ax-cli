@@ -784,7 +784,7 @@ ax annotation-queues add-records <queue> \
 
 ```bash
 # List API keys
-ax api-keys list [--key-type user|service] [--status active|deleted] \
+ax api-keys list [--key-type user|service] [--status active|revoked] \
   [--limit 15] [--cursor <cursor>]
 
 # Create a user key (authenticates as you)
@@ -797,8 +797,8 @@ ax api-keys create --name "CI Key" --key-type service --space <space-name-or-id>
 ax api-keys refresh <key-id> [--expires-at 2025-12-31T23:59:59] \
   [--grace-period-seconds 300]
 
-# Delete a key
-ax api-keys delete <key-id> [--force]
+# Revoke a key
+ax api-keys revoke <key-id> [--force]
 ```
 
 **`refresh` options:**
