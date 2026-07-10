@@ -164,6 +164,54 @@ class TestConfigManager:
         with pytest.raises(ConfigError, match="ax profiles create"):
             ConfigManager.load(profile="test")
 
+    def test_load_error_message_omits_pydantic_internals(
+        self, mock_config_dir: Path
+    ) -> None:
+        """The ConfigError message must not leak raw pydantic error chrome
+        (type names, the errors.pydantic.dev URL) -- regression test for the
+        'raw pydantic dump printed for a malformed profile' bug.
+        """
+        import tomli_w
+
+        bad_data = {"auth": {"api_key": ""}}  # empty API key is invalid
+        with open(ConfigManager.PROFILES_DIR / "test.toml", "wb") as f:
+            tomli_w.dump(bad_data, f)
+
+        with pytest.raises(ConfigError) as exc_info:
+            ConfigManager.load(profile="test")
+
+        message = str(exc_info.value)
+        assert "pydantic.dev" not in message
+        assert "type=value_error" not in message
+        assert "auth.api_key: Value error, api_key cannot be empty" in message
+
+    def test_load_error_message_lists_all_invalid_fields(
+        self, mock_config_dir: Path
+    ) -> None:
+        """Multiple independently-invalid fields are each surfaced cleanly,
+        with no pydantic internals leaked, in the same ConfigError message.
+        """
+        import tomli_w
+
+        bad_data = {
+            "auth": {"api_key": ""},
+            "output": {"format": "xml"},
+        }
+        with open(ConfigManager.PROFILES_DIR / "test.toml", "wb") as f:
+            tomli_w.dump(bad_data, f)
+
+        with pytest.raises(ConfigError) as exc_info:
+            ConfigManager.load(profile="test")
+
+        message = str(exc_info.value)
+        assert "pydantic.dev" not in message
+        assert "auth.auth_method: Field required" in message
+        assert "auth.api_key: Value error, api_key cannot be empty" in message
+        assert (
+            "output.format: Input should be 'table', 'json', 'csv' or 'parquet'"
+            in message
+        )
+
     def test_load_ignores_extra_fields_in_config_file(
         self, mock_config_dir: Path
     ) -> None:

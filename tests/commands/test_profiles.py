@@ -54,3 +54,4 @@ class TestProfilesValidate:
         assert result.exit_code != 0
         assert "Invalid profile" in result.output
         assert "ax profiles create" in result.output
+        assert "pydantic.dev" not in result.output

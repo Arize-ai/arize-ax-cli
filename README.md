@@ -57,6 +57,7 @@
   - [Evaluators](#evaluators)
     - [Code evaluators](#code-evaluators)
   - [Experiments](#experiments)
+    - [`ax experiments run` — execute a task locally](#ax-experiments-run--execute-a-task-locally)
   - [Organizations](#organizations)
   - [Projects](#projects)
   - [Prompts](#prompts)
@@ -72,6 +73,7 @@
   - [Creating a Dataset from stdin](#creating-a-dataset-from-stdin)
   - [Exporting Dataset List to JSON](#exporting-dataset-list-to-json)
   - [Exporting Dataset Examples](#exporting-dataset-examples)
+  - [Running an Experiment with a Task](#running-an-experiment-with-a-task)
   - [Exporting Experiment Runs](#exporting-experiment-runs)
   - [Exporting Spans by Trace ID](#exporting-spans-by-trace-id)
   - [Exporting Spans](#exporting-spans)
@@ -1027,7 +1029,13 @@ ax experiments get <experiment>
 # Export all runs from an experiment
 ax experiments export <experiment> [--output-dir .] [--stdout]
 
-# Create a new experiment from a data file
+# Run an experiment — execute a task function against a dataset and upload results
+ax experiments run --dataset <dataset> --name "My Experiment" --task task.py
+
+# Dry-run to validate locally without uploading (processes first 10 examples)
+ax experiments run --dataset <dataset> --name "My Experiment" --task task.py --dry-run
+
+# Create a new experiment from a pre-computed data file
 ax experiments create --name "My Experiment" --dataset <dataset> --file runs.csv
 
 # Create an experiment from stdin
@@ -1039,6 +1047,38 @@ ax experiments list-runs <experiment> [--limit 30] [--cursor <cursor>]
 # Delete an experiment
 ax experiments delete <experiment> [--force]
 ```
+
+#### `ax experiments run` — execute a task locally
+
+`ax experiments run` downloads the dataset examples, runs your task function against each one
+with configurable concurrency, and uploads the results as a new experiment.
+
+**Task file format**
+
+Create a Python file that defines a top-level `task` function. It receives a dataset
+[`Example`](https://arize-client-python.readthedocs.io) and must return a JSON-serialisable value:
+
+```python
+# task.py
+def task(dataset_row) -> str:
+    question = dataset_row["question"]
+    return my_llm_call(question)  # call your model or application here
+```
+
+The function runs once per dataset example. Any JSON-serialisable return type is accepted
+(`str`, `dict`, `list`, `int`, `float`, `bool`, `None`).
+
+**`run` options:**
+
+| Option | Description |
+| --- | --- |
+| `--dataset` | Dataset name or ID to run against _(required)_ |
+| `--name`, `-n` | Experiment name _(required)_ |
+| `--task` | Path to the Python task file _(required)_ |
+| `--space`, `-s` | Space name or ID (required if using dataset name instead of ID) |
+| `--concurrency`, `-c` | Number of concurrent task executions (default: 3) |
+| `--dry-run` | Run locally on the first 10 examples without uploading results |
+| `--verbose`, `-v` | Enable verbose logs |
 
 > **Note:** The data file for `experiments create` must contain `example_id` and `output` columns. Extra columns are passed through as additional fields.
 
@@ -1700,6 +1740,44 @@ ax datasets export ds_xyz789 --version-id ver_abc123
 
 # Pipe to jq for processing
 ax datasets export ds_xyz789 --stdout | jq '.[].input'
+```
+
+### Running an Experiment with a Task
+
+Create a task file that calls your LLM or application:
+
+```python
+# task.py
+import os
+import openai
+
+client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+
+def task(dataset_row) -> str:
+    question = dataset_row["question"]
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": question}],
+    )
+    return response.choices[0].message.content
+```
+
+Then run the experiment:
+
+```bash
+# Validate locally first (first 10 examples, no upload)
+ax experiments run \
+  --dataset ds_abc123 \
+  --name "GPT-4o-mini eval" \
+  --task task.py \
+  --dry-run
+
+# Run against the full dataset and upload results
+ax experiments run \
+  --dataset ds_abc123 \
+  --name "GPT-4o-mini eval" \
+  --task task.py \
+  --concurrency 5
 ```
 
 ### Exporting Experiment Runs

@@ -10,6 +10,9 @@ import sys
 from dataclasses import dataclass
 
 from arize import ApiException, Problem
+from pydantic import ValidationError as PydanticValidationError
+
+from ax.core.exceptions import ConfigError
 
 # Map gRPC codes to HTTP status
 grpc_to_http = {
@@ -148,10 +151,63 @@ def parse_grpc_error(exception: Exception) -> ParsedError | None:
     return None
 
 
+def parse_pydantic_validation_error(exception: Exception) -> ParsedError | None:
+    """Parse a pydantic ValidationError from the exception chain.
+
+    The generated SDK validates request parameters (e.g. ``limit``) locally
+    via pydantic before making any network call. Those failures surface as
+    ``pydantic.ValidationError``, not ``ApiException``, so they need their
+    own extraction path — otherwise the raw pydantic error (internal type
+    names, ``errors.pydantic.dev`` links) leaks straight to the user.
+
+    Args:
+        exception: The exception to parse (typically an AxError)
+
+    Returns:
+        ParsedError with a per-field message, or None if no ValidationError
+        was found in the exception chain.
+    """
+    current: BaseException | None = exception
+    while current is not None:
+        if isinstance(current, ConfigError):
+            # ConfigError already carries its own actionable message (see
+            # ConfigManager.load); don't relabel a config-loading failure
+            # as SDK request validation just because it happens to wrap a
+            # ValidationError too.
+            return None
+        if isinstance(current, PydanticValidationError):
+            return ParsedError(
+                status=422,
+                reason="Validation Error",
+                detail=format_validation_error(current),
+                body=str(current),
+            )
+        current = getattr(current, "__cause__", None)
+
+    return None
+
+
+def format_validation_error(exc: PydanticValidationError) -> str:
+    """Build a clean, per-field summary of a pydantic ValidationError.
+
+    Reused anywhere a ``ValidationError`` needs to reach the user, so the
+    raw pydantic error (internal type names, ``errors.pydantic.dev`` links)
+    never leaks — whether via this module or embedded directly into a
+    ``ConfigError`` message (see ``ConfigManager.load``).
+    """
+    return "; ".join(
+        f"{'.'.join(str(loc) for loc in err['loc'])}: {err['msg']}"
+        if err["loc"]
+        else err["msg"]
+        for err in exc.errors()
+    )
+
+
 def parse_exception(exception: Exception) -> ParsedError | None:
     """Parse any exception to extract structured error information.
 
-    Tries ApiException parsing first, then gRPC/Flight error parsing.
+    Tries ApiException parsing first, then gRPC/Flight error parsing, then
+    pydantic validation error parsing.
 
     Args:
         exception: The exception to parse
@@ -166,6 +222,11 @@ def parse_exception(exception: Exception) -> ParsedError | None:
 
     # Try gRPC/Flight error parsing
     parsed = parse_grpc_error(exception)
+    if parsed:
+        return parsed
+
+    # Try pydantic validation error parsing (client-side param validation)
+    parsed = parse_pydantic_validation_error(exception)
     if parsed:
         return parsed
 

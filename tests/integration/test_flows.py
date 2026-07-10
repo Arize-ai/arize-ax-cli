@@ -256,16 +256,16 @@ class TestDatasetExperimentFlow:
 
 
 # ---------------------------------------------------------------------------
-# API key create → list → delete flow
+# API key create → list → revoke flow
 # ---------------------------------------------------------------------------
 
 
 class TestApiKeyFlow:
-    """Create a user API key, verify it's visible, delete it."""
+    """Create a user API key, verify it's visible, revoke it."""
 
     @pytest.mark.integration
-    def test_create_list_delete(self) -> None:
-        """User API key appears in list after creation and disappears after deletion."""
+    def test_create_list_revoke(self) -> None:
+        """User API key appears in list after creation and disappears after revocation."""
         unique_name = f"ax-cli-key-{uuid.uuid4().hex[:8]}"
 
         create_result = ax(
@@ -290,8 +290,8 @@ class TestApiKeyFlow:
             assert key_id in ids
 
         finally:
-            delete_result = ax("api-keys", "delete", key_id, "--force")
-            assert delete_result.returncode == 0
+            revoke_result = ax("api-keys", "revoke", key_id, "--force")
+            assert revoke_result.returncode == 0
 
         # Confirm it no longer appears as active
         active_data = ax_json("api-keys", "list", "--status", "active")

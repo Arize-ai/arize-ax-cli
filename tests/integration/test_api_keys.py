@@ -36,12 +36,12 @@ class TestApiKeysList:
         assert "api_keys" in data
 
 
-class TestApiKeysCreateAndDelete:
-    """Create a user API key, verify it appears in list, then delete it."""
+class TestApiKeysCreateAndRevoke:
+    """Create a user API key, verify it appears in list, then revoke it."""
 
     @pytest.mark.integration
-    def test_create_then_list_then_delete(self) -> None:
-        """Full lifecycle: create a user key, find it in list, delete it."""
+    def test_create_then_list_then_revoke(self) -> None:
+        """Full lifecycle: create a user key, find it in list, revoke it."""
         unique_name = f"ax-cli-test-key-{uuid.uuid4().hex[:8]}"
 
         create_result = ax(
@@ -69,10 +69,10 @@ class TestApiKeysCreateAndDelete:
                 f"Newly created key {key_id!r} not found in list"
             )
         finally:
-            delete_result = ax("api-keys", "delete", key_id, "--force")
-            assert delete_result.returncode == 0, (
-                f"Delete failed:\nstdout: {delete_result.stdout}\n"
-                f"stderr: {delete_result.stderr}"
+            revoke_result = ax("api-keys", "revoke", key_id, "--force")
+            assert revoke_result.returncode == 0, (
+                f"Revoke failed:\nstdout: {revoke_result.stdout}\n"
+                f"stderr: {revoke_result.stderr}"
             )
 
     @pytest.mark.integration
@@ -104,16 +104,16 @@ class TestApiKeysCreateAndDelete:
         try:
             assert created.get("description") == description
         finally:
-            delete_result = ax("api-keys", "delete", key_id, "--force")
-            assert delete_result.returncode == 0, (
-                f"Delete failed:\nstdout: {delete_result.stdout}\n"
-                f"stderr: {delete_result.stderr}"
+            revoke_result = ax("api-keys", "revoke", key_id, "--force")
+            assert revoke_result.returncode == 0, (
+                f"Revoke failed:\nstdout: {revoke_result.stdout}\n"
+                f"stderr: {revoke_result.stderr}"
             )
 
     @pytest.mark.integration
-    def test_deleted_key_no_longer_active(self) -> None:
-        """After deletion, the key does not appear in --status active list."""
-        unique_name = f"ax-cli-del-key-{uuid.uuid4().hex[:8]}"
+    def test_revoked_key_no_longer_active(self) -> None:
+        """After revocation, the key does not appear in --status active list."""
+        unique_name = f"ax-cli-revoke-key-{uuid.uuid4().hex[:8]}"
 
         create_result = ax(
             "api-keys",
@@ -133,18 +133,18 @@ class TestApiKeysCreateAndDelete:
         assert key_id
 
         try:
-            delete_result = ax("api-keys", "delete", key_id, "--force")
-            assert delete_result.returncode == 0, (
-                f"Delete failed:\nstdout: {delete_result.stdout}\n"
-                f"stderr: {delete_result.stderr}"
+            revoke_result = ax("api-keys", "revoke", key_id, "--force")
+            assert revoke_result.returncode == 0, (
+                f"Revoke failed:\nstdout: {revoke_result.stdout}\n"
+                f"stderr: {revoke_result.stderr}"
             )
-            key_id = None  # Deleted — skip cleanup in finally
+            key_id = None  # Revoked — skip cleanup in finally
 
             active_data = ax_json("api-keys", "list", "--status", "active")
             active_ids = [k.get("id") for k in active_data.get("api_keys", [])]
             assert key_id not in active_ids, (
-                "Deleted key still appears in active list"
+                "Revoked key still appears in active list"
             )
         finally:
             if key_id:
-                ax("api-keys", "delete", key_id, "--force")
+                ax("api-keys", "revoke", key_id, "--force")

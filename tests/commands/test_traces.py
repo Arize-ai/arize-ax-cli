@@ -1,13 +1,34 @@
 """Tests for traces CLI commands."""
 
 import json
+import sys
 from pathlib import Path
+from typing import Annotated
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
+from pydantic import BaseModel, Field
 from typer.testing import CliRunner
 
 from ax.commands.traces import _build_trace_id_in_filter, app
+
+
+class _LimitModel(BaseModel):
+    """Mirrors the generated SDK's spans_list ``limit`` constraint (le=500)."""
+
+    limit: Annotated[int, Field(le=500, ge=1)]
+
+
+def _spans_list_validation_error() -> Exception:
+    """Build the same ValidationError the generated SDK raises for an
+    out-of-range ``--limit`` (client-side, before any network call).
+    """
+    try:
+        _LimitModel(limit=99999)
+    except Exception as e:
+        return e
+    raise AssertionError("expected a ValidationError")
 
 
 class TestTraceCommands:
@@ -36,6 +57,43 @@ class TestBuildTraceIdInFilter:
         """Multiple trace IDs produce a comma-separated IN clause."""
         result = _build_trace_id_in_filter(["a", "b", "c"])
         assert result == "context.trace_id IN ('a', 'b', 'c')"
+
+
+class TestListSpans:
+    """Tests for 'ax traces list', including out-of-range --limit handling."""
+
+    def test_out_of_range_limit_shows_friendly_error(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A --limit above the server's max surfaces a clean message instead
+        of a raw pydantic ValidationError traceback (regression test for the
+        'ax traces list limit must be <= 100 (no user-friendly error)' bug).
+
+        ``sys.argv`` is pinned to a non-verbose invocation because
+        ``is_verbose_mode()`` inspects the real process argv, which
+        otherwise picks up pytest's own ``-v``/``--verbose`` flag when this
+        suite is run verbosely.
+        """
+        monkeypatch.setattr(
+            sys, "argv", ["ax", "traces", "list", "TW9kZWw6MTIz"]
+        )
+        mock_client.spans.list.side_effect = _spans_list_validation_error()
+
+        result = cli_runner.invoke(
+            app,
+            ["list", "TW9kZWw6MTIz", "--limit", "99999"],
+        )
+
+        assert result.exit_code == 4
+        assert "limit" in result.output
+        assert "less than or equal to 500" in result.output
+        assert "pydantic.dev" not in result.output
+        assert "SpansApi" not in result.output
+        assert "type=less_than_equal" not in result.output
 
 
 class TestExportTracesRest:

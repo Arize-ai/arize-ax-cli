@@ -1,11 +1,16 @@
 """Tests for configuration setup module."""
 
 import os
+from pathlib import Path
 from unittest.mock import patch
+
+import pytest
+import tomli_w
 
 from ax.config.schema import (
     AuthConfig,
     Config,
+    ProfileConfig,
     RoutingConfig,
     SecurityConfig,
     TransportConfig,
@@ -13,8 +18,12 @@ from ax.config.schema import (
 from ax.config.setup import (
     ENV_VAR_MAPPING,
     create_config_from_env_vars,
+    create_config_from_flags,
+    create_config_from_toml,
     detect_env_vars,
+    merge_config_with_flags,
 )
+from ax.core.exceptions import ConfigError
 
 
 class TestDetectEnvVars:
@@ -251,3 +260,68 @@ class TestEnvVarMapping:
             assert env_var.startswith("ARIZE_"), (
                 f"Expected {field} env var to start with ARIZE_, got {env_var}"
             )
+
+
+class TestValidationErrorMessagesOmitPydanticInternals:
+    """Every ConfigError raised from a ValidationError in this module must
+    surface a clean per-field message, never the raw pydantic dump
+    (type names, the errors.pydantic.dev URL). Regression coverage for all
+    three ``Config.model_validate``/``from_toml`` call sites in this file.
+    """
+
+    def test_create_config_from_toml_omits_pydantic_internals(
+        self, tmp_path: Path
+    ) -> None:
+        """A malformed TOML file surfaces a clean ConfigError message."""
+        toml_path = tmp_path / "bad.toml"
+        with open(toml_path, "wb") as f:
+            tomli_w.dump(
+                {"auth": {"api_key": ""}, "output": {"format": "xml"}}, f
+            )
+
+        with pytest.raises(ConfigError) as exc_info:
+            create_config_from_toml(str(toml_path), "default")
+
+        message = str(exc_info.value)
+        assert "pydantic.dev" not in message
+        assert "auth.auth_method: Field required" in message
+        assert "auth.api_key: Value error, api_key cannot be empty" in message
+        assert (
+            "output.format: Input should be 'table', 'json', 'csv' or 'parquet'"
+            in message
+        )
+
+    def test_create_config_from_flags_omits_pydantic_internals(self) -> None:
+        """Invalid flag-derived data surfaces a clean ConfigError message."""
+        with pytest.raises(ConfigError) as exc_info:
+            create_config_from_flags(
+                "default", {"api_key": "", "output_format": "xml"}
+            )
+
+        message = str(exc_info.value)
+        assert "pydantic.dev" not in message
+        assert "auth.auth_method: Field required" in message
+        assert "auth.api_key: Value error, api_key cannot be empty" in message
+        assert (
+            "output.format: Input should be 'table', 'json', 'csv' or 'parquet'"
+            in message
+        )
+
+    def test_merge_config_with_flags_omits_pydantic_internals(self) -> None:
+        """An invalid override merged into a valid Config surfaces a clean
+        ConfigError message.
+        """
+        existing = Config(
+            profile=ProfileConfig(name="default"),
+            auth=AuthConfig(auth_method="api-key", api_key="ak-real"),
+        )
+
+        with pytest.raises(ConfigError) as exc_info:
+            merge_config_with_flags(existing, {"output_format": "xml"})
+
+        message = str(exc_info.value)
+        assert "pydantic.dev" not in message
+        assert (
+            "output.format: Input should be 'table', 'json', 'csv' or 'parquet'"
+            in message
+        )

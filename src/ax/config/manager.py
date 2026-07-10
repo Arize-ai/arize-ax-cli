@@ -10,6 +10,7 @@ import tomllib
 from pydantic import ValidationError
 
 from ax.config.schema import Config
+from ax.core.error_formatter import format_validation_error
 from ax.core.exceptions import ConfigError
 
 T = TypeVar("T")
@@ -161,7 +162,7 @@ class ConfigManager:
         except ValidationError as e:
             raise ConfigError(
                 f"Profile '{profile}' has an invalid configuration:\n\n"
-                f"{e}\n\n"
+                f"{format_validation_error(e)}\n\n"
                 "Run 'ax profiles create' to recreate it."
             ) from e
         except ValueError as e:

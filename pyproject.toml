@@ -144,6 +144,7 @@ ignore = [
     "S404",   # Allow subprocess import in integration tests
     "S603",   # Allow subprocess.run with list args in integration tests
     "TRY301", # Allow generic exception catching in tests
+    "TC003",  # Allow standard library imports outside of type-checking block
 ]
 
 [tool.ruff.lint.isort]

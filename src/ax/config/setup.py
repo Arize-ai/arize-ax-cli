@@ -27,6 +27,7 @@ from ax.config.schema import (
     StorageConfig,
     TransportConfig,
 )
+from ax.core.error_formatter import format_validation_error
 from ax.core.exceptions import ConfigError
 
 # Standard environment variable names for detection
@@ -188,7 +189,7 @@ def create_config_from_toml(toml_path: str, profile: str) -> Config:
     try:
         return Config.model_validate(data)
     except ValidationError as e:
-        raise ConfigError(str(e)) from e
+        raise ConfigError(format_validation_error(e)) from e
 
 
 _ROUTING_KEYS = (
@@ -256,7 +257,7 @@ def create_config_from_flags(
     try:
         return Config.model_validate(data)
     except ValidationError as e:
-        raise ConfigError(str(e)) from e
+        raise ConfigError(format_validation_error(e)) from e
 
 
 def merge_config_with_flags(existing: Config, flat: dict[str, Any]) -> Config:
@@ -295,7 +296,7 @@ def merge_config_with_flags(existing: Config, flat: dict[str, Any]) -> Config:
     try:
         return Config.model_validate(data)
     except ValidationError as e:
-        raise ConfigError(str(e)) from e
+        raise ConfigError(format_validation_error(e)) from e
 
 
 _ENV_ROUTING_FIELDS = frozenset(_ROUTING_KEYS)

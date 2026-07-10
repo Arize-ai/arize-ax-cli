@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.25.0...arize-ax-cli/v0.25.1) (2026-07-10)
+
+
+### 🐛 Bug Fixes
+
+* fix pydantic validation error for limit ([#78246](https://github.com/Arize-ai/arize/issues/78246)) ([3f2a067](https://github.com/Arize-ai/arize/commit/3f2a067506ef7b96a14742be7619761b58d5503b))
+
 ## [0.25.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.24.1...arize-ax-cli/v0.25.0) (2026-06-12)
 
 

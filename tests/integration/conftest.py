@@ -26,6 +26,8 @@ import json
 import os
 import subprocess
 import sys
+import uuid
+from collections.abc import Generator
 from typing import Any
 
 import pytest
@@ -55,6 +57,7 @@ def ax(
         capture_output=True,
         text=True,
         env=merged_env,
+        cwd="/tmp",
     )
 
 
@@ -86,8 +89,10 @@ def api_key() -> str:
 @pytest.fixture(scope="session")
 def first_space(api_key: str) -> dict[str, Any]:
     """Return the first space accessible to the authenticated user."""
-    data = ax_json("spaces", "list", "--limit", "1")
-    spaces = data.get("spaces") or []
+    result = ax("spaces", "list", "--limit", "1", "--output", "json")
+    if result.returncode != 0:
+        pytest.fail(f"Cannot reach Arize API:\n{result.stderr.strip()}")
+    spaces = json.loads(result.stdout).get("spaces") or []
     if not spaces:
         pytest.skip(
             "No spaces found for this API key — skipping integration tests"
@@ -136,3 +141,33 @@ def test_evaluator_id() -> str:
     if not evaluator_id:
         pytest.skip("ARIZE_TEST_EVALUATOR_ID not set")
     return evaluator_id
+
+
+@pytest.fixture
+def created_dataset_id(test_space_id: str) -> Generator[str, None, None]:
+    """Create a temporary dataset and yield its ID, deleting it on teardown."""
+    ds_name = f"ax-cli-exp-ds-{uuid.uuid4().hex[:8]}"
+    examples = json.dumps(
+        [
+            {"question": "What is 1+1?"},
+            {"question": "What is the capital of France?"},
+        ]
+    )
+    result = ax(
+        "datasets",
+        "create",
+        "--name",
+        ds_name,
+        "--space",
+        test_space_id,
+        "--json",
+        examples,
+        "--output",
+        "json",
+    )
+    assert result.returncode == 0, f"Dataset create failed:\n{result.stderr}"
+    created = json.loads(result.stdout)
+    dataset_id = created.get("id") or created.get("dataset_id")
+    assert dataset_id
+    yield dataset_id
+    ax("datasets", "delete", dataset_id, "--space", test_space_id, "--force")
