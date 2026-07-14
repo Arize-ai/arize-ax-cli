@@ -296,7 +296,6 @@ def create(
         # exchange. Behind a TLS-inspecting proxy, pass --ca-bundle (which
         # verify_value prefers) or use --from-file plus `ax auth login`.
         network = NetworkSettings.from_config(network_cfg, request_verify=True)
-        network.configure_grpc_environment()
         oauth_creds = perform_oauth_login(base_url=base_url, network=network)
         auth_cfg = AuthConfig(auth_method=AuthMethod.OAUTH, oauth=oauth_creds)
 
@@ -393,7 +392,6 @@ def create(
             network = NetworkSettings.from_config(
                 config.network, request_verify=config.request_verify
             )
-            network.configure_grpc_environment()
             oauth_creds = perform_oauth_login(
                 base_url=base_url,
                 network=network,

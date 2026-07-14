@@ -35,16 +35,9 @@ def open_url(
     handlers: list[urllib.request.BaseHandler] = [
         urllib.request.HTTPSHandler(context=settings.ssl_context()),
     ]
-    if proxy_url := settings.proxy_for(url):
-        handlers.append(
-            urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
-        )
-    elif settings.proxy_url or settings.bypasses(url):
-        # A proxy is configured but this URL must not use it: force a
-        # direct connection instead of falling back to system discovery.
-        handlers.append(urllib.request.ProxyHandler({}))
-    # Otherwise install no ProxyHandler so build_opener keeps urllib's
-    # default discovery (env vars plus macOS/Windows OS proxy settings).
+    # Always install the resolved policy. Leaving ProxyHandler out lets urllib
+    # rediscover unsupported ambient proxies, bypassing NetworkSettings.
+    handlers.append(urllib.request.ProxyHandler(settings.requests_proxies(url)))
     opener = urllib.request.build_opener(*handlers)
     return cast("BinaryIO", opener.open(url, timeout=timeout))
 

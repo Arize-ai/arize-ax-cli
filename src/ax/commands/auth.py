@@ -150,7 +150,6 @@ def login_cmd() -> None:
         resolved_cfg.network,
         request_verify=resolved_cfg.request_verify,
     )
-    network.configure_grpc_environment()
     oauth_creds = perform_oauth_login(
         base_url=resolved_base_url,
         network=network,

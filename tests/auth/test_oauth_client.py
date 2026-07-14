@@ -2,6 +2,8 @@ import base64
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ax.auth.oauth_client import (
     OAuthClient,
     _decode_email_from_id_token,
@@ -40,6 +42,45 @@ def _mock_response(status: int, json_body: dict) -> MagicMock:
     else:
         m.raise_for_status = lambda: None
     return m
+
+
+@pytest.fixture(autouse=True)
+def clear_network_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep ambient proxy and CA settings out of mocked OAuth requests."""
+    for name in (
+        "ARIZE_PROXY_URL",
+        "ARIZE_NO_PROXY",
+        "https_proxy",
+        "HTTPS_PROXY",
+        "http_proxy",
+        "HTTP_PROXY",
+        "all_proxy",
+        "ALL_PROXY",
+        "no_proxy",
+        "NO_PROXY",
+        "ARIZE_SSL_CA_CERT",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    class EnvFreeSession:
+        """Exercise session routing while retaining the existing post mocks."""
+
+        trust_env = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def post(self, *args, **kwargs):
+            from ax.auth.oauth_client import requests
+
+            return requests.post(*args, **kwargs)
+
+    monkeypatch.setattr("ax.auth.oauth_client.requests.Session", EnvFreeSession)
 
 
 class TestDecodeEmailFromIdToken:
@@ -91,6 +132,36 @@ class TestExchangeCode:
             "https": "http://proxy.example.com:8080",
         }
         assert post.call_args.kwargs["verify"] == "/tmp/corporate-ca.pem"
+
+    def test_bypassed_host_disables_requests_environment_proxy(self):
+        """NO_PROXY paths use an env-free session instead of real networking."""
+        client = OAuthClient(
+            base_url="https://app.arize.com",
+            client_id="arize-cli",
+            network=NetworkSettings(
+                proxy_url="http://proxy.example.com:8080",
+                no_proxy="app.arize.com",
+            ),
+        )
+        session = MagicMock()
+        session.__enter__.return_value = session
+        session.post.return_value = _mock_response(
+            200,
+            {
+                "access_token": "a",
+                "refresh_token": "r",
+                "expires_in": 60,
+            },
+        )
+
+        with patch(
+            "ax.auth.oauth_client.requests.Session", return_value=session
+        ) as session_factory:
+            client.exchange_code(code="abc", code_verifier="v", redirect_uri="u")
+
+        session_factory.assert_called_once_with()
+        assert session.trust_env is False
+        assert session.post.call_args.kwargs["proxies"] == {}
 
     def test_happy_path_parses_response_with_id_token_email(self):
         client = OAuthClient(

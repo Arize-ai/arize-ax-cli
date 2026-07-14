@@ -30,7 +30,6 @@ def make_client() -> tuple[ArizeClient, Config]:
     network = NetworkSettings.from_config(
         config.network, request_verify=config.request_verify
     )
-    network.configure_grpc_environment()
     profile_path = ConfigManager.profile_path(config.profile.name)
     bearer = get_active_bearer(
         config.auth,
@@ -44,5 +43,6 @@ def make_client() -> tuple[ArizeClient, Config]:
         proxy_url=network.proxy_for(sdk_config.api_url),
         ssl_ca_cert=network.ca_bundle,
     )
-    client = ArizeClient(**asdict(sdk_config))
+    with network.grpc_environment():
+        client = ArizeClient(**asdict(sdk_config))
     return client, config

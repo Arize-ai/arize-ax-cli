@@ -28,6 +28,12 @@ def clear_proxy_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "NO_PROXY",
         "grpc_proxy",
         "no_grpc_proxy",
+        "ARIZE_SSL_CA_CERT",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+        "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH",
+        "OTEL_EXPORTER_OTLP_CERTIFICATE",
+        "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -107,6 +113,26 @@ def test_runtime_proxy_url_must_be_http_connect_url(
         )
 
 
+@pytest.mark.parametrize(
+    "proxy_url",
+    ["http://proxy.example.com", "http://proxy.example.com:not-a-port"],
+)
+def test_runtime_proxy_url_requires_a_valid_port(
+    monkeypatch: pytest.MonkeyPatch, proxy_url: str
+) -> None:
+    """Environment references receive the same strict URL validation."""
+    monkeypatch.setenv("CORP_PROXY", proxy_url)
+
+    with pytest.raises(ConfigError, match="Proxy URL"):
+        NetworkSettings.from_config(
+            NetworkConfig(
+                proxy_mode=ProxyMode.URL,
+                proxy_url="${CORP_PROXY}",
+            ),
+            request_verify=True,
+        )
+
+
 def test_network_references_expand_for_raw_oauth_profiles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -166,7 +192,7 @@ def test_profile_ca_bundle_must_exist() -> None:
         )
 
 
-def test_configure_grpc_environment_normalizes_proxy_settings(
+def test_grpc_environment_normalizes_proxy_settings_and_restores_them(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Flight and OTLP receive the same resolved proxy and bypass list."""
@@ -177,10 +203,12 @@ def test_configure_grpc_environment_normalizes_proxy_settings(
         no_proxy="localhost,.internal.example.com",
     )
 
-    settings.configure_grpc_environment()
+    with settings.grpc_environment():
+        assert os.environ[_GRPC_PROXY_ENV] == "http://proxy.example.com:8080"
+        assert os.environ[_NO_GRPC_PROXY_ENV] == "localhost,.internal.example.com"
 
-    assert os.environ[_GRPC_PROXY_ENV] == "http://proxy.example.com:8080"
-    assert os.environ[_NO_GRPC_PROXY_ENV] == "localhost,.internal.example.com"
+    assert os.environ[_GRPC_PROXY_ENV] == ""
+    assert os.environ[_NO_GRPC_PROXY_ENV] == ""
 
 
 def test_system_mode_exports_arize_proxy_to_grpc(
@@ -196,10 +224,9 @@ def test_system_mode_exports_arize_proxy_to_grpc(
     monkeypatch.setenv("NO_PROXY", "localhost")
 
     settings = NetworkSettings.from_config(NetworkConfig(), request_verify=True)
-    settings.configure_grpc_environment()
-
-    assert os.environ[_GRPC_PROXY_ENV] == "http://arize-proxy:8080"
-    assert os.environ[_NO_GRPC_PROXY_ENV] == "localhost"
+    with settings.grpc_environment():
+        assert os.environ[_GRPC_PROXY_ENV] == "http://arize-proxy:8080"
+        assert os.environ[_NO_GRPC_PROXY_ENV] == "localhost"
 
 
 def test_system_mode_preserves_existing_grpc_proxy(
@@ -210,10 +237,33 @@ def test_system_mode_preserves_existing_grpc_proxy(
     monkeypatch.setenv(_NO_GRPC_PROXY_ENV, "grpc.internal.example.com")
 
     settings = NetworkSettings.from_config(NetworkConfig(), request_verify=True)
-    settings.configure_grpc_environment()
+    with settings.grpc_environment():
+        assert os.environ[_GRPC_PROXY_ENV] == "http://grpc-proxy.example.com:8080"
+        assert os.environ[_NO_GRPC_PROXY_ENV] == "grpc.internal.example.com"
 
-    assert os.environ[_GRPC_PROXY_ENV] == "http://grpc-proxy.example.com:8080"
-    assert os.environ[_NO_GRPC_PROXY_ENV] == "grpc.internal.example.com"
+
+def test_grpc_environment_restores_ca_bundle_after_channel_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A profile CA cannot leak into a later profile in the same process."""
+    for name in (
+        "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH",
+        "OTEL_EXPORTER_OTLP_CERTIFICATE",
+        "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+    ):
+        monkeypatch.setenv(name, "caller-ca.pem")
+
+    with NetworkSettings(ca_bundle="profile-ca.pem").grpc_environment():
+        assert os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] == "profile-ca.pem"
+        assert os.environ["OTEL_EXPORTER_OTLP_CERTIFICATE"] == "profile-ca.pem"
+        assert (
+            os.environ["OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE"]
+            == "profile-ca.pem"
+        )
+
+    assert os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] == "caller-ca.pem"
+    assert os.environ["OTEL_EXPORTER_OTLP_CERTIFICATE"] == "caller-ca.pem"
+    assert os.environ["OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE"] == "caller-ca.pem"
 
 
 def test_no_proxy_supports_cidr_and_host_port() -> None:
@@ -229,6 +279,27 @@ def test_no_proxy_supports_cidr_and_host_port() -> None:
         settings.proxy_for("https://api.internal.example.com:443")
         == "http://proxy.example.com:8080"
     )
+
+
+@pytest.mark.parametrize(
+    ("no_proxy", "url", "bypassed"),
+    [
+        ("*.example.com", "https://api.example.com", True),
+        ("*,example.com", "https://anything.example.net", True),
+        ("[::1]:8443", "https://[::1]:8443", True),
+        ("[::1]:8443", "https://[::1]:443", False),
+        ("example.com", "https://not-example.com", False),
+    ],
+)
+def test_no_proxy_compatibility_cases(
+    no_proxy: str, url: str, bypassed: bool
+) -> None:
+    """Support curl-style wildcards, suffixes, IPs, CIDRs, and ports."""
+    settings = NetworkSettings(
+        proxy_url="http://proxy.example.com:8080", no_proxy=no_proxy
+    )
+
+    assert settings.bypasses(url) is bypassed
 
 
 def test_no_proxy_port_entry_matches_scheme_default_port() -> None:

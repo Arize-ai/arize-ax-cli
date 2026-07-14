@@ -4,13 +4,13 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
 
 from arize import Region, SDKConfiguration
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ax.core.exceptions import ConfigError
 from ax.core.headers import cli_default_headers
+from ax.core.proxy import is_http_connect_proxy_url
 
 
 class AuthMethod(StrEnum):
@@ -373,8 +373,7 @@ class NetworkConfig(BaseModel):
         """Reject literal proxy URLs gRPC cannot use, but retain env refs."""
         if not v or (v.startswith("${") and v.endswith("}")):
             return v
-        parsed = urlparse(v)
-        if parsed.scheme != "http" or not parsed.hostname:
+        if not is_http_connect_proxy_url(v):
             raise ValueError(
                 "proxy_url must use 'http://[user:password@]host:port'."
             )

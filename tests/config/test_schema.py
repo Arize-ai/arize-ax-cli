@@ -270,6 +270,20 @@ class TestNetworkConfig:
         with pytest.raises(ValidationError, match="proxy_url must use"):
             NetworkConfig(proxy_url="socks5://proxy.example.com:1080")
 
+    @pytest.mark.parametrize(
+        "proxy_url",
+        [
+            "http://proxy.example.com",
+            "http://proxy.example.com:not-a-port",
+            "http://proxy.example.com:0",
+            "http://proxy.example.com:65536",
+        ],
+    )
+    def test_rejects_proxy_url_without_a_valid_port(self, proxy_url: str) -> None:
+        """HTTP CONNECT profiles require a concrete TCP endpoint."""
+        with pytest.raises(ValidationError, match="proxy_url must use"):
+            NetworkConfig(proxy_url=proxy_url)
+
     def test_url_mode_requires_proxy_url_but_allows_env_reference(self) -> None:
         """Explicit profiles must be complete while retaining secret env refs."""
         with pytest.raises(ValidationError, match="requires a non-empty"):

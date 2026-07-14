@@ -118,17 +118,9 @@ class OAuthClient:
     def _post(self, path: str, data: dict[str, str]) -> requests.Response:
         """POST an OAuth form using the shared proxy and TLS policy."""
         url = f"{self._base}{path}"
-        if not self._network.bypasses(url):
-            return requests.post(
-                url,
-                data=data,
-                timeout=self._timeout,
-                proxies=self._network.requests_proxies(url),
-                verify=self._network.verify_value,
-            )
-
-        # Requests otherwise merges environment proxies even when the selected
-        # destination belongs to NO_PROXY. Use a short-lived, env-free session.
+        # Always use an env-free session. Passing ``proxies={}`` to requests.post
+        # still allows ambient proxy discovery, which can disagree with the
+        # validated policy (for example ALL_PROXY=socks5://...).
         with requests.Session() as session:
             session.trust_env = False
             return session.post(

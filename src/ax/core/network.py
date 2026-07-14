@@ -5,13 +5,20 @@ from __future__ import annotations
 import logging
 import os
 import ssl
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from ipaddress import ip_address, ip_network
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from ax.config.schema import NetworkConfig, ProxyMode
 from ax.core.exceptions import ConfigError
+from ax.core.proxy import is_http_connect_proxy_url
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 _log = logging.getLogger(__name__)
 
@@ -32,6 +39,13 @@ _CA_BUNDLE_ENV_VARS = (
 )
 _GRPC_PROXY_ENV = "grpc_proxy"
 _NO_GRPC_PROXY_ENV = "no_grpc_proxy"
+_GRPC_CA_ENV_VARS = (
+    "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH",
+    "OTEL_EXPORTER_OTLP_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+)
+_MISSING = object()
+_GRPC_ENV_LOCK = threading.RLock()
 
 
 def _split_no_proxy_host_port(entry: str) -> tuple[str, int | None]:
@@ -105,8 +119,7 @@ def _validate_proxy_url(proxy_url: str) -> str:
     """
     if not proxy_url:
         return ""
-    parsed = urlparse(proxy_url)
-    if parsed.scheme != "http" or not parsed.hostname:
+    if not is_http_connect_proxy_url(proxy_url):
         raise ConfigError(
             "Proxy URL must use the form 'http://[user:password@]host:port'."
         )
@@ -188,9 +201,6 @@ class NetworkSettings:
         if not parsed.hostname or not self.no_proxy:
             return False
         host = parsed.hostname.lower().rstrip(".")
-        if self.no_proxy.strip() == "*":
-            return True
-
         try:
             host_ip = ip_address(host)
         except ValueError:
@@ -209,6 +219,9 @@ class NetworkSettings:
             candidate = entry.strip().lower()
             if not candidate:
                 continue
+            # Curl-like wildcard semantics: any '*' entry bypasses every host.
+            if candidate == "*":
+                return True
             candidate, candidate_port = _split_no_proxy_host_port(candidate)
             if candidate_port is not None and candidate_port != url_port:
                 continue
@@ -221,7 +234,9 @@ class NetworkSettings:
                     if candidate.strip("[]") == host:
                         return True
 
-            candidate = candidate.lstrip(".").rstrip(".")
+            candidate = candidate.lstrip("*.").rstrip(".")
+            if not candidate:
+                continue
             if host == candidate or host.endswith(f".{candidate}"):
                 return True
         return False
@@ -233,7 +248,7 @@ class NetworkSettings:
         return self.proxy_url
 
     def requests_proxies(self, url: str) -> dict[str, str]:
-        """Return explicit Requests proxies for *url* without env inheritance."""
+        """Return this policy's explicit Requests proxy mapping for *url*."""
         if not (proxy_url := self.proxy_for(url)):
             return {}
         return {"http": proxy_url, "https": proxy_url}
@@ -247,38 +262,42 @@ class NetworkSettings:
             return context
         return ssl.create_default_context(cafile=self.ca_bundle or None)
 
-    def configure_grpc_environment(self) -> None:
-        """Normalize the proxy settings consumed by gRPC C-Core transports.
+    @contextmanager
+    def grpc_environment(self) -> Iterator[None]:
+        """Temporarily expose this policy to gRPC C-Core channel construction.
 
-        The SDK creates Arrow Flight and OTLP channels internally. Those native
-        transports honor ``grpc_proxy`` and ``no_grpc_proxy`` at channel creation,
-        so set their process-local values before constructing the SDK client.
+        gRPC reads proxy and CA settings from process environment variables. The
+        lock and restoration keep that unavoidable bridge scoped to SDK client
+        construction, rather than leaking one profile's policy into another.
         """
-        if self.override_grpc_proxy:
-            if self.proxy_url:
-                os.environ[_GRPC_PROXY_ENV] = self.proxy_url
-            else:
-                os.environ.pop(_GRPC_PROXY_ENV, None)
-        elif self.proxy_url and not os.environ.get(_GRPC_PROXY_ENV, "").strip():
-            # System mode: gRPC C-Core cannot read ARIZE_PROXY_URL (or
-            # uppercase-only variables), so export the resolved proxy while
-            # preserving a deliberately distinct user-set grpc_proxy.
-            os.environ[_GRPC_PROXY_ENV] = self.proxy_url
+        names = (_GRPC_PROXY_ENV, _NO_GRPC_PROXY_ENV, *_GRPC_CA_ENV_VARS)
+        with _GRPC_ENV_LOCK:
+            previous = {name: os.environ.get(name, _MISSING) for name in names}
+            try:
+                if self.override_grpc_proxy:
+                    _set_environment_value(_GRPC_PROXY_ENV, self.proxy_url)
+                elif self.proxy_url and not os.environ.get(
+                    _GRPC_PROXY_ENV, ""
+                ).strip():
+                    os.environ[_GRPC_PROXY_ENV] = self.proxy_url
 
-        if self.override_grpc_no_proxy:
-            if self.no_proxy:
-                os.environ[_NO_GRPC_PROXY_ENV] = self.no_proxy
-            else:
-                os.environ.pop(_NO_GRPC_PROXY_ENV, None)
-        elif (
-            self.no_proxy and not os.environ.get(_NO_GRPC_PROXY_ENV, "").strip()
-        ):
-            os.environ[_NO_GRPC_PROXY_ENV] = self.no_proxy
+                if self.override_grpc_no_proxy:
+                    _set_environment_value(_NO_GRPC_PROXY_ENV, self.no_proxy)
+                elif self.no_proxy and not os.environ.get(
+                    _NO_GRPC_PROXY_ENV, ""
+                ).strip():
+                    os.environ[_NO_GRPC_PROXY_ENV] = self.no_proxy
 
-        if self.ca_bundle:
-            os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = self.ca_bundle
-            os.environ["OTEL_EXPORTER_OTLP_CERTIFICATE"] = self.ca_bundle
-            os.environ["OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE"] = self.ca_bundle
+                if self.ca_bundle:
+                    for name in _GRPC_CA_ENV_VARS:
+                        os.environ[name] = self.ca_bundle
+                yield
+            finally:
+                for name, value in previous.items():
+                    if value is _MISSING:
+                        os.environ.pop(name, None)
+                    else:
+                        os.environ[name] = value
 
     def redacted_proxy_url(self) -> str:
         """Return a display-safe representation of the configured proxy URL."""
@@ -295,3 +314,11 @@ class NetworkSettings:
             authority = parsed.netloc.rsplit("@", maxsplit=1)[-1]
             return f"{parsed.scheme}://{username}:***@{authority}"
         return f"{parsed.scheme}://{username}:***@{host}{port}"
+
+
+def _set_environment_value(name: str, value: str) -> None:
+    """Set a process variable, or remove it for an explicit empty policy."""
+    if value:
+        os.environ[name] = value
+    else:
+        os.environ.pop(name, None)

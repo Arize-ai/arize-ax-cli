@@ -61,18 +61,15 @@ def test_open_url_forces_direct_connection_for_bypassed_host(
     assert handler.proxies == {}
 
 
-def test_open_url_defers_to_system_proxy_discovery(
+def test_open_url_forces_direct_connection_without_a_resolved_proxy(
     captured_handlers: list,
 ) -> None:
-    """With nothing configured, urllib's default discovery must stay active.
-
-    Passing an explicit empty ProxyHandler would disable the macOS System
-    Configuration / Windows registry proxy lookup the default opener does.
-    """
+    """Unsupported ambient proxies cannot bypass the resolved policy."""
     open_url(
         "https://pypi.org/pypi/arize-ax-cli/json",
         timeout=5,
         network=NetworkSettings(),
     )
 
-    assert _proxy_handlers(captured_handlers) == []
+    (handler,) = _proxy_handlers(captured_handlers)
+    assert handler.proxies == {}

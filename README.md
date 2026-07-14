@@ -508,23 +508,25 @@ and OTLP. Only `http://` proxy URLs are supported: in `system` mode,
 environment values with other schemes (e.g. `socks5://`) are skipped with a
 warning; in `url` mode they are rejected. `ca_bundle` is the preferred way to
 trust a TLS-inspecting corporate proxy; do not disable certificate
-verification unless troubleshooting a controlled environment. When no proxy
-is configured at all, most transports connect directly, but PyPI/GitHub
-downloads additionally honor OS-level proxy settings (macOS System Settings,
-Windows registry) like standard Python tooling.
+verification unless troubleshooting a controlled environment. When no
+supported proxy is configured, every AX transport connects directly; AX does
+not defer to OS-level proxy discovery because it could select a proxy scheme
+that Flight and OTLP cannot use.
 
 `no_proxy` accepts a comma-separated list. Each entry may be a hostname
 (`api.example.com`), a domain suffix (`.example.com`, which also matches the
 bare domain), an IP or CIDR range (`10.0.0.0/8`), a bracketed IPv6 address,
 or any of these with a port (`host:443`, matched against the URL's explicit
-port or the scheme default). A single `*` bypasses the proxy for everything.
+port or the scheme default). `*` may appear anywhere in the list and bypasses
+the proxy for everything. `*.example.com` is accepted as a domain suffix.
 Caveat: Arrow Flight and OTLP use gRPC's own bypass matching, which supports
 hostnames, suffixes, and CIDR ranges but ignores port qualifiers.
 
-For gRPC transports the CLI exports the resolved settings as `grpc_proxy` and
-`no_grpc_proxy`. In `system` mode a `grpc_proxy`/`no_grpc_proxy` you set
-yourself is preserved; in `url` mode the profile's values take precedence.
-When `ca_bundle` is set, it is also exported as
+While constructing gRPC transports, the CLI temporarily exports the resolved
+settings as `grpc_proxy` and `no_grpc_proxy`, then restores the caller's
+environment. In `system` mode a `grpc_proxy`/`no_grpc_proxy` you set yourself
+is preserved; in `url` mode the profile's values take precedence. When
+`ca_bundle` is set, it is also temporarily exported as
 `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` and `OTEL_EXPORTER_OTLP_CERTIFICATE` so
 Flight and trace export trust the same CA.
 
