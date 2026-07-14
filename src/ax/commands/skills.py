@@ -14,6 +14,7 @@ from rich.table import Table
 from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import ConfigError, FileIOError, UsageError
+from ax.core.network import NetworkSettings
 from ax.utils.console import (
     emphasis,
     info,
@@ -159,10 +160,21 @@ def _select_skills(yes: bool, available: list[str]) -> list[str]:
     return result
 
 
-def _download_zip(tmp_dir: Path, *, verify: bool = True) -> Path:
+def _download_zip(
+    tmp_dir: Path,
+    *,
+    verify: bool = True,
+    network: NetworkSettings | None = None,
+) -> Path:
     """Download the arize-skills zipball to tmp_dir and return the path."""
     dest = tmp_dir / "arize-skills.zip"
-    download_url(SKILLS_REPO_ZIP, dest, timeout=30, verify=verify)
+    download_url(
+        SKILLS_REPO_ZIP,
+        dest,
+        timeout=30,
+        verify=verify,
+        network=network,
+    )
     return dest
 
 
@@ -287,15 +299,20 @@ def install(
 
     try:
         config = ConfigManager.load()
-        verify = config.request_verify
     except ConfigError:
         verify = True
+        network = NetworkSettings.from_environment()
+    else:
+        verify = config.request_verify
+        network = NetworkSettings.from_config(
+            config.network, request_verify=verify
+        )
 
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
 
         with spinner("Downloading skills from GitHub"):
-            zip_path = _download_zip(tmp_dir, verify=verify)
+            zip_path = _download_zip(tmp_dir, verify=verify, network=network)
 
         with spinner("Extracting skills"):
             source_root = _extract_zip(zip_path, tmp_dir)

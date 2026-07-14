@@ -7,7 +7,6 @@ import pytest
 from arize.annotation_configs.types import (
     AnnotationConfig,
     AnnotationConfigListResponse,
-    AnnotationConfigType,
     CategoricalAnnotationConfig,
     CategoricalAnnotationValue,
     ContinuousAnnotationConfig,
@@ -272,7 +271,7 @@ class TestCreateAnnotationConfig:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that a newly created freeform config appears in JSON output."""
-        mock_client.annotation_configs.create.return_value = _freeform(
+        mock_client.annotation_configs.create_freeform.return_value = _freeform(
             id="ac_new", name="Quality"
         )
 
@@ -303,7 +302,9 @@ class TestCreateAnnotationConfig:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that create passes the right type and no type-specific args for freeform."""
-        mock_client.annotation_configs.create.return_value = _freeform()
+        mock_client.annotation_configs.create_freeform.return_value = (
+            _freeform()
+        )
 
         _invoke(
             [
@@ -320,22 +321,17 @@ class TestCreateAnnotationConfig:
             mock_client,
         )
 
-        mock_client.annotation_configs.create.assert_called_once_with(
+        mock_client.annotation_configs.create_freeform.assert_called_once_with(
             name="Q",
             space="sp_abc",
-            config_type=AnnotationConfigType.FREEFORM,
-            minimum_score=None,
-            maximum_score=None,
-            values=None,
-            optimization_direction=None,
         )
 
     def test_create_continuous_passes_score_range(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that --min-score, --max-score, and --optimization-direction are forwarded."""
-        mock_client.annotation_configs.create.return_value = _continuous(
-            name="Score"
+        mock_client.annotation_configs.create_continuous.return_value = (
+            _continuous(name="Score")
         )
 
         result = _invoke(
@@ -362,13 +358,11 @@ class TestCreateAnnotationConfig:
         )
 
         assert result.exit_code == 0, result.output
-        mock_client.annotation_configs.create.assert_called_once_with(
+        mock_client.annotation_configs.create_continuous.assert_called_once_with(
             name="Score",
             space="sp_abc",
-            config_type=AnnotationConfigType.CONTINUOUS,
             minimum_score=0.0,
             maximum_score=1.0,
-            values=None,
             optimization_direction=OptimizationDirection("maximize"),
         )
 
@@ -378,8 +372,8 @@ class TestCreateAnnotationConfig:
         """Test that --value 'good' --value 'neutral' --value 'bad' is
         parsed into CategoricalAnnotationValue list.
         """
-        mock_client.annotation_configs.create.return_value = _categorical(
-            name="Verdict"
+        mock_client.annotation_configs.create_categorical.return_value = (
+            _categorical(name="Verdict")
         )
 
         result = _invoke(
@@ -406,8 +400,9 @@ class TestCreateAnnotationConfig:
         )
 
         assert result.exit_code == 0, result.output
-        call_kwargs = mock_client.annotation_configs.create.call_args.kwargs
-        assert call_kwargs["config_type"] == AnnotationConfigType.CATEGORICAL
+        call_kwargs = (
+            mock_client.annotation_configs.create_categorical.call_args.kwargs
+        )
         assert call_kwargs["values"] == [
             CategoricalAnnotationValue(label="good"),
             CategoricalAnnotationValue(label="neutral"),
@@ -440,8 +435,8 @@ class TestCreateAnnotationConfig:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that an SDK error during create causes a non-zero exit."""
-        mock_client.annotation_configs.create.side_effect = RuntimeError(
-            "Conflict"
+        mock_client.annotation_configs.create_freeform.side_effect = (
+            RuntimeError("Conflict")
         )
 
         result = _invoke(

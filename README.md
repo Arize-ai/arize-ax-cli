@@ -358,6 +358,15 @@ max_http_payload_size_mb = 8
 [security]
 request_verify = true
 
+[network]
+# Uses ARIZE_PROXY_URL, HTTPS_PROXY/https_proxy, then HTTP_PROXY/http_proxy.
+proxy_mode = "system"
+# Optional: use a profile-specific HTTP CONNECT proxy instead.
+# proxy_mode = "url"
+# proxy_url = "http://proxy.yourcompany.com:8080"
+# no_proxy = "localhost,127.0.0.1,.yourcompany.internal"
+# ca_bundle = "/etc/ssl/certs/corporate-ca.pem"
+
 [storage]
 directory = "~/.arize"
 cache_enabled = true
@@ -406,6 +415,10 @@ ax profiles update staging --from-file ./staging.toml --api-key ak_override
 | `--from-file`, `-f` | TOML file to load; completely replaces the existing profile |
 | `--api-key`         | Arize API key                                               |
 | `--region`          | Routing region (e.g. `us-east-1b`, `US`, `EU`)              |
+| `--proxy-mode`      | Proxy source: `system` environment variables or `url`       |
+| `--proxy-url`       | HTTP CONNECT proxy URL                                       |
+| `--no-proxy`        | Comma-separated hosts that bypass the proxy                  |
+| `--ca-bundle`       | CA bundle for a TLS-inspecting proxy or private endpoint     |
 | `--output-format`   | Default output format (`table`, `json`, `csv`, `parquet`)   |
 | `--verbose`, `-v`   | Enable verbose logs                                         |
 
@@ -464,6 +477,28 @@ max_http_payload_size_mb = 8
 [security]
 request_verify = true  # Set to false to disable SSL verification (not recommended)
 ```
+
+**Network** (optional)
+
+```toml
+[network]
+# Default: use standard process environment variables.
+# ARIZE_PROXY_URL > HTTPS_PROXY/https_proxy > HTTP_PROXY/http_proxy
+proxy_mode = "system"
+
+# To pin a proxy to this profile, use `url` mode. This value may be an
+# environment-variable reference so credentials are not stored in the profile.
+# proxy_mode = "url"
+# proxy_url = "${ARIZE_PROXY_URL}"
+# no_proxy = "localhost,127.0.0.1,.internal.example.com"
+# ca_bundle = "${ARIZE_SSL_CA_CERT}"
+```
+
+The proxy is applied to REST, OAuth, PyPI/GitHub downloads, Arrow Flight, and
+OTLP/gRPC. The proxy must support HTTP CONNECT and HTTP/2 tunneling for Flight
+and OTLP. Use `no_proxy` for private hosts and loopback addresses. `ca_bundle`
+is the preferred way to trust a TLS-inspecting corporate proxy; do not disable
+certificate verification unless troubleshooting a controlled environment.
 
 **Storage** (optional)
 
@@ -1918,6 +1953,10 @@ The CLI respects these environment variables:
 
 - `ARIZE_API_KEY`: Your Arize API key
 - `ARIZE_REGION`: Region (US, EU, etc.)
+- `ARIZE_PROXY_URL`: AX-specific HTTP CONNECT proxy URL
+- `HTTPS_PROXY` / `https_proxy`, `HTTP_PROXY` / `http_proxy`: Standard proxy URLs
+- `NO_PROXY` / `no_proxy`: Comma-separated proxy bypass hosts
+- `ARIZE_SSL_CA_CERT`: CA bundle for TLS-inspecting proxy certificates
 - Any other `ARIZE_*` variables will be detected during `ax profiles create`
 
 ### Debugging
@@ -1957,7 +1996,9 @@ ax datasets list --space sp_abc123 --verbose
 1. Check your routing configuration: `ax profiles show`
 2. Verify network connectivity
 3. For on-premise installations, ensure `single_host` is configured correctly
-4. For SSL issues, check `security.request_verify` setting (use with caution)
+4. Configure `[network]` or `HTTPS_PROXY` for corporate egress proxies
+5. Set `network.ca_bundle` / `ARIZE_SSL_CA_CERT` for a TLS-inspecting proxy
+6. For SSL issues, check `security.request_verify` setting (use with caution)
 
 ---
 

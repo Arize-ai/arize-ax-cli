@@ -9,8 +9,10 @@ from pydantic import ValidationError
 from ax.config.schema import (
     AuthConfig,
     Config,
+    NetworkConfig,
     OutputConfig,
     ProfileConfig,
+    ProxyMode,
     RoutingConfig,
     SecurityConfig,
     StorageConfig,
@@ -214,6 +216,45 @@ class TestSecurityConfig:
         """Test that string value is allowed for request_verify."""
         security = SecurityConfig(request_verify="${ARIZE_REQUEST_VERIFY}")
         assert security.request_verify == "${ARIZE_REQUEST_VERIFY}"
+
+
+class TestNetworkConfig:
+    """Tests for profile-level proxy configuration."""
+
+    def test_defaults_to_system_proxy_environment(self) -> None:
+        """New profiles inherit standard proxy environment variables by default."""
+        network = NetworkConfig()
+        assert network.proxy_mode == "system"
+        assert network.proxy_url == ""
+        assert network.no_proxy == ""
+        assert network.ca_bundle == ""
+
+    def test_strips_network_strings(self) -> None:
+        """Saved proxy values are normalized before transport setup."""
+        network = NetworkConfig(
+            proxy_url="  http://proxy.example.com:8080  ",
+            no_proxy=" localhost,127.0.0.1 ",
+            ca_bundle=" /tmp/ca.pem ",
+        )
+        assert network.proxy_url == "http://proxy.example.com:8080"
+        assert network.no_proxy == "localhost,127.0.0.1"
+        assert network.ca_bundle == "/tmp/ca.pem"
+
+    def test_rejects_unsupported_literal_proxy_url(self) -> None:
+        """Profiles fail early when a proxy cannot tunnel gRPC."""
+        with pytest.raises(ValidationError, match="proxy_url must use"):
+            NetworkConfig(proxy_url="socks5://proxy.example.com:1080")
+
+    def test_url_mode_requires_proxy_url_but_allows_env_reference(self) -> None:
+        """Explicit profiles must be complete while retaining secret env refs."""
+        with pytest.raises(ValidationError, match="requires a non-empty"):
+            NetworkConfig(proxy_mode=ProxyMode.URL)
+
+        network = NetworkConfig(
+            proxy_mode=ProxyMode.URL,
+            proxy_url="${ARIZE_PROXY_URL}",
+        )
+        assert network.proxy_url == "${ARIZE_PROXY_URL}"
 
 
 class TestStorageConfig:

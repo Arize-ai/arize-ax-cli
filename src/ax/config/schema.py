@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from arize import Region, SDKConfiguration
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -330,6 +331,48 @@ class SecurityConfig(BaseModel):
     request_verify: bool | str = Field(default=True)
 
 
+class ProxyMode(StrEnum):
+    """How outbound network requests select an HTTP proxy."""
+
+    SYSTEM = "system"
+    URL = "url"
+
+
+class NetworkConfig(BaseModel):
+    """Outbound proxy and TLS settings shared by every CLI transport."""
+
+    proxy_mode: ProxyMode = Field(default=ProxyMode.SYSTEM)
+    proxy_url: str = Field(default="")
+    no_proxy: str = Field(default="")
+    ca_bundle: str = Field(default="")
+
+    @field_validator("proxy_url", "no_proxy", "ca_bundle")
+    @classmethod
+    def _strip_network_strings(cls, v: str) -> str:
+        """Normalize optional network configuration strings."""
+        return v.strip()
+
+    @field_validator("proxy_url")
+    @classmethod
+    def _validate_literal_proxy_url(cls, v: str) -> str:
+        """Reject literal proxy URLs gRPC cannot use, but retain env refs."""
+        if not v or (v.startswith("${") and v.endswith("}")):
+            return v
+        parsed = urlparse(v)
+        if parsed.scheme != "http" or not parsed.hostname:
+            raise ValueError(
+                "proxy_url must use 'http://[user:password@]host:port'."
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _require_proxy_url_for_url_mode(self) -> "NetworkConfig":
+        """Ensure an explicit proxy profile has a proxy URL to resolve."""
+        if self.proxy_mode == ProxyMode.URL and not self.proxy_url:
+            raise ValueError("proxy_mode='url' requires a non-empty proxy_url")
+        return self
+
+
 class StorageConfig(BaseModel):
     """Storage and caching configuration."""
 
@@ -383,6 +426,7 @@ class Config(BaseModel):
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     transport: TransportConfig = Field(default_factory=TransportConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    network: NetworkConfig = Field(default_factory=NetworkConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     update: UpdateConfig = Field(default_factory=UpdateConfig)

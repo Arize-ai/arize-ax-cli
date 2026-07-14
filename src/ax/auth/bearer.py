@@ -11,6 +11,7 @@ from ax.auth import OAUTH_CLIENT_ID
 from ax.auth.oauth_client import OAuthClient
 from ax.config.schema import AuthConfig, OAuthCredentials
 from ax.core.exceptions import ConfigError
+from ax.core.network import NetworkSettings
 
 # Refresh if the access token expires within this many seconds.
 _REFRESH_WINDOW = timedelta(seconds=60)
@@ -21,6 +22,7 @@ def get_active_bearer(
     *,
     profile_path: Path,
     base_url: str,
+    network: NetworkSettings | None = None,
 ) -> str:
     """Return the bearer credential to pass to the Arize SDK.
 
@@ -40,13 +42,14 @@ def get_active_bearer(
     if auth.oauth.expires_at - now > _REFRESH_WINDOW:
         return auth.oauth.access_token
 
-    return _refresh_and_persist(auth.oauth, profile_path, base_url)
+    return _refresh_and_persist(auth.oauth, profile_path, base_url, network)
 
 
 def _refresh_and_persist(
     current: OAuthCredentials,
     profile_path: Path,
     base_url: str,
+    network: NetworkSettings | None = None,
 ) -> str:
     """Refresh the OAuth token pair and persist it.
 
@@ -67,7 +70,11 @@ def _refresh_and_persist(
             if on_disk is not None:
                 current = on_disk
 
-        client = OAuthClient(base_url=base_url, client_id=OAUTH_CLIENT_ID)
+        client = OAuthClient(
+            base_url=base_url,
+            client_id=OAUTH_CLIENT_ID,
+            network=network,
+        )
         resp = client.refresh(refresh_token=current.refresh_token)
         new_expires = datetime.now(timezone.utc) + timedelta(
             seconds=resp.expires_in

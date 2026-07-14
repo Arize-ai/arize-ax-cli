@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import pytest
 from typer.testing import CliRunner
 
-from ax.commands.profiles import app
+from ax.commands.profiles import _display_detected_env_value, app
 from ax.config.manager import ConfigManager
 from ax.config.schema import (
     AuthConfig,
@@ -250,6 +250,41 @@ class TestFlags:
         assert saved_configs[0].routing.single_host == "arize.yourcompany.com"
         assert saved_configs[0].routing.single_port == "443"
 
+    def test_proxy_flags_create_network_policy(self, runner: CliRunner) -> None:
+        """Proxy flags persist the transport policy on the created profile."""
+        saved_configs: list[Config] = []
+
+        def capture_save(config: Config, _profile: str) -> None:
+            saved_configs.append(config)
+
+        with patch("ax.commands.profiles.ConfigManager") as mock_cm:
+            mock_cm.list_profiles.return_value = []
+            mock_cm.exists.return_value = False
+            mock_cm.save.side_effect = capture_save
+
+            result = runner.invoke(
+                app,
+                [
+                    "create",
+                    "proxied",
+                    "--api-key",
+                    "ak-test",
+                    "--proxy-url",
+                    "http://proxy.example.com:8080",
+                    "--no-proxy",
+                    "localhost,.internal.example.com",
+                    "--ca-bundle",
+                    "/tmp/corporate-ca.pem",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        network = saved_configs[0].network
+        assert network.proxy_mode == "url"
+        assert network.proxy_url == "http://proxy.example.com:8080"
+        assert network.no_proxy == "localhost,.internal.example.com"
+        assert network.ca_bundle == "/tmp/corporate-ca.pem"
+
     def test_env_var_detection_skipped_when_flag_provided(
         self, runner: CliRunner
     ) -> None:
@@ -273,6 +308,15 @@ class TestFlags:
 
         assert result.exit_code == 0, result.output
         mock_detect.assert_not_called()
+
+    def test_detected_proxy_url_redacts_password(self) -> None:
+        """Interactive setup must not echo proxy credentials to the terminal."""
+        value = _display_detected_env_value(
+            "proxy_url", "http://user:super-secret@proxy.example.com:8080"
+        )
+
+        assert value == "http://user:***@proxy.example.com:8080"
+        assert "super-secret" not in value
 
 
 # ---------------------------------------------------------------------------
@@ -704,7 +748,11 @@ class TestProfilesCreateOAuth:
             single_host="arize.my-company.com", single_port="443"
         )
 
-        from ax.config.schema import SecurityConfig, TransportConfig
+        from ax.config.schema import (
+            NetworkConfig,
+            SecurityConfig,
+            TransportConfig,
+        )
 
         with (
             patch(
@@ -722,6 +770,10 @@ class TestProfilesCreateOAuth:
             patch(
                 "ax.config.setup.read_security",
                 return_value=SecurityConfig(),
+            ),
+            patch(
+                "ax.config.setup.read_network",
+                return_value=NetworkConfig(),
             ),
             patch("ax.config.setup.read_output_format", return_value="table"),
             patch("questionary.select") as mock_select,

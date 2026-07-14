@@ -251,6 +251,9 @@ class TestEnvVarMapping:
             "pyarrow_max_chunksize",
             "max_http_payload_size_mb",
             "request_verify",
+            "proxy_url",
+            "no_proxy",
+            "ca_bundle",
         }
         assert set(ENV_VAR_MAPPING.keys()) == expected_keys
 

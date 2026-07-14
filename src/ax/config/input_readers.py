@@ -13,6 +13,8 @@ import typer
 from arize import Region
 
 from ax.config.schema import (
+    NetworkConfig,
+    ProxyMode,
     RoutingConfig,
     SecurityConfig,
     TransportConfig,
@@ -268,6 +270,48 @@ def read_security() -> SecurityConfig:
     """Read security configuration from user input."""
     return SecurityConfig(
         request_verify=read_request_verify(),
+    )
+
+
+def read_network() -> NetworkConfig:
+    """Read shared outbound proxy and CA settings from user input."""
+    mode = questionary.select(
+        "Outbound proxy mode:",
+        choices=[
+            questionary.Choice(
+                "Use system environment variables (recommended)",
+                value=ProxyMode.SYSTEM,
+            ),
+            questionary.Choice(
+                "Use a specific HTTP CONNECT proxy URL",
+                value=ProxyMode.URL,
+            ),
+        ],
+        default=ProxyMode.SYSTEM,
+    ).ask()
+    if mode is None:
+        raise typer.Abort()
+
+    if mode == ProxyMode.SYSTEM:
+        return NetworkConfig(proxy_mode=ProxyMode.SYSTEM)
+
+    return NetworkConfig(
+        proxy_mode=ProxyMode.URL,
+        proxy_url=read_str_field(
+            msg="HTTP CONNECT proxy URL",
+            example="http://proxy.example.com:8080",
+            env_var="ARIZE_PROXY_URL",
+        ),
+        no_proxy=read_str_field(
+            msg="Proxy bypass hosts",
+            example="localhost,127.0.0.1,.internal.example.com",
+            env_var="ARIZE_NO_PROXY",
+        ),
+        ca_bundle=read_str_field(
+            msg="CA bundle path (optional; leave blank for system trust)",
+            example="/etc/ssl/certs/corporate-ca.pem",
+            env_var="ARIZE_SSL_CA_CERT",
+        ),
     )
 
 

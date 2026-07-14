@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from ax.config.input_readers import (
     read_api_key,
+    read_network,
     read_output_format,
     read_region,
     read_routing,
@@ -20,6 +21,7 @@ from ax.config.schema import (
     AuthConfig,
     AuthMethod,
     Config,
+    NetworkConfig,
     OutputConfig,
     ProfileConfig,
     RoutingConfig,
@@ -49,6 +51,9 @@ ENV_VAR_MAPPING = {
     "pyarrow_max_chunksize": "ARIZE_MAX_CHUNKSIZE",
     "max_http_payload_size_mb": "ARIZE_MAX_HTTP_PAYLOAD_SIZE_MB",
     "request_verify": "ARIZE_REQUEST_VERIFY",
+    "proxy_url": "ARIZE_PROXY_URL",
+    "no_proxy": "ARIZE_NO_PROXY",
+    "ca_bundle": "ARIZE_SSL_CA_CERT",
 }
 
 
@@ -130,6 +135,7 @@ def advanced_setup(
     routing_config = read_routing()
     transport_config = read_transport()
     security_config = read_security()
+    network_config = read_network()
     storage_config = StorageConfig()
     output_config = OutputConfig(
         format=read_output_format(),
@@ -140,6 +146,7 @@ def advanced_setup(
         routing=routing_config,
         transport=transport_config,
         security=security_config,
+        network=network_config,
         storage=storage_config,
         output=output_config,
     )
@@ -212,6 +219,7 @@ _TRANSPORT_KEYS = (
     "max_http_payload_size_mb",
 )
 _STORAGE_KEYS = ("directory", "cache_enabled")
+_NETWORK_KEYS = ("proxy_mode", "proxy_url", "no_proxy", "ca_bundle")
 
 
 def create_config_from_flags(
@@ -246,6 +254,10 @@ def create_config_from_flags(
 
     if "request_verify" in flat:
         data["security"] = {"request_verify": flat["request_verify"]}
+
+    network = {k: flat[k] for k in _NETWORK_KEYS if k in flat}
+    if network:
+        data["network"] = network
 
     storage = {k: flat[k] for k in _STORAGE_KEYS if k in flat}
     if storage:
@@ -288,6 +300,8 @@ def merge_config_with_flags(existing: Config, flat: dict[str, Any]) -> Config:
     if "request_verify" in flat:
         data["security"]["request_verify"] = flat["request_verify"]
 
+    data["network"].update({k: flat[k] for k in _NETWORK_KEYS if k in flat})
+
     data["storage"].update({k: flat[k] for k in _STORAGE_KEYS if k in flat})
 
     if "output_format" in flat:
@@ -301,6 +315,7 @@ def merge_config_with_flags(existing: Config, flat: dict[str, Any]) -> Config:
 
 _ENV_ROUTING_FIELDS = frozenset(_ROUTING_KEYS)
 _ENV_TRANSPORT_FIELDS = frozenset(_TRANSPORT_KEYS)
+_ENV_NETWORK_FIELDS = frozenset(_NETWORK_KEYS)
 
 
 def _env_ref(env_var_name: str) -> str:
@@ -361,6 +376,13 @@ def create_config_from_env_vars(
         security_kwargs["request_verify"] = _env_ref(env_vars["request_verify"])
     security_config = SecurityConfig(**security_kwargs)
 
+    network_kwargs: dict[str, Any] = {
+        field: _env_ref(env_vars[field])
+        for field in _ENV_NETWORK_FIELDS
+        if field in env_vars
+    }
+    network_config = NetworkConfig(**network_kwargs)
+
     storage_config = StorageConfig()
     output_config = OutputConfig(
         format=read_output_format(),
@@ -371,6 +393,7 @@ def create_config_from_env_vars(
         routing=routing_config,
         transport=transport_config,
         security=security_config,
+        network=network_config,
         storage=storage_config,
         output=output_config,
     )

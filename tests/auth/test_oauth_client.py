@@ -6,6 +6,7 @@ from ax.auth.oauth_client import (
     OAuthClient,
     _decode_email_from_id_token,
 )
+from ax.core.network import NetworkSettings
 
 
 def _fake_id_token(email: str) -> str:
@@ -62,6 +63,35 @@ class TestDecodeEmailFromIdToken:
 
 
 class TestExchangeCode:
+    def test_uses_explicit_proxy_and_ca_bundle(self):
+        """OAuth token exchange follows the same profile policy as API calls."""
+        client = OAuthClient(
+            base_url="https://app.arize.com",
+            client_id="arize-cli",
+            network=NetworkSettings(
+                proxy_url="http://proxy.example.com:8080",
+                ca_bundle="/tmp/corporate-ca.pem",
+            ),
+        )
+        with patch("ax.auth.oauth_client.requests.post") as post:
+            post.return_value = _mock_response(
+                200,
+                {
+                    "access_token": "a",
+                    "refresh_token": "r",
+                    "expires_in": 60,
+                },
+            )
+            client.exchange_code(
+                code="abc", code_verifier="v", redirect_uri="u"
+            )
+
+        assert post.call_args.kwargs["proxies"] == {
+            "http": "http://proxy.example.com:8080",
+            "https": "http://proxy.example.com:8080",
+        }
+        assert post.call_args.kwargs["verify"] == "/tmp/corporate-ca.pem"
+
     def test_happy_path_parses_response_with_id_token_email(self):
         client = OAuthClient(
             base_url="https://app.arize.com", client_id="arize-cli"

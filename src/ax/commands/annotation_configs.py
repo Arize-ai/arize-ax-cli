@@ -1,11 +1,14 @@
 """Annotation config management commands."""
 
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 from arize.annotation_configs.types import (
     AnnotationConfigType,
+    CategoricalAnnotationConfig,
     CategoricalAnnotationValue,
+    ContinuousAnnotationConfig,
+    FreeformAnnotationConfig,
     OptimizationDirection,
 )
 
@@ -261,20 +264,63 @@ def create_annotation_config(
             CategoricalAnnotationValue(label=v) for v in values
         ]
 
+    if annotation_type == AnnotationConfigType.CONTINUOUS and (
+        min_score is None or max_score is None
+    ):
+        raise typer.BadParameter(
+            "--min-score and --max-score are required for a continuous config."
+        )
+    if (
+        annotation_type == AnnotationConfigType.CATEGORICAL
+        and not categorical_values
+    ):
+        raise typer.BadParameter(
+            "At least one --value is required for a categorical config."
+        )
+    if annotation_type not in {
+        AnnotationConfigType.CONTINUOUS,
+        AnnotationConfigType.CATEGORICAL,
+        AnnotationConfigType.FREEFORM,
+    }:
+        raise typer.BadParameter(
+            f"Unsupported annotation config type: {annotation_type}"
+        )
+
+    annotation_config: (
+        CategoricalAnnotationConfig
+        | ContinuousAnnotationConfig
+        | FreeformAnnotationConfig
+    )
     try:
         with spinner(
             "Creating annotation config",
             success_msg="Annotation config created successfully",
         ):
-            annotation_config = client.annotation_configs.create(
-                name=name,
-                space=space,
-                config_type=annotation_type,
-                minimum_score=min_score,
-                maximum_score=max_score,
-                values=categorical_values,
-                optimization_direction=optimization_direction,
-            )
+            if annotation_type == AnnotationConfigType.CONTINUOUS:
+                annotation_config = client.annotation_configs.create_continuous(
+                    name=name,
+                    space=space,
+                    minimum_score=cast("float", min_score),
+                    maximum_score=cast("float", max_score),
+                    optimization_direction=optimization_direction,
+                )
+            elif annotation_type == AnnotationConfigType.CATEGORICAL:
+                annotation_config = (
+                    client.annotation_configs.create_categorical(
+                        name=name,
+                        space=space,
+                        values=cast(
+                            "list[CategoricalAnnotationValue]",
+                            categorical_values,
+                        ),
+                        optimization_direction=optimization_direction,
+                    )
+                )
+            else:
+                annotation_config = client.annotation_configs.create_freeform(
+                    name=name,
+                    space=space,
+                )
     except Exception as e:
         raise APIError(f"Failed to create annotation config: {e}") from e
     else:

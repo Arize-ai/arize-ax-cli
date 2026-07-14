@@ -37,14 +37,19 @@ def _start_upgrade_check() -> threading.Thread | None:
     """Start background update check using profile config if available."""
     from ax.config.manager import ConfigManager
     from ax.core.exceptions import ConfigError
+    from ax.core.network import NetworkSettings
     from ax.utils.upgrade_check import start_background_check
 
     try:
         config = ConfigManager.load("")
+        network = NetworkSettings.from_config(
+            config.network, request_verify=config.request_verify
+        )
         return start_background_check(
             enabled=config.update.enabled,
             interval_hours=config.update.check_interval_hours,
             request_verify=config.request_verify,
+            network=network,
         )
     except ConfigError:
         return None

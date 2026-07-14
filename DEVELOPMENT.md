@@ -637,6 +637,7 @@ class ListDatasetsResponse(BaseModel):
 - Custom routing (single endpoint, base domain, custom hosts)
 - Transport settings (workers, queue size, chunk size)
 - Security settings (TLS verification)
+- Shared network settings (HTTP CONNECT proxy, bypass hosts, CA bundle)
 
 ### Environment Variable References
 

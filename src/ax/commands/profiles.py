@@ -2,7 +2,7 @@
 
 import os
 import re
-from typing import Annotated, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 import questionary
 import typer
@@ -16,8 +16,10 @@ from ax.config.schema import (
     AuthConfig,
     AuthMethod,
     Config,
+    NetworkConfig,
     OutputConfig,
     ProfileConfig,
+    ProxyMode,
     RoutingConfig,
 )
 from ax.config.setup import (
@@ -31,6 +33,7 @@ from ax.config.setup import (
 )
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import ConfigError
+from ax.core.network import NetworkSettings
 from ax.utils.console import (
     confirm,
     emphasis,
@@ -52,6 +55,15 @@ app = typer.Typer(
 )
 
 console = Console(stderr=True)
+
+
+def _display_detected_env_value(field: str, value: str) -> str:
+    """Return a safe value for the interactive environment-detection screen."""
+    if field == "api_key":
+        return mask(value)
+    if field == "proxy_url":
+        return NetworkSettings(proxy_url=value).redacted_proxy_url()
+    return value
 
 
 @app.command("create")
@@ -102,6 +114,35 @@ def create(
             help="Single endpoint port for on-prem deployments (e.g. 443).",
         ),
     ] = None,
+    # --- Network ---
+    proxy_mode: Annotated[
+        ProxyMode | None,
+        typer.Option(
+            "--proxy-mode",
+            help="Proxy source: system (environment variables) or url.",
+        ),
+    ] = None,
+    proxy_url: Annotated[
+        str | None,
+        typer.Option(
+            "--proxy-url",
+            help="HTTP CONNECT proxy URL, e.g. http://proxy.example.com:8080.",
+        ),
+    ] = None,
+    no_proxy: Annotated[
+        str | None,
+        typer.Option(
+            "--no-proxy",
+            help="Comma-separated hosts that bypass the proxy.",
+        ),
+    ] = None,
+    ca_bundle: Annotated[
+        str | None,
+        typer.Option(
+            "--ca-bundle",
+            help="CA bundle for a TLS-inspecting proxy or private endpoint.",
+        ),
+    ] = None,
     # --- Output ---
     output_format: Annotated[
         str | None,
@@ -122,12 +163,9 @@ def create(
     """Create Arize CLI configuration interactively or from flags/file.
 
     Creates a new configuration profile with API key or OAuth credentials,
-    routing defaults, and preferences. Non-interactive CLI flags are limited
-    to --api-key, --auth-method, --region, --single-host, --single-port, and
-    --output-format; use --from-file (TOML) or interactive setup for hosts,
-    storage, security, transport, and other sections. Detects existing ARIZE_*
-    environment variables when running interactively (only when neither flags
-    nor --from-file are used).
+    routing defaults, network proxy settings, and preferences. Detects existing
+    ARIZE_* environment variables when running interactively (only when neither
+    flags nor --from-file are used).
 
     Precedence (highest to lowest): CLI flags > --from-file (TOML) >
     interactive prompts.
@@ -141,6 +179,8 @@ def create(
             "--auth-method oauth and --api-key are mutually exclusive. "
             "Choose one authentication method."
         )
+    if proxy_url is not None and proxy_mode is None:
+        proxy_mode = ProxyMode.URL
 
     existing_profiles = ConfigManager.list_profiles()
 
@@ -163,6 +203,10 @@ def create(
             "region": region,
             "single_host": single_host,
             "single_port": single_port,
+            "proxy_mode": proxy_mode,
+            "proxy_url": proxy_url,
+            "no_proxy": no_proxy,
+            "ca_bundle": ca_bundle,
             "output_format": output_format,
         }.items()
         if v is not None
@@ -221,10 +265,22 @@ def create(
             }.items()
             if v is not None
         }
+        network_flags: dict[str, Any] = {
+            k: v
+            for k, v in {
+                "proxy_mode": proxy_mode,
+                "proxy_url": proxy_url,
+                "no_proxy": no_proxy,
+                "ca_bundle": ca_bundle,
+            }.items()
+            if v is not None
+        }
         routing_cfg = RoutingConfig(**routing_flags)
+        network_cfg = NetworkConfig(**network_flags)
         base_url = routing_cfg.resolve_app_url()
-
-        oauth_creds = perform_oauth_login(base_url=base_url)
+        network = NetworkSettings.from_config(network_cfg, request_verify=True)
+        network.configure_grpc_environment()
+        oauth_creds = perform_oauth_login(base_url=base_url, network=network)
         auth_cfg = AuthConfig(auth_method=AuthMethod.OAUTH, oauth=oauth_creds)
 
         # output_format is `str | None` from typer but OutputConfig.format
@@ -242,6 +298,7 @@ def create(
             profile=ProfileConfig(name=profile),
             auth=auth_cfg,
             routing=routing_cfg,
+            network=network_cfg,
             output=output_cfg,
         )
     elif flat_flags:
@@ -275,9 +332,9 @@ def create(
         if detected_env_vars:
             emphasis("Environment Variable Detection\n")
             for field, env_var in detected_env_vars.items():
-                value = os.environ.get(env_var, "")
-                if field == "api_key":
-                    value = mask(value)
+                value = _display_detected_env_value(
+                    field, os.environ.get(env_var, "")
+                )
                 console.print(
                     f"  [green]✓[/green] Detected {env_var} = {value}"
                 )
@@ -316,7 +373,14 @@ def create(
                 if use_env_vars
                 else config.routing.resolve_app_url()
             )
-            oauth_creds = perform_oauth_login(base_url=base_url)
+            network = NetworkSettings.from_config(
+                config.network, request_verify=config.request_verify
+            )
+            network.configure_grpc_environment()
+            oauth_creds = perform_oauth_login(
+                base_url=base_url,
+                network=network,
+            )
             config = config.model_copy(
                 update={
                     "auth": AuthConfig(
@@ -379,6 +443,35 @@ def update(
             help="Single endpoint port for on-prem deployments (e.g. 443).",
         ),
     ] = None,
+    # --- Network ---
+    proxy_mode: Annotated[
+        ProxyMode | None,
+        typer.Option(
+            "--proxy-mode",
+            help="Proxy source: system (environment variables) or url.",
+        ),
+    ] = None,
+    proxy_url: Annotated[
+        str | None,
+        typer.Option(
+            "--proxy-url",
+            help="HTTP CONNECT proxy URL, e.g. http://proxy.example.com:8080.",
+        ),
+    ] = None,
+    no_proxy: Annotated[
+        str | None,
+        typer.Option(
+            "--no-proxy",
+            help="Comma-separated hosts that bypass the proxy.",
+        ),
+    ] = None,
+    ca_bundle: Annotated[
+        str | None,
+        typer.Option(
+            "--ca-bundle",
+            help="CA bundle for a TLS-inspecting proxy or private endpoint.",
+        ),
+    ] = None,
     # --- Output ---
     output_format: Annotated[
         str | None,
@@ -394,15 +487,16 @@ def update(
 ) -> None:
     """Update an existing configuration profile.
 
-    CLI flags are limited to --api-key, --region, --single-host, --single-port,
-    and --output-format; use --from-file (TOML) for other fields. With
-    --from-file, the profile is replaced by the file contents; any flags you
-    pass are applied on top (CLI overrides file). With flags only, only the
+    With --from-file, the profile is replaced by the file contents; any flags
+    you pass are applied on top (CLI overrides file). With flags only, only the
     specified fields are updated; all others are preserved.
     """
     setup_logging(verbose)
 
     profile = profile_arg or ConfigManager.get_active_profile()
+
+    if proxy_url is not None and proxy_mode is None:
+        proxy_mode = ProxyMode.URL
 
     if not ConfigManager.exists(profile):
         if profile:
@@ -422,6 +516,10 @@ def update(
             "region": region,
             "single_host": single_host,
             "single_port": single_port,
+            "proxy_mode": proxy_mode,
+            "proxy_url": proxy_url,
+            "no_proxy": no_proxy,
+            "ca_bundle": ca_bundle,
             "output_format": output_format,
         }.items()
         if v is not None
@@ -652,6 +750,24 @@ def show_profile(
         if isinstance(val, str) and _is_bool(val):
             val = val.lower() == "true"
         lines.append(kv("  Request Verify", val))
+
+    # Network section
+    if all_sections or is_customized("network"):
+        lines.append("")
+        lines.append("[bold]Network[/bold]")
+        lines.append(kv("  Proxy Mode", config.network.proxy_mode))
+        proxy_url = config.network.proxy_url
+        if proxy_url:
+            safe_proxy = (
+                proxy_url
+                if _is_env_var_ref(proxy_url)
+                else NetworkSettings(proxy_url=proxy_url).redacted_proxy_url()
+            )
+            lines.append(kv("  Proxy URL", safe_proxy))
+        if config.network.no_proxy:
+            lines.append(kv("  No Proxy", config.network.no_proxy))
+        if config.network.ca_bundle:
+            lines.append(kv("  CA Bundle", config.network.ca_bundle))
 
     # Storage section
     if all_sections or is_customized("storage"):

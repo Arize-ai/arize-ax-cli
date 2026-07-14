@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import requests
 
 from ax.core.exceptions import AuthenticationError
+from ax.core.network import NetworkSettings
 
 _log = logging.getLogger(__name__)
 
@@ -102,27 +103,55 @@ class OAuthClient:
     """HTTP client for the Arize app's /oauth2/{token,revoke} endpoints."""
 
     def __init__(
-        self, base_url: str, client_id: str, timeout: float = 10.0
+        self,
+        base_url: str,
+        client_id: str,
+        timeout: float = 10.0,
+        network: NetworkSettings | None = None,
     ) -> None:
         """Pin the base URL and OAuth client_id used by every request."""
         self._base = base_url.rstrip("/")
         self._client_id = client_id
         self._timeout = timeout
+        self._network = network or NetworkSettings.from_environment()
+
+    def _post(self, path: str, data: dict[str, str]) -> requests.Response:
+        """POST an OAuth form using the shared proxy and TLS policy."""
+        url = f"{self._base}{path}"
+        if not self._network.bypasses(url):
+            return requests.post(
+                url,
+                data=data,
+                timeout=self._timeout,
+                proxies=self._network.requests_proxies(url),
+                verify=self._network.verify_value,
+            )
+
+        # Requests otherwise merges environment proxies even when the selected
+        # destination belongs to NO_PROXY. Use a short-lived, env-free session.
+        with requests.Session() as session:
+            session.trust_env = False
+            return session.post(
+                url,
+                data=data,
+                timeout=self._timeout,
+                proxies=self._network.requests_proxies(url),
+                verify=self._network.verify_value,
+            )
 
     def exchange_code(
         self, *, code: str, code_verifier: str, redirect_uri: str
     ) -> TokenResponse:
         """POST /oauth2/token with grant_type=authorization_code."""
-        resp = requests.post(
-            f"{self._base}/oauth2/token",
-            data={
+        resp = self._post(
+            "/oauth2/token",
+            {
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirect_uri,
                 "client_id": self._client_id,
                 "code_verifier": code_verifier,
             },
-            timeout=self._timeout,
         )
         resp.raise_for_status()
         body = _parse_token_response(resp)
@@ -140,14 +169,13 @@ class OAuthClient:
 
     def refresh(self, *, refresh_token: str) -> TokenResponse:
         """POST /oauth2/token with grant_type=refresh_token."""
-        resp = requests.post(
-            f"{self._base}/oauth2/token",
-            data={
+        resp = self._post(
+            "/oauth2/token",
+            {
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
                 "client_id": self._client_id,
             },
-            timeout=self._timeout,
         )
         resp.raise_for_status()
         body = _parse_token_response(resp)
@@ -170,10 +198,9 @@ class OAuthClient:
         profile clear honors the user's intent regardless.
         """
         try:
-            resp = requests.post(
-                f"{self._base}/oauth2/revoke",
-                data={"token": token, "client_id": self._client_id},
-                timeout=self._timeout,
+            resp = self._post(
+                "/oauth2/revoke",
+                {"token": token, "client_id": self._client_id},
             )
             if resp.status_code != 200:
                 _log.warning(

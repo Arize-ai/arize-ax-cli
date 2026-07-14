@@ -10,7 +10,10 @@ import questionary
 import typer
 from packaging.version import Version
 
+from ax.config.manager import ConfigManager
 from ax.core.decorators import handle_errors
+from ax.core.exceptions import ConfigError
+from ax.core.network import NetworkSettings
 from ax.utils.console import info, success, warning
 from ax.utils.upgrade_check import (
     _DEFAULT_CACHE_PATH,
@@ -69,7 +72,16 @@ def upgrade(
             "Specify at most one of --pip, --pipx, or --uv."
         )
 
-    latest = fetch_pypi_version()
+    try:
+        config = ConfigManager.load()
+    except ConfigError:
+        network = NetworkSettings.from_environment()
+    else:
+        network = NetworkSettings.from_config(
+            config.network, request_verify=config.request_verify
+        )
+
+    latest = fetch_pypi_version(network=network)
     if latest is None:
         warning(
             "Could not reach PyPI to check the latest version. Check your network connection."

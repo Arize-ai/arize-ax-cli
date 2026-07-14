@@ -14,6 +14,7 @@ from ax.auth.oauth_flow import LoopbackServer, generate_pkce_pair, random_state
 from ax.config.manager import ConfigManager
 from ax.config.schema import AuthConfig, AuthMethod, OAuthCredentials
 from ax.core.decorators import handle_errors
+from ax.core.network import NetworkSettings
 
 app = typer.Typer(
     name="auth",
@@ -25,7 +26,9 @@ _LOGIN_TIMEOUT_SECONDS = 300.0  # 5 minutes for user to complete browser login
 
 
 def perform_oauth_login(
-    base_url: str, login_timeout_seconds: float = _LOGIN_TIMEOUT_SECONDS
+    base_url: str,
+    login_timeout_seconds: float = _LOGIN_TIMEOUT_SECONDS,
+    network: NetworkSettings | None = None,
 ) -> OAuthCredentials:
     """Open the browser, complete PKCE flow, return fresh OAuthCredentials.
 
@@ -34,6 +37,7 @@ def perform_oauth_login(
     Args:
         base_url: The Arize app URL to authenticate against (e.g. "https://app.arize.com").
         login_timeout_seconds: Seconds to wait for the browser callback before timing out.
+        network: Shared proxy and TLS policy for the token exchange.
 
     Returns:
         Fresh OAuthCredentials with access_token, refresh_token, expires_at, user_email.
@@ -70,7 +74,11 @@ def perform_oauth_login(
 
     result = server.wait(timeout=login_timeout_seconds)
 
-    client = OAuthClient(base_url=base_url, client_id=OAUTH_CLIENT_ID)
+    client = OAuthClient(
+        base_url=base_url,
+        client_id=OAUTH_CLIENT_ID,
+        network=network,
+    )
     try:
         resp = client.exchange_code(
             code=result.code, code_verifier=verifier, redirect_uri=redirect_uri
@@ -107,6 +115,7 @@ def login_cmd() -> None:
     tokens, this is a no-op.
     """
     cfg = ConfigManager.load(expand_env_vars=False)
+    resolved_cfg = ConfigManager.load(expand_env_vars=True)
     profile_name = cfg.profile.name
 
     if not cfg.auth.uses_oauth:
@@ -133,7 +142,15 @@ def login_cmd() -> None:
             raise typer.Exit(code=0)
 
     resolved_base_url = cfg.routing.resolve_app_url()
-    oauth_creds = perform_oauth_login(base_url=resolved_base_url)
+    network = NetworkSettings.from_config(
+        resolved_cfg.network,
+        request_verify=resolved_cfg.request_verify,
+    )
+    network.configure_grpc_environment()
+    oauth_creds = perform_oauth_login(
+        base_url=resolved_base_url,
+        network=network,
+    )
     new_auth = AuthConfig(auth_method=AuthMethod.OAUTH, oauth=oauth_creds)
     new_cfg = cfg.model_copy(update={"auth": new_auth})
     ConfigManager.save(new_cfg, profile_name)
@@ -148,6 +165,7 @@ def login_cmd() -> None:
 def logout_cmd() -> None:
     """Revoke both tokens and clear OAuth credentials on the active profile."""
     cfg = ConfigManager.load(expand_env_vars=False)
+    resolved_cfg = ConfigManager.load(expand_env_vars=True)
     profile_name = cfg.profile.name
 
     if not cfg.auth.uses_oauth:
@@ -172,7 +190,15 @@ def logout_cmd() -> None:
     # only the refresh-token jti would be in oauth_revoked_jtis. Revoke is
     # best-effort: a network failure shouldn't block local clearing of the
     # profile (the user's intent is "end this session locally").
-    client = OAuthClient(base_url=resolved_base_url, client_id=OAUTH_CLIENT_ID)
+    network = NetworkSettings.from_config(
+        resolved_cfg.network,
+        request_verify=resolved_cfg.request_verify,
+    )
+    client = OAuthClient(
+        base_url=resolved_base_url,
+        client_id=OAUTH_CLIENT_ID,
+        network=network,
+    )
     client.revoke(token=cfg.auth.oauth.access_token)
     client.revoke(token=cfg.auth.oauth.refresh_token)
 
