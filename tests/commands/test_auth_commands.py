@@ -150,6 +150,27 @@ class TestLogin:
         loaded = ConfigManager.load("p1")
         assert loaded.auth.oauth.access_token == "new"
 
+    def test_login_shows_auth_method_error_despite_unset_env_ref(
+        self, monkeypatch
+    ):
+        """The friendly API-key error must win over an unresolvable ${VAR}.
+
+        Resolving env references is only needed for the token exchange, so
+        it must not run before the early-exit checks.
+        """
+        monkeypatch.delenv("ARIZE_API_KEY", raising=False)
+        cfg = Config(
+            profile=ProfileConfig(name="p1"),
+            auth=AuthConfig(api_key="${ARIZE_API_KEY}"),
+        )
+        ConfigManager.save(cfg, "p1")
+        ConfigManager.set_active_profile("p1")
+
+        result = runner.invoke(app, ["login"])
+
+        assert result.exit_code == 1, result.stdout
+        assert "API-key authentication" in result.stdout
+
     def test_login_errors_when_no_active_profile(self):
         result = runner.invoke(app, ["login"])
         assert result.exit_code == 1, result.output
@@ -243,6 +264,31 @@ class TestLogout:
         client_cls.return_value.revoke.assert_not_called()
         # Profile is left untouched.
         assert ConfigManager.load("p1").auth.api_key is not None
+
+    def test_logout_clears_credentials_when_profile_env_ref_is_unset(
+        self, monkeypatch
+    ):
+        """Logout must not be blocked by an unresolvable ${VAR} reference.
+
+        Revoke is best-effort; clearing local credentials is the user's
+        intent and must work even when the profile references env vars the
+        current shell does not define.
+        """
+        from ax.config.schema import NetworkConfig
+
+        monkeypatch.delenv("CORP_CA_BUNDLE", raising=False)
+        cfg = _oauth_config().model_copy(
+            update={"network": NetworkConfig(ca_bundle="${CORP_CA_BUNDLE}")}
+        )
+        ConfigManager.save(cfg, "p1")
+        ConfigManager.set_active_profile("p1")
+
+        with patch("ax.commands.auth.OAuthClient"):
+            result = runner.invoke(app, ["logout"])
+
+        assert result.exit_code == 0, result.stdout
+        cleared = ConfigManager.load("p1", expand_env_vars=False)
+        assert cleared.auth.oauth is None
 
     def test_noop_when_already_logged_out(self):
         # OAuth profile already cleared — logout should be a friendly no-op.

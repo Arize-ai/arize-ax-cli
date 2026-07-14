@@ -6,17 +6,17 @@ import contextlib
 import json
 import threading
 import time
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from packaging.version import Version
 
 from ax.config.manager import ConfigManager
 from ax.core.network import NetworkSettings
-from ax.utils.http import open_url, unverified_ssl_context
+from ax.utils.http import open_url
 from ax.version import __version__
 
 if TYPE_CHECKING:
-    import ssl
     from pathlib import Path
 
 PYPI_TIMEOUT = 3
@@ -30,7 +30,7 @@ _should_upgrade: bool = False
 def start_background_check(
     enabled: bool,
     interval_hours: float,
-    request_verify: bool = True,
+    request_verify: bool | None = None,
     network: NetworkSettings | None = None,
 ) -> threading.Thread | None:
     """Start a daemon thread to check PyPI for a newer ax version.
@@ -38,7 +38,8 @@ def start_background_check(
     Args:
         enabled: Whether to run the check at all.
         interval_hours: Minimum hours between PyPI fetches.
-        request_verify: Whether to verify SSL certificates.
+        request_verify: Explicit TLS-verification override; None inherits
+          the policy from *network*.
         network: Resolved proxy and TLS settings for the PyPI request.
 
     Returns:
@@ -72,23 +73,15 @@ def should_upgrade() -> bool:
         return _should_upgrade
 
 
-def _make_ssl_context(verify: bool) -> ssl.SSLContext | None:
-    """Return the legacy SSL context used by older upgrade-check callers.
-
-    Proxy-aware requests now use :class:`NetworkSettings`, but keeping this
-    helper preserves the existing utility contract for downstream callers.
-    """
-    return None if verify else unverified_ssl_context()
-
-
 def fetch_pypi_version(
-    request_verify: bool = True,
+    request_verify: bool | None = None,
     network: NetworkSettings | None = None,
 ) -> str | None:
     """Fetch the latest arize-ax-cli version from PyPI.
 
     Args:
-        request_verify: Whether to verify SSL certificates.
+        request_verify: Explicit TLS-verification override. When None, the
+          policy carried by *network* applies unchanged.
         network: Resolved proxy and TLS settings for the PyPI request.
 
     Returns:
@@ -96,13 +89,11 @@ def fetch_pypi_version(
     """
     try:
         settings = network or NetworkSettings.from_environment()
-        if settings.request_verify != request_verify:
-            settings = NetworkSettings(
-                proxy_url=settings.proxy_url,
-                no_proxy=settings.no_proxy,
-                ca_bundle=settings.ca_bundle,
-                request_verify=request_verify,
-            )
+        if (
+            request_verify is not None
+            and settings.request_verify != request_verify
+        ):
+            settings = replace(settings, request_verify=request_verify)
         with open_url(
             _PYPI_URL, timeout=PYPI_TIMEOUT, network=settings
         ) as resp:
@@ -115,7 +106,7 @@ def fetch_pypi_version(
 def _run_check(
     interval_hours: float,
     cache_path: Path,
-    request_verify: bool = True,
+    request_verify: bool | None = None,
     network: NetworkSettings | None = None,
 ) -> None:
     """Thread target: read cache, set upgrade flag if newer version known, fetch if stale.
@@ -123,7 +114,8 @@ def _run_check(
     Args:
         interval_hours: Minimum hours between PyPI fetches.
         cache_path: Path to the JSON cache file.
-        request_verify: Whether to verify SSL certificates.
+        request_verify: Explicit TLS-verification override; None inherits
+          the policy from *network*.
         network: Resolved proxy and TLS settings for the PyPI request.
     """
     global _should_upgrade

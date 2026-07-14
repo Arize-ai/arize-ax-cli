@@ -2,6 +2,7 @@
 
 import ssl
 import urllib.request
+from dataclasses import replace
 from pathlib import Path
 from typing import BinaryIO, cast
 from urllib.parse import urlparse
@@ -31,12 +32,20 @@ def open_url(
             f"URL scheme must be http or https, got {parsed.scheme!r}"
         )
     settings = network or NetworkSettings.from_environment()
-    proxy_url = settings.proxy_for(url)
-    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else {}
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler(proxies),
+    handlers: list[urllib.request.BaseHandler] = [
         urllib.request.HTTPSHandler(context=settings.ssl_context()),
-    )
+    ]
+    if proxy_url := settings.proxy_for(url):
+        handlers.append(
+            urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+        )
+    elif settings.proxy_url or settings.bypasses(url):
+        # A proxy is configured but this URL must not use it: force a
+        # direct connection instead of falling back to system discovery.
+        handlers.append(urllib.request.ProxyHandler({}))
+    # Otherwise install no ProxyHandler so build_opener keeps urllib's
+    # default discovery (env vars plus macOS/Windows OS proxy settings).
+    opener = urllib.request.build_opener(*handlers)
     return cast("BinaryIO", opener.open(url, timeout=timeout))
 
 
@@ -45,7 +54,7 @@ def download_url(
     dest: Path,
     *,
     timeout: int = 30,
-    verify: bool = True,
+    verify: bool | None = None,
     network: NetworkSettings | None = None,
 ) -> Path:
     """Download a URL to a local file.
@@ -54,7 +63,8 @@ def download_url(
         url: URL to download
         dest: Destination file path
         timeout: Request timeout in seconds
-        verify: Whether to verify SSL certificates
+        verify: Explicit TLS-verification override. When None, the policy
+          carried by *network* applies unchanged.
         network: Resolved proxy and TLS settings. When omitted, uses system env.
 
     Returns:
@@ -65,13 +75,8 @@ def download_url(
     """
     try:
         settings = network or NetworkSettings.from_environment()
-        if settings.request_verify != verify:
-            settings = NetworkSettings(
-                proxy_url=settings.proxy_url,
-                no_proxy=settings.no_proxy,
-                ca_bundle=settings.ca_bundle,
-                request_verify=verify,
-            )
+        if verify is not None and settings.request_verify != verify:
+            settings = replace(settings, request_verify=verify)
         with open_url(url, timeout=timeout, network=settings) as response:
             dest.write_bytes(response.read())
     except Exception as e:

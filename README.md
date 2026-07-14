@@ -496,9 +496,12 @@ proxy_mode = "system"
 
 The proxy is applied to REST, OAuth, PyPI/GitHub downloads, Arrow Flight, and
 OTLP/gRPC. The proxy must support HTTP CONNECT and HTTP/2 tunneling for Flight
-and OTLP. Use `no_proxy` for private hosts and loopback addresses. `ca_bundle`
-is the preferred way to trust a TLS-inspecting corporate proxy; do not disable
-certificate verification unless troubleshooting a controlled environment.
+and OTLP. Only `http://` proxy URLs are supported: in `system` mode,
+environment values with other schemes (e.g. `socks5://`) are skipped with a
+warning; in `url` mode they are rejected. Use `no_proxy` for private hosts and
+loopback addresses. `ca_bundle` is the preferred way to trust a TLS-inspecting
+corporate proxy; do not disable certificate verification unless
+troubleshooting a controlled environment.
 
 **Storage** (optional)
 

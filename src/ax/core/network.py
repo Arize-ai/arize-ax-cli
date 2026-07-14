@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import ssl
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ from urllib.parse import urlparse
 
 from ax.config.schema import NetworkConfig, ProxyMode
 from ax.core.exceptions import ConfigError
+
+_log = logging.getLogger(__name__)
 
 _PROXY_ENV_VARS = (
     "ARIZE_PROXY_URL",
@@ -71,6 +74,28 @@ def _first_environment_value(names: tuple[str, ...]) -> str:
     return ""
 
 
+def _first_supported_environment_proxy() -> str:
+    """Return the first usable HTTP CONNECT proxy from the environment.
+
+    Ambient variables such as ``ALL_PROXY=socks5://...`` are set for other
+    tools; skipping them with a warning (instead of failing) keeps every CLI
+    command usable in shells the AX profile does not control.
+    """
+    for name in _PROXY_ENV_VARS:
+        value = os.environ.get(name, "").strip()
+        if not value:
+            continue
+        try:
+            return _validate_proxy_url(value)
+        except ConfigError:
+            _log.warning(
+                "Ignoring proxy URL from %s: only 'http://' CONNECT proxies "
+                "are supported.",
+                name,
+            )
+    return ""
+
+
 def _validate_proxy_url(proxy_url: str) -> str:
     """Validate and return an HTTP CONNECT proxy URL.
 
@@ -105,27 +130,39 @@ class NetworkSettings:
     ) -> NetworkSettings:
         """Resolve profile settings and supported system environment variables."""
         if config.proxy_mode == ProxyMode.URL:
-            proxy_url = _expand_environment_reference(config.proxy_url)
+            # A profile-pinned proxy is explicit intent: validate strictly.
+            proxy_url = _validate_proxy_url(
+                _expand_environment_reference(config.proxy_url)
+            )
             if not proxy_url:
                 raise ConfigError(
                     "network.proxy_mode='url' requires network.proxy_url."
                 )
         else:
-            proxy_url = _first_environment_value(_PROXY_ENV_VARS)
+            proxy_url = _first_supported_environment_proxy()
 
         configured_no_proxy = _expand_environment_reference(config.no_proxy)
         no_proxy = configured_no_proxy or _first_environment_value(
             _NO_PROXY_ENV_VARS
         )
         ca_bundle = _expand_environment_reference(config.ca_bundle)
-        ca_bundle = ca_bundle or _first_environment_value(_CA_BUNDLE_ENV_VARS)
-        if ca_bundle and not Path(ca_bundle).is_file():
-            raise ConfigError(
-                "Configured CA bundle path does not exist or is not a file."
-            )
+        if ca_bundle:
+            # A profile-configured CA bundle is explicit intent: fail loudly.
+            if not Path(ca_bundle).is_file():
+                raise ConfigError(
+                    "Configured CA bundle path does not exist or is not a file."
+                )
+        else:
+            ca_bundle = _first_environment_value(_CA_BUNDLE_ENV_VARS)
+            if ca_bundle and not Path(ca_bundle).is_file():
+                _log.warning(
+                    "Ignoring CA bundle from the environment (%s): not a file.",
+                    ca_bundle,
+                )
+                ca_bundle = ""
 
         return cls(
-            proxy_url=_validate_proxy_url(proxy_url),
+            proxy_url=proxy_url,
             no_proxy=no_proxy,
             ca_bundle=ca_bundle,
             request_verify=request_verify,
@@ -159,13 +196,21 @@ class NetworkSettings:
         except ValueError:
             host_ip = None
 
-        host_port = f"{host}:{parsed.port}" if parsed.port else host
+        try:
+            url_port = parsed.port
+        except ValueError:
+            # Out-of-range ports (e.g. a bad single_port) cannot match a
+            # port-qualified entry; let the transport report the bad URL.
+            url_port = None
+        if url_port is None:
+            url_port = {"https": 443, "http": 80}.get(parsed.scheme)
+
         for entry in self.no_proxy.split(","):
             candidate = entry.strip().lower()
             if not candidate:
                 continue
             candidate, candidate_port = _split_no_proxy_host_port(candidate)
-            if candidate_port is not None and candidate_port != parsed.port:
+            if candidate_port is not None and candidate_port != url_port:
                 continue
             if host_ip is not None:
                 try:
@@ -177,12 +222,7 @@ class NetworkSettings:
                         return True
 
             candidate = candidate.lstrip(".").rstrip(".")
-            if (
-                host == candidate
-                or host_port == candidate
-                or host.endswith(f".{candidate}")
-                or host_port.endswith(f".{candidate}")
-            ):
+            if host == candidate or host.endswith(f".{candidate}"):
                 return True
         return False
 
@@ -219,12 +259,21 @@ class NetworkSettings:
                 os.environ[_GRPC_PROXY_ENV] = self.proxy_url
             else:
                 os.environ.pop(_GRPC_PROXY_ENV, None)
+        elif self.proxy_url and not os.environ.get(_GRPC_PROXY_ENV, "").strip():
+            # System mode: gRPC C-Core cannot read ARIZE_PROXY_URL (or
+            # uppercase-only variables), so export the resolved proxy while
+            # preserving a deliberately distinct user-set grpc_proxy.
+            os.environ[_GRPC_PROXY_ENV] = self.proxy_url
 
         if self.override_grpc_no_proxy:
             if self.no_proxy:
                 os.environ[_NO_GRPC_PROXY_ENV] = self.no_proxy
             else:
                 os.environ.pop(_NO_GRPC_PROXY_ENV, None)
+        elif (
+            self.no_proxy and not os.environ.get(_NO_GRPC_PROXY_ENV, "").strip()
+        ):
+            os.environ[_NO_GRPC_PROXY_ENV] = self.no_proxy
 
         if self.ca_bundle:
             os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = self.ca_bundle

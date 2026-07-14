@@ -16,23 +16,62 @@ import pytest
 import ax.utils.upgrade_check as uc
 
 
-class TestMakeSslContext:
-    """Unit tests for _make_ssl_context."""
+class TestFetchPypiVersionVerify:
+    """The PyPI fetch must follow the resolved network TLS policy."""
 
     @pytest.mark.unit
-    def test_verify_true_returns_none(self) -> None:
-        """SSL verification enabled → no custom context needed."""
-        assert uc._make_ssl_context(True) is None
+    def test_inherits_network_request_verify(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A network with verification disabled is used as-is.
+
+        Callers like `ax upgrade` pass only network=; the legacy
+        request_verify default must not silently re-enable verification.
+        """
+        import io
+
+        from ax.core.network import NetworkSettings
+
+        captured: dict[str, NetworkSettings] = {}
+
+        def fake_open_url(url, *, timeout, network):
+            captured["network"] = network
+            body = json.dumps({"info": {"version": "0.14.0"}}).encode()
+            return io.BytesIO(body)
+
+        monkeypatch.setattr("ax.utils.upgrade_check.open_url", fake_open_url)
+
+        version = uc.fetch_pypi_version(
+            network=NetworkSettings(request_verify=False)
+        )
+
+        assert version == "0.14.0"
+        assert captured["network"].request_verify is False
 
     @pytest.mark.unit
-    def test_verify_false_returns_unverified_context(self) -> None:
-        """SSL verification disabled → returns an unverified SSLContext."""
-        import ssl
+    def test_explicit_request_verify_still_overrides(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An explicitly passed request_verify wins over the network value."""
+        import io
 
-        ctx = uc._make_ssl_context(False)
-        assert ctx is not None
-        assert ctx.check_hostname is False
-        assert ctx.verify_mode == ssl.CERT_NONE
+        from ax.core.network import NetworkSettings
+
+        captured: dict[str, NetworkSettings] = {}
+
+        def fake_open_url(url, *, timeout, network):
+            captured["network"] = network
+            body = json.dumps({"info": {"version": "0.14.0"}}).encode()
+            return io.BytesIO(body)
+
+        monkeypatch.setattr("ax.utils.upgrade_check.open_url", fake_open_url)
+
+        uc.fetch_pypi_version(
+            request_verify=False,
+            network=NetworkSettings(request_verify=True),
+        )
+
+        assert captured["network"].request_verify is False
 
 
 @pytest.fixture(autouse=True)

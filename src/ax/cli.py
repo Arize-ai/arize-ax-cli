@@ -48,7 +48,6 @@ def _start_upgrade_check() -> threading.Thread | None:
         return start_background_check(
             enabled=config.update.enabled,
             interval_hours=config.update.check_interval_hours,
-            request_verify=config.request_verify,
             network=network,
         )
     except ConfigError:

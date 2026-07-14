@@ -104,6 +104,49 @@ def test_network_references_expand_for_raw_oauth_profiles(
     assert settings.proxy_url == "http://proxy.example.com:8080"
 
 
+def test_system_mode_ignores_unsupported_ambient_proxy_scheme(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ambient socks5/https proxy variables must not break every command."""
+    monkeypatch.setenv("ALL_PROXY", "socks5://127.0.0.1:1080")
+
+    settings = NetworkSettings.from_environment()
+
+    assert settings.proxy_url == ""
+
+
+def test_system_mode_falls_back_past_unsupported_proxy_value(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later usable env proxy wins over an earlier unsupported one."""
+    monkeypatch.setenv("https_proxy", "socks5://127.0.0.1:1080")
+    monkeypatch.setenv("http_proxy", "http://fallback-proxy:3128")
+
+    settings = NetworkSettings.from_environment()
+
+    assert settings.proxy_url == "http://fallback-proxy:3128"
+
+
+def test_system_mode_ignores_missing_environment_ca_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale REQUESTS_CA_BUNDLE must not abort settings resolution."""
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "/nonexistent/rotated-ca.pem")
+
+    settings = NetworkSettings.from_environment()
+
+    assert settings.ca_bundle == ""
+
+
+def test_profile_ca_bundle_must_exist() -> None:
+    """A profile-configured CA bundle path is still validated strictly."""
+    with pytest.raises(ConfigError, match="CA bundle"):
+        NetworkSettings.from_config(
+            NetworkConfig(ca_bundle="/nonexistent/corporate-ca.pem"),
+            request_verify=True,
+        )
+
+
 def test_configure_grpc_environment_normalizes_proxy_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -119,6 +162,25 @@ def test_configure_grpc_environment_normalizes_proxy_settings(
 
     assert os.environ[_GRPC_PROXY_ENV] == "http://proxy.example.com:8080"
     assert os.environ[_NO_GRPC_PROXY_ENV] == "localhost,.internal.example.com"
+
+
+def test_system_mode_exports_arize_proxy_to_grpc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flight and OTLP must see a proxy that only ARIZE_PROXY_URL provides.
+
+    gRPC C-Core reads grpc_proxy/https_proxy/http_proxy but never
+    ARIZE_PROXY_URL, so system mode must export the resolved proxy or
+    Flight/OTLP silently bypass it.
+    """
+    monkeypatch.setenv("ARIZE_PROXY_URL", "http://arize-proxy:8080")
+    monkeypatch.setenv("NO_PROXY", "localhost")
+
+    settings = NetworkSettings.from_config(NetworkConfig(), request_verify=True)
+    settings.configure_grpc_environment()
+
+    assert os.environ[_GRPC_PROXY_ENV] == "http://arize-proxy:8080"
+    assert os.environ[_NO_GRPC_PROXY_ENV] == "localhost"
 
 
 def test_system_mode_preserves_existing_grpc_proxy(
@@ -146,6 +208,34 @@ def test_no_proxy_supports_cidr_and_host_port() -> None:
     assert settings.proxy_for("https://api.internal.example.com:8443") == ""
     assert (
         settings.proxy_for("https://api.internal.example.com:443")
+        == "http://proxy.example.com:8080"
+    )
+
+
+def test_no_proxy_port_entry_matches_scheme_default_port() -> None:
+    """A 'host:443' entry must bypass 'https://host' like curl and Go do."""
+    settings = NetworkSettings(
+        proxy_url="http://proxy.example.com:8080",
+        no_proxy="api.internal.example.com:443",
+    )
+
+    assert settings.proxy_for("https://api.internal.example.com") == ""
+    assert (
+        settings.proxy_for("http://api.internal.example.com")
+        == "http://proxy.example.com:8080"
+    )
+
+
+def test_bypasses_tolerates_out_of_range_url_port() -> None:
+    """A malformed routing port must not crash proxy resolution."""
+    settings = NetworkSettings(
+        proxy_url="http://proxy.example.com:8080",
+        no_proxy="localhost",
+    )
+
+    assert settings.bypasses("https://onprem.corp:99999") is False
+    assert (
+        settings.proxy_for("https://onprem.corp:99999")
         == "http://proxy.example.com:8080"
     )
 

@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from arize import Region, SDKConfiguration
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from ax.core.exceptions import ConfigError
 from ax.core.headers import cli_default_headers
 
 
@@ -19,11 +20,25 @@ class AuthMethod(StrEnum):
     OAUTH = "oauth"
 
 
+_TRUTHY_STRINGS = frozenset({"1", "true", "yes", "on"})
+_FALSY_STRINGS = frozenset({"", "0", "false", "no", "off"})
+
+
 def _str_to_bool(value: bool | str) -> bool:
     """Convert bool or string to bool, parsing "true"/"false" strings correctly."""
     if isinstance(value, bool):
         return value
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+    normalized = str(value).strip().lower()
+    if normalized in _TRUTHY_STRINGS:
+        return True
+    if normalized in _FALSY_STRINGS:
+        return False
+    # A requests-style CA path (or a typo) must not silently become
+    # verify=False; that would disable TLS on OAuth token exchange.
+    raise ConfigError(
+        f"security.request_verify must be a boolean, got {value!r}. "
+        "To trust a custom CA, set network.ca_bundle instead."
+    )
 
 
 class ProfileConfig(BaseModel):

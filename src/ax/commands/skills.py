@@ -163,7 +163,6 @@ def _select_skills(yes: bool, available: list[str]) -> list[str]:
 def _download_zip(
     tmp_dir: Path,
     *,
-    verify: bool = True,
     network: NetworkSettings | None = None,
 ) -> Path:
     """Download the arize-skills zipball to tmp_dir and return the path."""
@@ -172,7 +171,6 @@ def _download_zip(
         SKILLS_REPO_ZIP,
         dest,
         timeout=30,
-        verify=verify,
         network=network,
     )
     return dest
@@ -300,19 +298,17 @@ def install(
     try:
         config = ConfigManager.load()
     except ConfigError:
-        verify = True
         network = NetworkSettings.from_environment()
     else:
-        verify = config.request_verify
         network = NetworkSettings.from_config(
-            config.network, request_verify=verify
+            config.network, request_verify=config.request_verify
         )
 
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp_dir = Path(tmp_str)
 
         with spinner("Downloading skills from GitHub"):
-            zip_path = _download_zip(tmp_dir, verify=verify, network=network)
+            zip_path = _download_zip(tmp_dir, network=network)
 
         with spinner("Extracting skills"):
             source_root = _extract_zip(zip_path, tmp_dir)

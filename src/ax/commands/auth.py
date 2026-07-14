@@ -14,6 +14,7 @@ from ax.auth.oauth_flow import LoopbackServer, generate_pkce_pair, random_state
 from ax.config.manager import ConfigManager
 from ax.config.schema import AuthConfig, AuthMethod, OAuthCredentials
 from ax.core.decorators import handle_errors
+from ax.core.exceptions import ConfigError
 from ax.core.network import NetworkSettings
 
 app = typer.Typer(
@@ -115,7 +116,6 @@ def login_cmd() -> None:
     tokens, this is a no-op.
     """
     cfg = ConfigManager.load(expand_env_vars=False)
-    resolved_cfg = ConfigManager.load(expand_env_vars=True)
     profile_name = cfg.profile.name
 
     if not cfg.auth.uses_oauth:
@@ -142,6 +142,10 @@ def login_cmd() -> None:
             raise typer.Exit(code=0)
 
     resolved_base_url = cfg.routing.resolve_app_url()
+    # Resolve env references only now: doing it earlier would make the
+    # friendly early-exit paths above unreachable when the profile holds a
+    # ${VAR} the current shell does not define.
+    resolved_cfg = ConfigManager.load(expand_env_vars=True)
     network = NetworkSettings.from_config(
         resolved_cfg.network,
         request_verify=resolved_cfg.request_verify,
@@ -165,7 +169,6 @@ def login_cmd() -> None:
 def logout_cmd() -> None:
     """Revoke both tokens and clear OAuth credentials on the active profile."""
     cfg = ConfigManager.load(expand_env_vars=False)
-    resolved_cfg = ConfigManager.load(expand_env_vars=True)
     profile_name = cfg.profile.name
 
     if not cfg.auth.uses_oauth:
@@ -190,10 +193,17 @@ def logout_cmd() -> None:
     # only the refresh-token jti would be in oauth_revoked_jtis. Revoke is
     # best-effort: a network failure shouldn't block local clearing of the
     # profile (the user's intent is "end this session locally").
-    network = NetworkSettings.from_config(
-        resolved_cfg.network,
-        request_verify=resolved_cfg.request_verify,
-    )
+    # Clearing local credentials must never be blocked by an unresolvable
+    # ${VAR} reference elsewhere in the profile: fall back to environment
+    # settings for the best-effort revoke calls.
+    try:
+        resolved_cfg = ConfigManager.load(expand_env_vars=True)
+        network = NetworkSettings.from_config(
+            resolved_cfg.network,
+            request_verify=resolved_cfg.request_verify,
+        )
+    except ConfigError:
+        network = NetworkSettings.from_environment()
     client = OAuthClient(
         base_url=resolved_base_url,
         client_id=OAUTH_CLIENT_ID,

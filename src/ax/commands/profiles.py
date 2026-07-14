@@ -57,6 +57,19 @@ app = typer.Typer(
 console = Console(stderr=True)
 
 
+def _display_env_ref(ref: str) -> str:
+    """Return a display-safe form of a ``${NAME}`` or ``${NAME:default}`` ref.
+
+    The default portion may embed secrets (e.g. a credentialed proxy URL),
+    so it is always masked; the variable name stays readable.
+    """
+    inner = ref[2:-1]
+    if ":" not in inner:
+        return ref
+    name = inner.split(":", maxsplit=1)[0]
+    return f"${{{name}:***}}"
+
+
 def _display_detected_env_value(field: str, value: str) -> str:
     """Return a safe value for the interactive environment-detection screen."""
     if field == "api_key":
@@ -278,6 +291,10 @@ def create(
         routing_cfg = RoutingConfig(**routing_flags)
         network_cfg = NetworkConfig(**network_flags)
         base_url = routing_cfg.resolve_app_url()
+        # No CLI flag configures [security], so the profile being created
+        # always gets request_verify=True; pin the same value for the login
+        # exchange. Behind a TLS-inspecting proxy, pass --ca-bundle (which
+        # verify_value prefers) or use --from-file plus `ax auth login`.
         network = NetworkSettings.from_config(network_cfg, request_verify=True)
         network.configure_grpc_environment()
         oauth_creds = perform_oauth_login(base_url=base_url, network=network)
@@ -683,7 +700,7 @@ def show_profile(
         # AuthConfig._validate_method_consistency).
         key = config.auth.api_key
         assert key is not None  # noqa: S101
-        key = key if _is_env_var_ref(key) else mask(key)
+        key = _display_env_ref(key) if _is_env_var_ref(key) else mask(key)
         lines.append(kv("  API Key", key))
 
     # Output section (always shown)
@@ -759,7 +776,7 @@ def show_profile(
         proxy_url = config.network.proxy_url
         if proxy_url:
             safe_proxy = (
-                proxy_url
+                _display_env_ref(proxy_url)
                 if _is_env_var_ref(proxy_url)
                 else NetworkSettings(proxy_url=proxy_url).redacted_proxy_url()
             )

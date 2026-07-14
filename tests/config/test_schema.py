@@ -19,6 +19,7 @@ from ax.config.schema import (
     TransportConfig,
     UpdateConfig,
 )
+from ax.core.exceptions import ConfigError
 from ax.core.headers import cli_default_headers
 
 
@@ -216,6 +217,30 @@ class TestSecurityConfig:
         """Test that string value is allowed for request_verify."""
         security = SecurityConfig(request_verify="${ARIZE_REQUEST_VERIFY}")
         assert security.request_verify == "${ARIZE_REQUEST_VERIFY}"
+
+    def test_request_verify_property_parses_boolean_strings(self) -> None:
+        """Recognized boolean strings resolve to their boolean value."""
+        config = Config(
+            profile=ProfileConfig(name="p"),
+            auth=AuthConfig(auth_method="api-key", api_key="ak-test"),
+            security=SecurityConfig(request_verify="false"),
+        )
+        assert config.request_verify is False
+
+        config = config.model_copy(
+            update={"security": SecurityConfig(request_verify="true")}
+        )
+        assert config.request_verify is True
+
+    def test_request_verify_property_rejects_ca_path_string(self) -> None:
+        """A CA-bundle path must not silently disable TLS verification."""
+        config = Config(
+            profile=ProfileConfig(name="p"),
+            auth=AuthConfig(auth_method="api-key", api_key="ak-test"),
+            security=SecurityConfig(request_verify="/etc/ssl/corp-ca.pem"),
+        )
+        with pytest.raises(ConfigError, match=r"network\.ca_bundle"):
+            _ = config.request_verify
 
 
 class TestNetworkConfig:
