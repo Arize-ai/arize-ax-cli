@@ -656,6 +656,21 @@ These are expanded when loading config:
 config = ConfigManager.load(expand_env_vars=True)
 ```
 
+References support an optional default with `${NAME:default}` syntax, used
+when the variable is unset:
+
+```toml
+[network]
+proxy_url = "${CORP_PROXY:http://proxy.example.com:8080}"
+```
+
+The `[network]` fields (`proxy_url`, `no_proxy`, `ca_bundle`) additionally
+resolve whole-string references at transport-setup time via
+`NetworkSettings.from_config`, so they work even on code paths that load the
+profile with `expand_env_vars=False` (e.g. OAuth login/logout). Because a
+default may embed credentials (such as a proxy password), `ax profiles show`
+always masks the default portion, printing `${NAME:***}`.
+
 ## Testing
 
 We use [taskipy](https://github.com/taskipy/taskipy) to manage common development tasks. Taskipy provides a simple way to define and run project tasks.

@@ -324,7 +324,9 @@ The advanced setup provides full control over:
    - PyArrow max chunksize
    - Max HTTP payload size
 4. **Security**: TLS certificate verification
-5. **Output Format**: Default display format
+5. **Network**: Outbound proxy mode (system environment variables or a
+   pinned HTTP CONNECT proxy URL), proxy bypass hosts, and CA bundle
+6. **Output Format**: Default display format
 
 **Example routing options:**
 
@@ -359,7 +361,8 @@ max_http_payload_size_mb = 8
 request_verify = true
 
 [network]
-# Uses ARIZE_PROXY_URL, HTTPS_PROXY/https_proxy, then HTTP_PROXY/http_proxy.
+# Precedence: ARIZE_PROXY_URL > https_proxy/HTTPS_PROXY >
+# http_proxy/HTTP_PROXY > all_proxy/ALL_PROXY (lowercase wins).
 proxy_mode = "system"
 # Optional: use a profile-specific HTTP CONNECT proxy instead.
 # proxy_mode = "url"
@@ -478,12 +481,17 @@ max_http_payload_size_mb = 8
 request_verify = true  # Set to false to disable SSL verification (not recommended)
 ```
 
+`request_verify` must be a boolean (or an environment-variable reference that
+resolves to one). To trust a custom or corporate CA, use `network.ca_bundle`
+instead of disabling verification.
+
 **Network** (optional)
 
 ```toml
 [network]
 # Default: use standard process environment variables.
-# ARIZE_PROXY_URL > HTTPS_PROXY/https_proxy > HTTP_PROXY/http_proxy
+# Precedence: ARIZE_PROXY_URL > https_proxy/HTTPS_PROXY >
+# http_proxy/HTTP_PROXY > all_proxy/ALL_PROXY (lowercase wins).
 proxy_mode = "system"
 
 # To pin a proxy to this profile, use `url` mode. This value may be an
@@ -498,10 +506,27 @@ The proxy is applied to REST, OAuth, PyPI/GitHub downloads, Arrow Flight, and
 OTLP/gRPC. The proxy must support HTTP CONNECT and HTTP/2 tunneling for Flight
 and OTLP. Only `http://` proxy URLs are supported: in `system` mode,
 environment values with other schemes (e.g. `socks5://`) are skipped with a
-warning; in `url` mode they are rejected. Use `no_proxy` for private hosts and
-loopback addresses. `ca_bundle` is the preferred way to trust a TLS-inspecting
-corporate proxy; do not disable certificate verification unless
-troubleshooting a controlled environment.
+warning; in `url` mode they are rejected. `ca_bundle` is the preferred way to
+trust a TLS-inspecting corporate proxy; do not disable certificate
+verification unless troubleshooting a controlled environment. When no proxy
+is configured at all, most transports connect directly, but PyPI/GitHub
+downloads additionally honor OS-level proxy settings (macOS System Settings,
+Windows registry) like standard Python tooling.
+
+`no_proxy` accepts a comma-separated list. Each entry may be a hostname
+(`api.example.com`), a domain suffix (`.example.com`, which also matches the
+bare domain), an IP or CIDR range (`10.0.0.0/8`), a bracketed IPv6 address,
+or any of these with a port (`host:443`, matched against the URL's explicit
+port or the scheme default). A single `*` bypasses the proxy for everything.
+Caveat: Arrow Flight and OTLP use gRPC's own bypass matching, which supports
+hostnames, suffixes, and CIDR ranges but ignores port qualifiers.
+
+For gRPC transports the CLI exports the resolved settings as `grpc_proxy` and
+`no_grpc_proxy`. In `system` mode a `grpc_proxy`/`no_grpc_proxy` you set
+yourself is preserved; in `url` mode the profile's values take precedence.
+When `ca_bundle` is set, it is also exported as
+`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` and `OTEL_EXPORTER_OTLP_CERTIFICATE` so
+Flight and trace export trust the same CA.
 
 **Storage** (optional)
 
@@ -1956,10 +1981,16 @@ The CLI respects these environment variables:
 
 - `ARIZE_API_KEY`: Your Arize API key
 - `ARIZE_REGION`: Region (US, EU, etc.)
-- `ARIZE_PROXY_URL`: AX-specific HTTP CONNECT proxy URL
-- `HTTPS_PROXY` / `https_proxy`, `HTTP_PROXY` / `http_proxy`: Standard proxy URLs
-- `NO_PROXY` / `no_proxy`: Comma-separated proxy bypass hosts
-- `ARIZE_SSL_CA_CERT`: CA bundle for TLS-inspecting proxy certificates
+- `ARIZE_PROXY_URL`: AX-specific HTTP CONNECT proxy URL (highest precedence)
+- `HTTPS_PROXY` / `https_proxy`, `HTTP_PROXY` / `http_proxy`,
+  `ALL_PROXY` / `all_proxy`: Standard proxy URLs (lowercase wins;
+  non-`http://` schemes are skipped with a warning)
+- `ARIZE_NO_PROXY`, then `NO_PROXY` / `no_proxy`: Comma-separated proxy
+  bypass hosts
+- `ARIZE_SSL_CA_CERT`, then `REQUESTS_CA_BUNDLE`, then `SSL_CERT_FILE`:
+  CA bundle for TLS-inspecting proxy certificates
+- `grpc_proxy` / `no_grpc_proxy`: Set by the CLI for Arrow Flight and
+  OTLP/gRPC; your own values are preserved in `system` proxy mode
 - Any other `ARIZE_*` variables will be detected during `ax profiles create`
 
 ### Debugging

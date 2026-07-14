@@ -24,7 +24,7 @@ _PROXY_ENV_VARS = (
     "all_proxy",
     "ALL_PROXY",
 )
-_NO_PROXY_ENV_VARS = ("no_proxy", "NO_PROXY")
+_NO_PROXY_ENV_VARS = ("ARIZE_NO_PROXY", "no_proxy", "NO_PROXY")
 _CA_BUNDLE_ENV_VARS = (
     "ARIZE_SSL_CA_CERT",
     "REQUESTS_CA_BUNDLE",

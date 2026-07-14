@@ -17,6 +17,7 @@ def clear_proxy_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep host proxy variables from affecting proxy-resolution tests."""
     for name in (
         "ARIZE_PROXY_URL",
+        "ARIZE_NO_PROXY",
         "https_proxy",
         "HTTPS_PROXY",
         "http_proxy",
@@ -46,6 +47,24 @@ def test_system_mode_prefers_arize_proxy_and_honors_no_proxy(
     )
     assert settings.proxy_for("https://api.internal.example.com") == ""
     assert settings.proxy_for("https://localhost:8443") == ""
+
+
+def test_arize_no_proxy_env_var_is_honored_at_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ARIZE_NO_PROXY works like ARIZE_PROXY_URL: detected AND applied.
+
+    Profile creation detects it, so runtime resolution must read it too —
+    with priority over the generic NO_PROXY.
+    """
+    monkeypatch.setenv("ARIZE_PROXY_URL", "http://arize-proxy:8080")
+    monkeypatch.setenv("ARIZE_NO_PROXY", ".internal.example.com")
+    monkeypatch.setenv("NO_PROXY", "ignored.example.com")
+
+    settings = NetworkSettings.from_config(NetworkConfig(), request_verify=True)
+
+    assert settings.no_proxy == ".internal.example.com"
+    assert settings.proxy_for("https://api.internal.example.com") == ""
 
 
 def test_explicit_proxy_mode_overrides_system_environment(
