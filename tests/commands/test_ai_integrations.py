@@ -28,7 +28,7 @@ _CREATED_AT = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
 def _make_integration(
     integration_id: str = _INTEGRATION_ID,
     name: str = "My Integration",
-    provider: str = "openAI",
+    provider: str = "OPEN_AI",
 ) -> MagicMock:
     """Build an AiIntegration mock."""
     mock = MagicMock()
@@ -223,7 +223,7 @@ class TestCreateAiIntegration:
                 "--name",
                 "OpenAI Prod",
                 "--provider",
-                "openAI",
+                "OPEN_AI",
                 "--output",
                 "json",
             ],
@@ -234,7 +234,7 @@ class TestCreateAiIntegration:
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.ai_integrations.create.call_args.kwargs
         assert call_kwargs["name"] == "OpenAI Prod"
-        assert call_kwargs["provider"] == AiIntegrationProvider.OPENAI
+        assert call_kwargs["provider"] == AiIntegrationProvider.OPEN_AI
         assert call_kwargs["enable_default_models"] is False
         assert call_kwargs["function_calling_enabled"] is False
 
@@ -251,7 +251,7 @@ class TestCreateAiIntegration:
                 "--name",
                 "X",
                 "--provider",
-                "openAI",
+                "OPEN_AI",
                 "--enable-default-models",
                 "--function-calling-enabled",
             ],
@@ -276,7 +276,7 @@ class TestCreateAiIntegration:
                 "--name",
                 "My Integration",
                 "--provider",
-                "openAI",
+                "OPEN_AI",
                 "--model-name",
                 "gpt-4o",
                 "--model-name",
@@ -302,7 +302,7 @@ class TestCreateAiIntegration:
                 "--name",
                 "Custom",
                 "--provider",
-                "custom",
+                "CUSTOM",
                 "--headers",
                 '{"X-Custom": "value"}',
             ],
@@ -324,7 +324,7 @@ class TestCreateAiIntegration:
                 "--name",
                 "Bad",
                 "--provider",
-                "custom",
+                "CUSTOM",
                 "--headers",
                 "not-json",
             ],
@@ -346,7 +346,7 @@ class TestCreateAiIntegration:
                 "--name",
                 "Bedrock",
                 "--provider",
-                "awsBedrock",
+                "AWS_BEDROCK",
                 "--provider-metadata",
                 '{"role_arn": "arn:aws:iam::123:role/MyRole"}',
             ],
@@ -371,7 +371,7 @@ class TestCreateAiIntegration:
                 "--name",
                 "Bad",
                 "--provider",
-                "awsBedrock",
+                "AWS_BEDROCK",
                 "--provider-metadata",
                 "not-json",
             ],
@@ -394,7 +394,7 @@ class TestCreateAiIntegration:
                 "--name",
                 "Test",
                 "--provider",
-                "openAI",
+                "OPEN_AI",
             ],
             mock_config,
             mock_client,
@@ -487,7 +487,7 @@ class TestUpdateAiIntegration:
                 "update",
                 _INTEGRATION_ID,
                 "--provider",
-                "anthropic",
+                "ANTHROPIC",
             ],
             mock_config,
             mock_client,
@@ -509,7 +509,7 @@ class TestUpdateAiIntegration:
                 "update",
                 _INTEGRATION_ID,
                 "--auth-type",
-                "bearer_token",
+                "BEARER_TOKEN",
             ],
             mock_config,
             mock_client,

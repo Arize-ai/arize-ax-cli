@@ -5,14 +5,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from arize.annotation_queues.types import (
+    AnnotateAnnotationQueueRecordResponse,
     AnnotationInput,
     AnnotationQueue,
-    AnnotationQueueListResponse,
     AnnotationQueueRecord,
-    AnnotationQueueRecordAnnotateResult,
-    AnnotationQueueRecordAssignResult,
-    AnnotationQueueRecordListResponse,
+    AssignAnnotationQueueRecordResponse,
     AssignmentMethod,
+    ListAnnotationQueueRecordsResponse,
+    ListAnnotationQueuesResponse,
     PaginationMetadata,
 )
 from typer.testing import CliRunner, Result
@@ -46,8 +46,8 @@ def _make_queue(
 
 def _make_queue_list_response(
     *queues: AnnotationQueue, has_more: bool = False
-) -> AnnotationQueueListResponse:
-    return AnnotationQueueListResponse(
+) -> ListAnnotationQueuesResponse:
+    return ListAnnotationQueuesResponse(
         annotation_queues=list(queues),
         pagination=PaginationMetadata(has_more=has_more),
     )
@@ -60,7 +60,7 @@ def _make_record(
     return AnnotationQueueRecord(
         id=id,
         annotation_queue_id=annotation_queue_id,
-        source_type="spans",
+        source_type="SPANS",
         data={},
         annotations=[],
         evaluations=[],
@@ -70,8 +70,8 @@ def _make_record(
 
 def _make_record_list_response(
     *records: AnnotationQueueRecord, has_more: bool = False
-) -> AnnotationQueueRecordListResponse:
-    return AnnotationQueueRecordListResponse(
+) -> ListAnnotationQueueRecordsResponse:
+    return ListAnnotationQueueRecordsResponse(
         records=list(records),
         pagination=PaginationMetadata(has_more=has_more),
     )
@@ -297,7 +297,7 @@ class TestCreateAnnotationQueue:
                 "--instructions",
                 "Be thorough",
                 "--assignment-method",
-                "random",
+                "RANDOM",
             ],
             mock_config,
             mock_client,
@@ -309,7 +309,7 @@ class TestCreateAnnotationQueue:
             annotation_config_ids=["ac_1", "ac_2"],
             annotator_emails=["a@example.com"],
             instructions="Be thorough",
-            assignment_method=AssignmentMethod("random"),
+            assignment_method=AssignmentMethod("RANDOM"),
             record_sources=None,
         )
 
@@ -751,10 +751,10 @@ class TestAnnotateRecord:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         mock_client.annotation_queues.annotate_record.return_value = (
-            AnnotationQueueRecordAnnotateResult(
+            AnnotateAnnotationQueueRecordResponse(
                 id="rec_1",
                 annotation_queue_id="aq_1",
-                source_type="spans",
+                source_type="SPANS",
                 annotations=[],
             )
         )
@@ -796,10 +796,10 @@ class TestAnnotateRecord:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         mock_client.annotation_queues.annotate_record.return_value = (
-            AnnotationQueueRecordAnnotateResult(
+            AnnotateAnnotationQueueRecordResponse(
                 id="rec_1",
                 annotation_queue_id="aq_1",
-                source_type="spans",
+                source_type="SPANS",
                 annotations=[],
             )
         )
@@ -861,10 +861,10 @@ class TestAssignRecord:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         mock_client.annotation_queues.assign_record.return_value = (
-            AnnotationQueueRecordAssignResult(
+            AssignAnnotationQueueRecordResponse(
                 id="rec_1",
                 annotation_queue_id="aq_1",
-                source_type="spans",
+                source_type="SPANS",
                 assigned_users=[],
             )
         )
@@ -898,10 +898,10 @@ class TestAssignRecord:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         mock_client.annotation_queues.assign_record.return_value = (
-            AnnotationQueueRecordAssignResult(
+            AssignAnnotationQueueRecordResponse(
                 id="rec_1",
                 annotation_queue_id="aq_1",
-                source_type="spans",
+                source_type="SPANS",
                 assigned_users=[],
             )
         )
@@ -946,7 +946,7 @@ class TestCreateAnnotationQueueWithRecordSources:
         """--record-sources JSON is parsed and forwarded to the SDK."""
         mock_client.annotation_queues.create.return_value = _make_queue()
 
-        sources_json = '[{"record_type": "example", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
+        sources_json = '[{"record_type": "EXAMPLE", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
         _invoke(
             [
                 "annotation-queues",
@@ -969,7 +969,7 @@ class TestCreateAnnotationQueueWithRecordSources:
         call_kwargs = mock_client.annotation_queues.create.call_args.kwargs
         assert call_kwargs["record_sources"] == [
             {
-                "record_type": "example",
+                "record_type": "EXAMPLE",
                 "dataset_id": "ds-1",
                 "example_ids": ["ex-1"],
             }
@@ -1016,7 +1016,7 @@ class TestAddRecords:
             model_dump=MagicMock(return_value={"records": []})
         )
 
-        sources_json = '[{"record_type": "example", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
+        sources_json = '[{"record_type": "EXAMPLE", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
         result = _invoke(
             [
                 "annotation-queues",
@@ -1035,7 +1035,7 @@ class TestAddRecords:
             space=None,
             record_sources=[
                 {
-                    "record_type": "example",
+                    "record_type": "EXAMPLE",
                     "dataset_id": "ds-1",
                     "example_ids": ["ex-1"],
                 }
@@ -1050,7 +1050,7 @@ class TestAddRecords:
             model_dump=MagicMock(return_value={"records": []})
         )
 
-        sources_json = '[{"record_type": "example", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
+        sources_json = '[{"record_type": "EXAMPLE", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
         _invoke(
             [
                 "annotation-queues",
@@ -1096,7 +1096,7 @@ class TestAddRecords:
                 "add-records",
                 "aq_1",
                 "--record-sources",
-                '{"record_type": "example"}',
+                '{"record_type": "EXAMPLE"}',
             ],
             mock_config,
             mock_client,
@@ -1123,7 +1123,7 @@ class TestAddRecords:
         mock_client.annotation_queues.add_records.side_effect = RuntimeError(
             "Server error"
         )
-        sources_json = '[{"record_type": "example", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
+        sources_json = '[{"record_type": "EXAMPLE", "dataset_id": "ds-1", "example_ids": ["ex-1"]}]'
         result = _invoke(
             [
                 "annotation-queues",

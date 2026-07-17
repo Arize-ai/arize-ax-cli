@@ -277,7 +277,7 @@ class TestExperimentsAnnotateRuns:
                 "--space",
                 test_space_id,
                 "--type",
-                "continuous",
+                "CONTINUOUS",
                 "--min-score",
                 "0",
                 "--max-score",

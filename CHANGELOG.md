@@ -1,5 +1,64 @@
 # Changelog
 
+## [0.26.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.25.1...arize-ax-cli/v0.26.0) (2026-07-17)
+
+> **Minor release.** The v2 REST API standardization ([#78907](https://github.com/Arize-ai/arize/pull/78907)) is technically breaking, but **only affects endpoints/methods in `alpha` or `beta`** — all gated behind the pre-release opt-in and documented with a warning. **No stable surface changes.**
+
+### ⚠ BREAKING CHANGES (pre-release only)
+
+* **enums:** standardize all enum values to `SCREAMING_SNAKE_CASE` — AI integrations, prompts, evaluators, tasks, orgs, spaces, users, API keys, and roles ([#78718](https://github.com/Arize-ai/arize/issues/78718), [#78720](https://github.com/Arize-ai/arize/issues/78720), [#78721](https://github.com/Arize-ai/arize/issues/78721), [#78722](https://github.com/Arize-ai/arize/issues/78722)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+* **types:** apply type-naming convention across dataset, org/space/user, access-control, and API-key/audit-log schemas ([#78740](https://github.com/Arize-ai/arize/issues/78740), [#79098](https://github.com/Arize-ai/arize/issues/79098), [#79101](https://github.com/Arize-ai/arize/issues/79101), [#79099](https://github.com/Arize-ai/arize/issues/79099)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+* **openapi:** enforce verb-first `operationId` naming (`*ListResponse` → `List*Response`), incl. annotation-config & evaluator-version request schemas ([#79270](https://github.com/Arize-ai/arize/issues/79270), [#79433](https://github.com/Arize-ai/arize/issues/79433)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+* **prompts:** `set-prompt-version-labels` now returns the full `PromptVersion` ([#79278](https://github.com/Arize-ai/arize/issues/79278)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+
+### 🎁 New Features
+
+* **api:** return `404` for list endpoints when the scoped resource is missing or inaccessible ([#79279](https://github.com/Arize-ai/arize/issues/79279)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+* **openapi:** enforce naming conventions and extract shared nested schemas ([#79103](https://github.com/Arize-ai/arize/issues/79103)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+* **spectral:** enforce lockstep naming and strict nested-schema lint rules ([#79280](https://github.com/Arize-ai/arize/issues/79280)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+
+### 🐛 Bug Fixes
+
+* **ci:** fix the OpenAPI lint check ([#78913](https://github.com/Arize-ai/arize/issues/78913)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+* **openapi:** resolve follow-up gaps from the REST API audit ([#79440](https://github.com/Arize-ai/arize/issues/79440)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+* **annotation-configs:** migrate create command to arize SDK 8.40 ([#78795](https://github.com/Arize-ai/arize/issues/78795)) ([24bf711](https://github.com/Arize-ai/arize/commit/24bf711b9137482b94550cf268256fcbab20a6da))
+
+### ❔ Miscellaneous Chores
+
+* promote pre-release stage from `alpha` to `beta` ([#78707](https://github.com/Arize-ai/arize/issues/78707)) ([b17b78d](https://github.com/Arize-ai/arize/commit/b17b78d6a68bf8a6e0736df251a73a9dc0c33cab))
+
+---
+
+## Migration notes — pre-release (`alpha`/`beta`) commands only
+
+The recasing flows from the OpenAPI spec into the CLI. **Command and flag names are unchanged** — what changed are the **enum values you pass** to flags (and inside inline JSON). Old-cased values are now rejected.
+
+**Flag values → `SCREAMING_SNAKE_CASE`:**
+
+| Command / flag | Before | After |
+|---|---|---|
+| `ai-integrations --provider` | `open_ai`, `azureOpenAI`, `awsBedrock`, `vertexAI`, `nvidiaNim`, `gemini`, `anthropic`, `custom` | `OPEN_AI`, `AZURE_OPEN_AI`, `AWS_BEDROCK`, `VERTEX_AI`, `NVIDIA_NIM`, `GEMINI`, `ANTHROPIC`, `CUSTOM` |
+| `annotation-configs --type` | `freeform`, `continuous`, `categorical` | `FREEFORM`, `CONTINUOUS`, `CATEGORICAL` |
+| `--optimization-direction` | `maximize`, `minimize`, `none` | `MAXIMIZE`, `MINIMIZE`, `NONE` |
+| `--assignment-method` | `all`, `random` | `ALL`, `RANDOM` |
+| `api-keys --key-type` | `user`, `service` | `USER`, `SERVICE` |
+| `api-keys --status` | `active`, `revoked` | `ACTIVE`, `REVOKED` |
+| `evaluators --data-granularity` | `span`, `trace`, `session` | `SPAN`, `TRACE`, `SESSION` |
+| `evaluators --code-type` | `managed`, `custom` | `MANAGED`, `CUSTOM` |
+| `evaluators --managed-evaluator` | `MatchesRegex`, `JSONParseable`, `ContainsAnyKeyword`, `ContainsAllKeywords`, `ExactMatch` | `MATCHES_REGEX`, `JSON_PARSEABLE`, `CONTAINS_ANY_KEYWORD`, `CONTAINS_ALL_KEYWORDS`, `EXACT_MATCH` |
+| `prompts --input-variable-format` | `f_string`, `mustache`, `none` | `F_STRING`, `MUSTACHE`, `NONE` |
+| `tasks --task-type` | `template_evaluation`, `code_evaluation`, `run_experiment` | `TEMPLATE_EVALUATION`, `CODE_EVALUATION`, `RUN_EXPERIMENT` |
+| `tasks list-runs --status` | `pending`, `running`, `completed`, `failed`, `cancelled` | `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, `CANCELLED` |
+| `users --status` | `active`, `invited`, `expired` | `ACTIVE`, `INVITED`, `EXPIRED` |
+| `users --role` | `admin`, `member`, `annotator` | `ADMIN`, `MEMBER`, `ANNOTATOR` |
+| `users --invite-mode` | `email_link`, `temporary_password`, `none` | `EMAIL_LINK`, `TEMPORARY_PASSWORD`, `NONE` |
+
+**Inline JSON payloads use the new casing too:**
+
+* `prompts --messages`: `role` → `"SYSTEM"` / `"USER"` / `"ASSISTANT"` / `"TOOL"`; tool-call `type` → `"FUNCTION"`.
+* `annotation-queues --record-sources`: `record_type` → `"SPAN"` / `"EXAMPLE"`.
+* `tasks` experiment config: `experiment_type` → `"LLM_GENERATION"`; `input_variable_format` → `"MUSTACHE"` / `"F_STRING"`.
+
 ## [0.25.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.25.0...arize-ax-cli/v0.25.1) (2026-07-10)
 
 

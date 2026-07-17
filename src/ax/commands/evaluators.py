@@ -149,6 +149,14 @@ def _parse_static_params(source: str | None) -> list[StaticParam] | None:
     return params  # type: ignore[return-value]
 
 
+# Discriminator values for the code_config `type` field (ManagedCodeConfig /
+# CustomCodeConfig). The OpenAPI schema models these as single-value inline
+# enums, so no generated enum class exists — keep one source of truth here.
+_CODE_TYPE_MANAGED = "MANAGED"
+_CODE_TYPE_CUSTOM = "CUSTOM"
+_CODE_TYPES = (_CODE_TYPE_MANAGED, _CODE_TYPE_CUSTOM)
+
+
 def _build_managed_code_config(
     *,
     code_name: str,
@@ -160,7 +168,7 @@ def _build_managed_code_config(
 ) -> CodeConfig:
     """Build a CodeConfig wrapping a ManagedCodeConfig from CLI option values."""
     managed = ManagedCodeConfig(
-        type="managed",
+        type=_CODE_TYPE_MANAGED,
         name=code_name,
         managed_evaluator=managed_evaluator,
         variables=_parse_variables(variables),
@@ -183,7 +191,7 @@ def _build_custom_code_config(
 ) -> CodeConfig:
     """Build a CodeConfig wrapping a CustomCodeConfig from CLI option values."""
     custom = CustomCodeConfig(
-        type="custom",
+        type=_CODE_TYPE_CUSTOM,
         name=code_name,
         code=load_text_source(code, "--code"),
         imports=(
@@ -197,9 +205,6 @@ def _build_custom_code_config(
         data_granularity=data_granularity,
     )
     return CodeConfig(custom)
-
-
-_CODE_TYPES = ("managed", "custom")
 
 
 @app.command("list")
@@ -454,14 +459,14 @@ def template_create_evaluator(
         OptimizationDirection | None,
         typer.Option(
             "--direction",
-            help="Optimization direction: maximize or minimize or none",
+            help="Optimization direction: MAXIMIZE, MINIMIZE, or NONE",
         ),
     ] = None,
     data_granularity: Annotated[
         DataGranularity | None,
         typer.Option(
             "--data-granularity",
-            help="Data granularity: span, trace, or session",
+            help="Data granularity: SPAN, TRACE, or SESSION",
             case_sensitive=False,
         ),
     ] = None,
@@ -587,8 +592,8 @@ def code_create_evaluator(
             "--managed-evaluator",
             help=(
                 "Built-in managed evaluator (--code-type managed): "
-                "MatchesRegex, JSONParseable, ContainsAnyKeyword, "
-                "ContainsAllKeywords, or ExactMatch"
+                "MATCHES_REGEX, JSON_PARSEABLE, CONTAINS_ANY_KEYWORD, "
+                "CONTAINS_ALL_KEYWORDS, or EXACT_MATCH"
             ),
         ),
     ] = None,
@@ -636,7 +641,7 @@ def code_create_evaluator(
         DataGranularity | None,
         typer.Option(
             "--data-granularity",
-            help="Data granularity: span, trace, or session",
+            help="Data granularity: SPAN, TRACE, or SESSION",
             case_sensitive=False,
         ),
     ] = None,
@@ -671,14 +676,14 @@ def code_create_evaluator(
     for user-supplied Python (requires ``--code`` and ``--variables``).
     """
     setup_logging(verbose)
-    normalized_code_type = code_type.strip().lower()
+    normalized_code_type = code_type.strip().upper()
     if normalized_code_type not in _CODE_TYPES:
         raise UsageError(
             f"--code-type must be one of {', '.join(_CODE_TYPES)}; "
             f"got '{code_type}'"
         )
 
-    if normalized_code_type == "managed":
+    if normalized_code_type == _CODE_TYPE_MANAGED:
         if managed_evaluator is None:
             raise UsageError("--code-type managed requires --managed-evaluator")
         code_config = _build_managed_code_config(
@@ -1075,14 +1080,14 @@ def template_create_version(
         OptimizationDirection | None,
         typer.Option(
             "--direction",
-            help="Optimization direction: maximize or minimize or none",
+            help="Optimization direction: MAXIMIZE, MINIMIZE, or NONE",
         ),
     ] = None,
     data_granularity: Annotated[
         DataGranularity | None,
         typer.Option(
             "--data-granularity",
-            help="Data granularity: span, trace, or session",
+            help="Data granularity: SPAN, TRACE, or SESSION",
             case_sensitive=False,
         ),
     ] = None,
@@ -1201,8 +1206,8 @@ def code_create_version(
             "--managed-evaluator",
             help=(
                 "Built-in managed evaluator (--code-type managed): "
-                "MatchesRegex, JSONParseable, ContainsAnyKeyword, "
-                "ContainsAllKeywords, or ExactMatch"
+                "MATCHES_REGEX, JSON_PARSEABLE, CONTAINS_ANY_KEYWORD, "
+                "CONTAINS_ALL_KEYWORDS, or EXACT_MATCH"
             ),
         ),
     ] = None,
@@ -1250,7 +1255,7 @@ def code_create_version(
         DataGranularity | None,
         typer.Option(
             "--data-granularity",
-            help="Data granularity: span, trace, or session",
+            help="Data granularity: SPAN, TRACE, or SESSION",
             case_sensitive=False,
         ),
     ] = None,
@@ -1285,14 +1290,14 @@ def code_create_version(
     ``--code-type custom`` for user-supplied Python.
     """
     setup_logging(verbose)
-    normalized_code_type = code_type.strip().lower()
+    normalized_code_type = code_type.strip().upper()
     if normalized_code_type not in _CODE_TYPES:
         raise UsageError(
             f"--code-type must be one of {', '.join(_CODE_TYPES)}; "
             f"got '{code_type}'"
         )
 
-    if normalized_code_type == "managed":
+    if normalized_code_type == _CODE_TYPE_MANAGED:
         if managed_evaluator is None:
             raise UsageError("--code-type managed requires --managed-evaluator")
         code_config = _build_managed_code_config(

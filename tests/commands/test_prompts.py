@@ -89,7 +89,7 @@ def _large_inline_messages_payload() -> list[dict[str, object]]:
     """Multi-turn messages with tool calls — exercises a sizable inline JSON blob."""
     return [
         {
-            "role": "system",
+            "role": "SYSTEM",
             "content": (
                 "You are Acme Corp's support copilot. Policies:\n"
                 + "\n".join(
@@ -100,7 +100,7 @@ def _large_inline_messages_payload() -> list[dict[str, object]]:
             ),
         },
         {
-            "role": "user",
+            "role": "USER",
             "content": (
                 "Ticket #{ticket_id}: triage and suggest next steps.\n"
                 "Context:\n"
@@ -111,12 +111,12 @@ def _large_inline_messages_payload() -> list[dict[str, object]]:
             ),
         },
         {
-            "role": "assistant",
+            "role": "ASSISTANT",
             "content": None,
             "tool_calls": [
                 {
                     "id": "call_7f3a2",
-                    "type": "function",
+                    "type": "FUNCTION",
                     "function": {
                         "name": "lookup_ticket",
                         "arguments": json.dumps(
@@ -130,7 +130,7 @@ def _large_inline_messages_payload() -> list[dict[str, object]]:
             ],
         },
         {
-            "role": "tool",
+            "role": "TOOL",
             "tool_call_id": "call_7f3a2",
             "content": json.dumps(
                 {
@@ -141,7 +141,7 @@ def _large_inline_messages_payload() -> list[dict[str, object]]:
             ),
         },
         {
-            "role": "assistant",
+            "role": "ASSISTANT",
             "content": (
                 "Based on the ticket metadata, recommend escalation to on-call "
                 "and attach runbook {runbook_id}."
@@ -346,7 +346,7 @@ class TestCreatePrompt:
         """Test that create passes all required arguments to the SDK."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
 
         mock_client.prompts.create.return_value = _make_prompt_with_version(
@@ -362,9 +362,9 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -413,9 +413,9 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 inline,
                 "--commit-message",
@@ -459,9 +459,9 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 "/nonexistent/path.json",
                 "--commit-message",
@@ -481,7 +481,7 @@ class TestCreatePrompt:
         """Test that an SDK error during create causes a non-zero exit."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
         mock_client.prompts.create.side_effect = RuntimeError("Conflict")
 
@@ -494,9 +494,9 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -516,7 +516,7 @@ class TestCreatePrompt:
         """Test that --invocation-params JSON is parsed and forwarded to the SDK."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
         mock_client.prompts.create.return_value = _make_prompt_with_version()
 
@@ -529,9 +529,9 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -558,7 +558,7 @@ class TestCreatePrompt:
         """Test that a JSON array for --invocation-params exits non-zero."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
 
         result = _invoke(
@@ -570,9 +570,9 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -596,7 +596,7 @@ class TestCreatePrompt:
         """Test that --provider-params JSON is parsed and forwarded to the SDK."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
         mock_client.prompts.create.return_value = _make_prompt_with_version()
 
@@ -609,9 +609,9 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -636,7 +636,7 @@ class TestCreatePrompt:
         """Test that omitting --invocation-params passes None to the SDK."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
         mock_client.prompts.create.return_value = _make_prompt_with_version()
 
@@ -649,9 +649,9 @@ class TestCreatePrompt:
                 "--space",
                 "sp_abc",
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -849,7 +849,7 @@ class TestCreateVersion:
         """Test that create-version forwards all args to the SDK."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
         mock_client.prompts.create_version.return_value = _make_prompt_version()
 
@@ -859,9 +859,9 @@ class TestCreateVersion:
                 "create-version",
                 _PROMPT_ID,
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -891,9 +891,9 @@ class TestCreateVersion:
                 "create-version",
                 _PROMPT_ID,
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 inline,
                 "--commit-message",
@@ -918,7 +918,7 @@ class TestCreateVersion:
         """Test that an SDK error causes a non-zero exit."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
         mock_client.prompts.create_version.side_effect = RuntimeError("err")
 
@@ -928,9 +928,9 @@ class TestCreateVersion:
                 "create-version",
                 _PROMPT_ID,
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -950,7 +950,7 @@ class TestCreateVersion:
         """Test that --invocation-params is parsed and forwarded to the SDK."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
         mock_client.prompts.create_version.return_value = _make_prompt_version()
 
@@ -960,9 +960,9 @@ class TestCreateVersion:
                 "create-version",
                 _PROMPT_ID,
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -988,7 +988,7 @@ class TestCreateVersion:
         """Test that a JSON array for --invocation-params exits non-zero."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
 
         result = _invoke(
@@ -997,9 +997,9 @@ class TestCreateVersion:
                 "create-version",
                 _PROMPT_ID,
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",
@@ -1023,7 +1023,7 @@ class TestCreateVersion:
         """Test that omitting --invocation-params passes None to the SDK."""
         messages_file = tmp_path / "messages.json"
         messages_file.write_text(
-            json.dumps([{"role": "user", "content": "Hello"}])
+            json.dumps([{"role": "USER", "content": "Hello"}])
         )
         mock_client.prompts.create_version.return_value = _make_prompt_version()
 
@@ -1033,9 +1033,9 @@ class TestCreateVersion:
                 "create-version",
                 _PROMPT_ID,
                 "--provider",
-                "open_ai",
+                "OPEN_AI",
                 "--input-variable-format",
-                "f_string",
+                "F_STRING",
                 "--messages",
                 str(messages_file),
                 "--commit-message",

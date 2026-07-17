@@ -442,9 +442,9 @@ class TestTemplateCreateEvaluator:
                     "--classification-choices",
                     '{"relevant":1,"irrelevant":0}',
                     "--direction",
-                    "maximize",
+                    "MAXIMIZE",
                     "--data-granularity",
-                    "span",
+                    "SPAN",
                 ],
             )
 
@@ -459,8 +459,8 @@ class TestTemplateCreateEvaluator:
             invocation_params_str="{}",
             provider_params_str="{}",
             classification_choices_str='{"relevant":1,"irrelevant":0}',
-            direction="maximize",
-            data_granularity="span",
+            direction="MAXIMIZE",
+            data_granularity="SPAN",
         )
 
 
@@ -560,7 +560,7 @@ class TestTemplateCreateVersion:
                     "--classification-choices",
                     '{"yes":1,"no":0}',
                     "--data-granularity",
-                    "session",
+                    "SESSION",
                 ],
             )
 
@@ -576,7 +576,7 @@ class TestTemplateCreateVersion:
             provider_params_str="{}",
             classification_choices_str='{"yes":1,"no":0}',
             direction=None,
-            data_granularity="session",
+            data_granularity="SESSION",
         )
 
 
@@ -689,11 +689,11 @@ class TestBuildTemplateConfig:
             provider_params_str="{}",
             classification_choices_str='{"relevant": 1, "irrelevant": 0}',
             direction=OptimizationDirection.MINIMIZE,
-            data_granularity="trace",
+            data_granularity="TRACE",
         )
         assert cfg.classification_choices == {"relevant": 1, "irrelevant": 0}
         assert cfg.direction == OptimizationDirection.MINIMIZE
-        assert cfg.data_granularity == "trace"
+        assert cfg.data_granularity == "TRACE"
 
     @pytest.mark.unit
     def test_classification_choices_json_array_raises_usage_error(self) -> None:
@@ -772,9 +772,9 @@ class TestBuildTemplateConfig:
     @pytest.mark.unit
     def test_direction_enum_values(self) -> None:
         """OptimizationDirection enum has the expected values."""
-        assert OptimizationDirection.MAXIMIZE == "maximize"
-        assert OptimizationDirection.MINIMIZE == "minimize"
-        assert OptimizationDirection.NONE == "none"
+        assert OptimizationDirection.MAXIMIZE == "MAXIMIZE"
+        assert OptimizationDirection.MINIMIZE == "MINIMIZE"
+        assert OptimizationDirection.NONE == "NONE"
 
 
 class TestParseStaticParams:
@@ -888,13 +888,13 @@ class TestCodeCreateManagedEvaluator:
                     "--code-name",
                     "regex_match",
                     "--managed-evaluator",
-                    "MatchesRegex",
+                    "MATCHES_REGEX",
                     "--variables",
                     '["output"]',
                     "--static-params",
                     '[{"name":"pattern","type":"REGEX","default_value":"^yes"}]',
                     "--data-granularity",
-                    "span",
+                    "SPAN",
                 ],
             )
 
@@ -1039,7 +1039,7 @@ class TestCodeCreateCustomEvaluator:
         _, kwargs = mock_client.evaluators.create_code_evaluator.call_args
         code_config = kwargs["code_config"]
         inner = code_config.actual_instance
-        assert inner.type == "custom"
+        assert inner.type == "CUSTOM"
         assert inner.code == "class LoadedEval: ...\n"
         assert inner.imports == "import re\n"
 
@@ -1106,7 +1106,7 @@ class TestCodeCreateVersionKinds:
                     "--code-name",
                     "regex",
                     "--managed-evaluator",
-                    "JSONParseable",
+                    "JSON_PARSEABLE",
                     "--variables",
                     '["output"]',
                 ],

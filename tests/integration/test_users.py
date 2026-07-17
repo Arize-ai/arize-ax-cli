@@ -48,9 +48,9 @@ def created_user(api_key: str) -> dict[str, Any]:
         "--email",
         email,
         "--role",
-        "member",
+        "MEMBER",
         "--invite-mode",
-        "none",
+        "NONE",
     )
     assert "id" in data, f"User creation response missing 'id': {data}"
     yield data
@@ -161,9 +161,9 @@ class TestUsersLifecycle:
             "--email",
             email,
             "--role",
-            "member",
+            "MEMBER",
             "--invite-mode",
-            "none",
+            "NONE",
         )
         user_id = created["id"]
 
@@ -199,9 +199,9 @@ class TestUsersLifecycle:
             "--email",
             email,
             "--role",
-            "member",
+            "MEMBER",
             "--invite-mode",
-            "email_link",
+            "EMAIL_LINK",
         )
         user_id = created["id"]
 
@@ -233,9 +233,9 @@ class TestUsersResendInvitation:
             "--email",
             email,
             "--role",
-            "member",
+            "MEMBER",
             "--invite-mode",
-            "email_link",
+            "EMAIL_LINK",
         )
         user_id = created["id"]
 
@@ -268,9 +268,9 @@ class TestUsersBulkDelete:
             "--email",
             email,
             "--role",
-            "member",
+            "MEMBER",
             "--invite-mode",
-            "none",
+            "NONE",
         )
         user_id = created["id"]
 
@@ -303,9 +303,9 @@ class TestOrganizationUserMembership:
             "--email",
             email,
             "--role",
-            "member",
+            "MEMBER",
             "--invite-mode",
-            "none",
+            "NONE",
         )
         user_id = created["id"]
 
@@ -317,7 +317,7 @@ class TestOrganizationUserMembership:
                 "--user-id",
                 user_id,
                 "--role",
-                "member",
+                "MEMBER",
             )
             assert membership.get("user_id") == user_id
 
@@ -361,9 +361,9 @@ class TestSpaceUserMembership:
             "--email",
             email,
             "--role",
-            "member",
+            "MEMBER",
             "--invite-mode",
-            "none",
+            "NONE",
         )
         user_id = created["id"]
 
@@ -376,7 +376,7 @@ class TestSpaceUserMembership:
                 "--user-id",
                 user_id,
                 "--role",
-                "member",
+                "MEMBER",
             )
 
             membership = ax_json(
@@ -386,7 +386,7 @@ class TestSpaceUserMembership:
                 "--user-id",
                 user_id,
                 "--role",
-                "member",
+                "MEMBER",
             )
             assert membership.get("user_id") == user_id
 

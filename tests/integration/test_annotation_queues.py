@@ -94,7 +94,7 @@ def created_annotation_config_id() -> Generator[str, None, None]:
         "--space",
         TEST_SPACE,
         "--type",
-        "freeform",
+        "FREEFORM",
         "--output",
         "json",
     )
@@ -310,6 +310,6 @@ class TestAnnotationQueuesIntegration:
             "--space",
             TEST_SPACE,
             "--record-sources",
-            '{"record_type": "span"}',
+            '{"record_type": "SPAN"}',
         )
         assert result.exit_code != 0

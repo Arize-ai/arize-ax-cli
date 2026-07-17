@@ -15,12 +15,12 @@ from ax.commands.traces import _build_trace_id_in_filter, app
 
 
 class _LimitModel(BaseModel):
-    """Mirrors the generated SDK's spans_list ``limit`` constraint (le=500)."""
+    """Mirrors the generated SDK's list_spans ``limit`` constraint (le=500)."""
 
     limit: Annotated[int, Field(le=500, ge=1)]
 
 
-def _spans_list_validation_error() -> Exception:
+def _list_spans_validation_error() -> Exception:
     """Build the same ValidationError the generated SDK raises for an
     out-of-range ``--limit`` (client-side, before any network call).
     """
@@ -81,7 +81,7 @@ class TestListSpans:
         monkeypatch.setattr(
             sys, "argv", ["ax", "traces", "list", "TW9kZWw6MTIz"]
         )
-        mock_client.spans.list.side_effect = _spans_list_validation_error()
+        mock_client.spans.list.side_effect = _list_spans_validation_error()
 
         result = cli_runner.invoke(
             app,

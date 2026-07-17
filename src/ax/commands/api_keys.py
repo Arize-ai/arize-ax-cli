@@ -41,14 +41,14 @@ def list_api_keys(
         ApiKeyType | None,
         typer.Option(
             "--key-type",
-            help="Filter by key type: 'user' or 'service'",
+            help="Filter by key type: 'USER' or 'SERVICE'",
         ),
     ] = None,
     status: Annotated[
         ApiKeyStatus | None,
         typer.Option(
             "--status",
-            help="Filter by status: 'active' or 'revoked'",
+            help="Filter by status: 'ACTIVE' or 'REVOKED'",
         ),
     ] = None,
     limit: Annotated[
@@ -231,21 +231,21 @@ def create_service_api_key(
         ApiKeySpaceRole | None,
         typer.Option(
             "--space-role",
-            help="Space role for the bot user: admin, member, or read-only",
+            help="Space role for the bot user: ADMIN, MEMBER, READ_ONLY",
         ),
     ] = None,
     org_role: Annotated[
         ApiKeyOrganizationRole | None,
         typer.Option(
             "--org-role",
-            help="Organization role for the bot user: admin, member, or read-only",
+            help="Organization role for the bot user: ADMIN, MEMBER, READ_ONLY",
         ),
     ] = None,
     account_role: Annotated[
         ApiKeyAccountRole | None,
         typer.Option(
             "--account-role",
-            help="Account role for the bot user: admin or member",
+            help="Account role for the bot user: ADMIN or MEMBER",
         ),
     ] = None,
     output: Annotated[
@@ -269,7 +269,7 @@ def create_service_api_key(
 
     Service keys are backed by a dedicated bot user with configurable roles.
     When no roles are specified the server applies its defaults
-    (space_role=member, org_role=read-only, account_role=member).
+    (space_role=MEMBER, org_role=READ_ONLY, account_role=MEMBER).
 
     The raw key value is printed once after creation — save it securely,
     it will not be shown again.

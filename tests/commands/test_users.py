@@ -139,12 +139,12 @@ class TestListUsers:
         """--status filter should be forwarded to the SDK."""
         mock_client.users.list.return_value = _make_user_list_response()
         _invoke(
-            ["users", "list", "--status", "active"],
+            ["users", "list", "--status", "ACTIVE"],
             mock_config,
             mock_client,
         )
         call_kwargs = mock_client.users.list.call_args.kwargs
-        assert call_kwargs["status"] == ["active"]
+        assert call_kwargs["status"] == ["ACTIVE"]
 
     def test_list_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -209,9 +209,9 @@ class TestCreateUser:
                 "--email",
                 "alice@example.com",
                 "--role",
-                "member",
+                "MEMBER",
                 "--invite-mode",
-                "none",
+                "NONE",
                 "--output",
                 "json",
             ],
@@ -225,9 +225,9 @@ class TestCreateUser:
         assert call_kwargs["name"] == "Alice"
         assert call_kwargs["email"] == "alice@example.com"
         assert call_kwargs["role"] == PredefinedUserRole(
-            name=UserRole("member")
+            name=UserRole("MEMBER")
         )
-        assert call_kwargs["invite_mode"] == InviteMode("none")
+        assert call_kwargs["invite_mode"] == InviteMode("NONE")
         assert call_kwargs["is_developer"] is True
 
     def test_create_with_is_developer(
@@ -244,9 +244,9 @@ class TestCreateUser:
                 "--email",
                 "alice@example.com",
                 "--role",
-                "member",
+                "MEMBER",
                 "--invite-mode",
-                "none",
+                "NONE",
                 "--is-not-developer",
             ],
             mock_config,
@@ -269,9 +269,9 @@ class TestCreateUser:
                 "--email",
                 "alice@example.com",
                 "--role",
-                "member",
+                "MEMBER",
                 "--invite-mode",
-                "none",
+                "NONE",
             ],
             mock_config,
             mock_client,
