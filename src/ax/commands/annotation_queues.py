@@ -209,7 +209,7 @@ def create_annotation_queue(
         AssignmentMethod | None,
         typer.Option(
             "--assignment-method",
-            help="How records are assigned to annotators (all, random)",
+            help="How records are assigned to annotators (ALL, RANDOM)",
         ),
     ] = None,
     record_sources: Annotated[
@@ -218,8 +218,8 @@ def create_annotation_queue(
             "--record-sources",
             help=(
                 "JSON file path or inline JSON array of initial record sources. "
-                "Each source must have a 'record_type' field set to 'span' or "
-                "'example', plus type-specific fields. "
+                "Each source must have a 'record_type' field set to 'SPAN' or "
+                "'EXAMPLE', plus type-specific fields. "
                 "Span source: project_id, start_time (ISO 8601), end_time "
                 "(ISO 8601), and optional span_ids. "
                 "Example source: dataset_id and example_ids."
@@ -792,8 +792,8 @@ def add_records(
             "--record-sources",
             help=(
                 "JSON file path or inline JSON array of record sources. "
-                "Each source must have a 'record_type' field set to 'span' or "
-                "'example', plus type-specific fields. "
+                "Each source must have a 'record_type' field set to 'SPAN' or "
+                "'EXAMPLE', plus type-specific fields. "
                 "Span source: project_id, start_time (ISO 8601), end_time "
                 "(ISO 8601), and optional span_ids. "
                 "Example source: dataset_id and example_ids."
@@ -837,7 +837,7 @@ def add_records(
 
         # Add specific dataset examples (inline JSON)
         ax annotation-queues add-records my-queue \\
-          --record-sources '[{"record_type": "example", "dataset_id": "ds-1",
+          --record-sources '[{"record_type": "EXAMPLE", "dataset_id": "ds-1",
           "example_ids": ["ex-1", "ex-2"]}]'
     """
     parsed_sources: list[Any] = load_json(record_sources)  # type: ignore[assignment]

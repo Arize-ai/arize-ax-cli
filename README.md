@@ -705,16 +705,16 @@ ax ai-integrations list [--name <substring>] [--space <space>] [--limit 15] [--c
 ax ai-integrations get <integration>
 
 # Create an integration (OpenAI example)
-ax ai-integrations create --name "OpenAI Prod" --provider open_ai \
+ax ai-integrations create --name "OpenAI Prod" --provider OPEN_AI \
   --api-key <key> --model-name gpt-4o --model-name gpt-4o-mini
 
 # Create an integration with custom headers
-ax ai-integrations create --name "Custom LLM" --provider custom \
+ax ai-integrations create --name "Custom LLM" --provider CUSTOM \
   --base-url https://my-llm.example.com \
   --headers-json '{"X-API-Key": "secret"}'
 
 # Create an AWS Bedrock integration
-ax ai-integrations create --name "Bedrock" --provider awsBedrock \
+ax ai-integrations create --name "Bedrock" --provider AWS_BEDROCK \
   --provider-metadata-json '{"role_arn": "arn:aws:iam::123456789:role/MyRole"}'
 
 # Update an integration
@@ -728,14 +728,14 @@ ax ai-integrations delete <integration> [--force]
 
 | Provider      | Value         | Notes                                        |
 | ------------- | ------------- | -------------------------------------------- |
-| OpenAI        | `openAI`      |                                              |
-| Azure OpenAI  | `azureOpenAI` | Use `--base-url` for the deployment endpoint |
-| AWS Bedrock   | `awsBedrock`  | Requires `--provider-metadata-json`          |
-| Vertex AI     | `vertexAI`    | Requires `--provider-metadata-json`          |
-| Anthropic     | `anthropic`   |                                              |
-| NVIDIA NIM    | `nvidiaNim`   |                                              |
-| Google Gemini | `gemini`      |                                              |
-| Custom        | `custom`      | Use `--base-url` for a custom endpoint       |
+| OpenAI        | `OPEN_AI`       |                                              |
+| Azure OpenAI  | `AZURE_OPEN_AI` | Use `--base-url` for the deployment endpoint |
+| AWS Bedrock   | `AWS_BEDROCK`   | Requires `--provider-metadata-json`          |
+| Vertex AI     | `VERTEX_AI`     | Requires `--provider-metadata-json`          |
+| Anthropic     | `ANTHROPIC`     |                                              |
+| NVIDIA NIM    | `NVIDIA_NIM`    |                                              |
+| Google Gemini | `GEMINI`        |                                              |
+| Custom        | `CUSTOM`        | Use `--base-url` for a custom endpoint       |
 
 ### Annotation Configs
 
@@ -749,15 +749,15 @@ ax annotation-configs list [--name <substring>] [--space <space>] [--limit 15] [
 ax annotation-configs get <annotation-config>
 
 # Create a freeform annotation config (free-text feedback)
-ax annotation-configs create --name "Quality" --space <space> --type freeform
+ax annotation-configs create --name "Quality" --space <space> --type FREEFORM
 
 # Create a continuous annotation config (numeric score range)
-ax annotation-configs create --name "Score" --space <space> --type continuous \
-  --min-score 0 --max-score 1 --optimization-direction maximize
+ax annotation-configs create --name "Score" --space <space> --type CONTINUOUS \
+  --min-score 0 --max-score 1 --optimization-direction MAXIMIZE
 
 # Create a categorical annotation config (discrete labels)
-ax annotation-configs create --name "Verdict" --space <space> --type categorical \
-  --value good --value neutral --value bad --optimization-direction maximize
+ax annotation-configs create --name "Verdict" --space <space> --type CATEGORICAL \
+  --value good --value neutral --value bad --optimization-direction MAXIMIZE
 
 # Delete an annotation config
 ax annotation-configs delete <annotation-config> [--force]
@@ -767,9 +767,9 @@ ax annotation-configs delete <annotation-config> [--force]
 
 | Type          | Required options                                                        | Optional options           |
 | ------------- | ----------------------------------------------------------------------- | -------------------------- |
-| `freeform`    | _(none)_                                                                | —                          |
-| `continuous`  | `--min-score`, `--max-score`                                            | `--optimization-direction` |
-| `categorical` | `--value` (repeat for multiple labels, e.g. `--value good --value bad`) | `--optimization-direction` |
+| `FREEFORM`    | _(none)_                                                                | —                          |
+| `CONTINUOUS`  | `--min-score`, `--max-score`                                            | `--optimization-direction` |
+| `CATEGORICAL` | `--value` (repeat for multiple labels, e.g. `--value good --value bad`) | `--optimization-direction` |
 
 ### Annotation Queues
 
@@ -791,7 +791,7 @@ ax annotation-queues create --name "My Queue" --space <space> \
   --annotation-config-id <config-id> \
   --annotator-email alice@example.com --annotator-email bob@example.com \
   --instructions "Please evaluate carefully" \
-  --assignment-method random
+  --assignment-method RANDOM
 
 # Create a queue and seed it with initial records from a file
 ax annotation-queues create --name "My Queue" --space <space> \
@@ -829,21 +829,21 @@ ax annotation-queues add-records <queue> \
 
 # Add records inline (span source)
 ax annotation-queues add-records <queue> \
-  --record-sources '[{"record_type": "span", "project_id": "<proj>",
+  --record-sources '[{"record_type": "SPAN", "project_id": "<proj>",
     "start_time": "2024-01-01T00:00:00Z", "end_time": "2024-01-02T00:00:00Z"}]'
 
 # Add records inline (dataset example source)
 ax annotation-queues add-records <queue> \
-  --record-sources '[{"record_type": "example", "dataset_id": "<ds>",
+  --record-sources '[{"record_type": "EXAMPLE", "dataset_id": "<ds>",
     "example_ids": ["ex-1", "ex-2"]}]'
 ```
 
 **Assignment methods:**
 
-| Method   | Behavior                                      |
-| -------- | --------------------------------------------- |
-| `all`    | Every annotator is assigned to every record (default) |
-| `random` | Each record is randomly assigned to one annotator |
+| Method       | Behavior                                      |
+| ------------ | --------------------------------------------- |
+| `ALL`        | Every annotator is assigned to every record (default) |
+| `RANDOM`     | Each record is randomly assigned to one annotator |
 
 ### API Keys
 
@@ -851,14 +851,14 @@ ax annotation-queues add-records <queue> \
 
 ```bash
 # List API keys
-ax api-keys list [--key-type user|service] [--status active|revoked] \
+ax api-keys list [--key-type USER|SERVICE] [--status ACTIVE|REVOKED] \
   [--limit 15] [--cursor <cursor>]
 
 # Create a user key (authenticates as you)
 ax api-keys create --name "My Key" [--description "..."] [--expires-at 2025-12-31T23:59:59]
 
 # Create a service key (scoped to a space)
-ax api-keys create --name "CI Key" --key-type service --space <space-name-or-id>
+ax api-keys create --name "CI Key" --key-type SERVICE --space <space-name-or-id>
 
 # Refresh a key (revokes old key, issues replacement)
 ax api-keys refresh <key-id> [--expires-at 2025-12-31T23:59:59] \
@@ -977,7 +977,7 @@ ax evaluators create-template-evaluator \
   --model-name gpt-4o \
   --classification-choices '{"relevant":1,"irrelevant":0}' \
   --direction maximize \
-  --data-granularity span
+  --data-granularity SPAN
 
 # Update evaluator metadata
 ax evaluators update <evaluator> --name "New Name"
@@ -1040,7 +1040,7 @@ ax evaluators create-code-evaluator \
   --commit-message "Initial version" \
   --code-type managed \
   --code-name regex_match \
-  --managed-evaluator MatchesRegex \
+  --managed-evaluator MATCHES_REGEX \
   --variables '["output"]' \
   --static-params '[{"name":"pattern","type":"REGEX","default_value":"^yes"}]'
 
@@ -1072,7 +1072,7 @@ ax evaluators create-code-evaluator-version <evaluator-id> \
 | --- | --- |
 | `--code-type` | `managed` (built-in) or `custom` (user Python) |
 | `--code-name` | Eval column name |
-| `--managed-evaluator` | Built-in evaluator (`--code-type managed`): `MatchesRegex`, `JSONParseable`, `ContainsAnyKeyword`, `ContainsAllKeywords`, `ExactMatch` |
+| `--managed-evaluator` | Built-in evaluator (`--code-type managed`): `MATCHES_REGEX`, `JSON_PARSEABLE`, `CONTAINS_ANY_KEYWORD`, `CONTAINS_ALL_KEYWORDS`, `EXACT_MATCH` |
 | `--code` | Python source for `--code-type custom`. Inline source, or `@path/to/file.py` to load from disk |
 | `--imports` | Optional Python import block for `--code-type custom`. Inline or `@path/to/file.py` |
 | `--variables` | JSON array of variable names (span attributes / columns). Accepts inline JSON or a file path |
@@ -1225,8 +1225,8 @@ ax prompts get <prompt> --label production
 ax prompts create \
   --name "My Prompt" \
   --space <space> \
-  --provider open_ai \
-  --input-variable-format f_string \
+  --provider OPEN_AI \
+  --input-variable-format F_STRING \
   --messages messages.json \
   --commit-message "Initial version"
 
@@ -1234,9 +1234,9 @@ ax prompts create \
 ax prompts create \
   --name "My Prompt" \
   --space <space> \
-  --provider open_ai \
+  --provider OPEN_AI \
   --model gpt-4o \
-  --input-variable-format f_string \
+  --input-variable-format F_STRING \
   --messages messages.json \
   --commit-message "Initial version" \
   --invocation-params '{"temperature": 0.7, "max_tokens": 512}' \
@@ -1253,23 +1253,23 @@ ax prompts list-versions <prompt> [--limit 15] [--cursor <cursor>]
 
 # Create a new version
 ax prompts create-version <prompt> \
-  --provider open_ai \
-  --input-variable-format f_string \
+  --provider OPEN_AI \
+  --input-variable-format F_STRING \
   --messages messages_v2.json \
   --commit-message "Improved system prompt"
 
 # Create a new version (inline messages JSON)
 ax prompts create-version <prompt> \
-  --provider open_ai \
-  --input-variable-format f_string \
-  --messages '[{"role": "user", "content": "Your prompt here"}]' \
+  --provider OPEN_AI \
+  --input-variable-format F_STRING \
+  --messages '[{"role": "USER", "content": "Your prompt here"}]' \
   --commit-message "Minimal inline JSON example"
 
 # Create a new version with invocation and provider parameters
 ax prompts create-version <prompt> \
-  --provider open_ai \
+  --provider OPEN_AI \
   --model gpt-4o \
-  --input-variable-format f_string \
+  --input-variable-format F_STRING \
   --messages messages_v2.json \
   --commit-message "Tuned parameters" \
   --invocation-params '{"temperature": 0.5}' \
@@ -1290,10 +1290,10 @@ ax prompts remove-version-label <version-id> --label staging
 
 ```json
 [
-  {"role": "system", "content": "You are a helpful assistant."},
-  {"role": "user",   "content": "Summarize the following: {text}"},
-  {"role": "assistant", "tool_calls": [{"id": "tool-call-1", "type": "function", "function": {"name": "search", "arguments": "{\"query\": \"summarize {text}\"}}]},
-  {"role": "tool", "tool_call_id": "tool-call-1", "content": "This is the result of the search function."},
+  {"role": "SYSTEM", "content": "You are a helpful assistant."},
+  {"role": "USER",   "content": "Summarize the following: {text}"},
+  {"role": "ASSISTANT", "tool_calls": [{"id": "tool-call-1", "type": "FUNCTION", "function": {"name": "search", "arguments": "{\"query\": \"summarize {text}\"}}]},
+  {"role": "TOOL", "tool_call_id": "tool-call-1", "content": "This is the result of the search function."},
 ]
 ```
 
@@ -1308,9 +1308,9 @@ ax prompts remove-version-label <version-id> --label staging
 
 | Format     | Syntax              |
 | ---------- | ------------------- |
-| `f_string` | `{variable_name}`   |
-| `mustache` | `{{variable_name}}` |
-| `none`     | No variable parsing |
+| `F_STRING` | `{variable_name}`   |
+| `MUSTACHE` | `{{variable_name}}` |
+| `NONE`     | No variable parsing |
 
 ### Roles
 
@@ -1496,18 +1496,18 @@ Manage evaluation tasks and run-experiment tasks, and trigger on-demand runs:
 # List tasks (filtered by space, project, dataset, or type)
 ax tasks list [--name <substring>] [--space <space>] [--project-id <project-name-or-id>] \
   [--dataset-id <dataset-id>] \
-  [--task-type template_evaluation|code_evaluation|run_experiment] \
+  [--task-type TEMPLATE_EVALUATION|CODE_EVALUATION|RUN_EXPERIMENT] \
   [--limit 15] [--cursor <cursor>]
 
 # Get a specific task
 ax tasks get <task-id>
 
-# ── Evaluation tasks (template_evaluation / code_evaluation) ─────────────────
+# ── Evaluation tasks (TEMPLATE_EVALUATION / CODE_EVALUATION) ─────────────────
 
 # Create a project-based evaluation task (use ax evaluators list to find IDs)
 ax tasks create \
   --name "Relevance Check" \
-  --task-type template_evaluation \
+  --task-type TEMPLATE_EVALUATION \
   --evaluators '[{"evaluator_id": "<id from ax evaluators list>", "query_filter": null, "column_mappings": null}]' \
   --project <project> [--space <space>] \
   --is-continuous
@@ -1515,7 +1515,7 @@ ax tasks create \
 # Create a dataset-based evaluation task
 ax tasks create \
   --name "Dataset Eval" \
-  --task-type template_evaluation \
+  --task-type TEMPLATE_EVALUATION \
   --evaluators '[{"evaluator_id": "<evaluator-id>"}]' \
   --dataset <dataset> \
   --experiment-ids <exp-id-1>,<exp-id-2>
@@ -1523,7 +1523,7 @@ ax tasks create \
 # Narrower subcommand (same options, cleaner help text)
 ax tasks create-evaluation \
   --name "Relevance Check" \
-  --task-type template_evaluation \
+  --task-type TEMPLATE_EVALUATION \
   --evaluators '[{"evaluator_id": "<id>"}]' \
   --project <project>
 
@@ -1532,14 +1532,14 @@ ax tasks create-evaluation \
 # Create a run-experiment task (dispatched via ax tasks create)
 ax tasks create \
   --name "LLM Eval Run" \
-  --task-type run_experiment \
+  --task-type RUN_EXPERIMENT \
   --dataset <dataset> \
   --run-configuration '{
-    "experiment_type": "llm_generation",
+    "experiment_type": "LLM_GENERATION",
     "ai_integration_id": "<integration-id>",
     "model_name": "gpt-4o",
-    "input_variable_format": "mustache",
-    "messages": [{"role": "user", "content": "{{input}}"}]
+    "input_variable_format": "MUSTACHE",
+    "messages": [{"role": "USER", "content": "{{input}}"}]
   }'
 
 # Or use the dedicated subcommand
@@ -1598,7 +1598,7 @@ ax tasks trigger-run <task-id> \
 # ── Run management ────────────────────────────────────────────────────────────
 
 # List runs for a task (optionally filtered by status)
-ax tasks list-runs <task-id> [--status pending|running|completed|failed|cancelled] \
+ax tasks list-runs <task-id> [--status PENDING|RUNNING|COMPLETED|FAILED|CANCELLED] \
   [--limit 15] [--cursor <cursor>]
 
 # Get a specific run
@@ -1710,7 +1710,7 @@ Manage users in the account:
 
 ```bash
 # List users (optionally filtered by email or status)
-ax users list [--email <substring>] [--status active] [--status invited] \
+ax users list [--email <substring>] [--status ACTIVE] [--status INVITED] \
   [--limit 50] [--cursor <cursor>]
 
 # Get a specific user by ID
@@ -1718,7 +1718,7 @@ ax users get <user-id>
 
 # Create a new user and invite them
 ax users create --full-name "Jane Doe" --email jane@example.com \
-  --role member --invite-mode email_link
+  --role MEMBER --invite-mode EMAIL_LINK
 
 # Update a user's full name or developer permission flag
 ax users update <user-id> --full-name "Jane Smith"

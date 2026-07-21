@@ -194,7 +194,7 @@ def create_annotation_config(
         typer.Option(
             "--type",
             "-t",
-            help="Annotation config type (continuous, categorical, freeform)",
+            help="Annotation config type (CONTINUOUS, CATEGORICAL, FREEFORM)",
             prompt=True,
         ),
     ],
@@ -223,7 +223,7 @@ def create_annotation_config(
         OptimizationDirection | None,
         typer.Option(
             "--optimization-direction",
-            help="Optimization direction (maximize, minimize, or none)",
+            help="Optimization direction (MAXIMIZE, MINIMIZE, or NONE)",
         ),
     ] = None,
     output: Annotated[
@@ -247,9 +247,9 @@ def create_annotation_config(
 
     Type-specific requirements:
 
-    - continuous: --min-score and --max-score are required
-    - categorical: --value is required (repeat for multiple labels)
-    - freeform: no additional options required
+    - CONTINUOUS: --min-score and --max-score are required
+    - CATEGORICAL: --value is required (repeat for multiple labels)
+    - FREEFORM: no additional options required
     """
     setup_logging(verbose)
     client, config = make_client()
@@ -268,27 +268,19 @@ def create_annotation_config(
         min_score is None or max_score is None
     ):
         raise typer.BadParameter(
-            "--min-score and --max-score are required for a continuous config."
+            "--min-score and --max-score are required for continuous annotation configs."
         )
     if (
         annotation_type == AnnotationConfigType.CATEGORICAL
         and not categorical_values
     ):
         raise typer.BadParameter(
-            "At least one --value is required for a categorical config."
-        )
-    if annotation_type not in {
-        AnnotationConfigType.CONTINUOUS,
-        AnnotationConfigType.CATEGORICAL,
-        AnnotationConfigType.FREEFORM,
-    }:
-        raise typer.BadParameter(
-            f"Unsupported annotation config type: {annotation_type}"
+            "--value is required (at least one) for categorical annotation configs."
         )
 
     annotation_config: (
-        CategoricalAnnotationConfig
-        | ContinuousAnnotationConfig
+        ContinuousAnnotationConfig
+        | CategoricalAnnotationConfig
         | FreeformAnnotationConfig
     )
     try:

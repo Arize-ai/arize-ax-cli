@@ -36,7 +36,7 @@ def _make_task_list_response(*tasks: MagicMock) -> MagicMock:
     return mock
 
 
-def _make_run(run_id: str = "run-1", status: str = "pending") -> MagicMock:
+def _make_run(run_id: str = "run-1", status: str = "PENDING") -> MagicMock:
     mock = MagicMock()
     mock.id = run_id
     mock.status = status
@@ -53,11 +53,11 @@ def _make_run_list_response(*runs: MagicMock) -> MagicMock:
 
 
 _RUN_CONFIG_JSON = (
-    '{"experiment_type": "llm_generation", '
+    '{"experiment_type": "LLM_GENERATION", '
     '"ai_integration_id": "int-1", '
     '"model_name": "gpt-4o", '
-    '"input_variable_format": "mustache", '
-    '"messages": [{"role": "user", "content": "{{input}}"}]}'
+    '"input_variable_format": "MUSTACHE", '
+    '"messages": [{"role": "USER", "content": "{{input}}"}]}'
 )
 
 # ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ class TestBuildEvaluators:
 
     @pytest.mark.unit
     def test_valid_evaluators(self) -> None:
-        """Valid list input is parsed into BaseEvaluationTaskRequestEvaluatorsInner objects."""
+        """Valid list input is parsed into TaskEvaluatorInput objects."""
         result = _build_evaluators([{"evaluator_id": "ev-1"}])
         assert len(result) == 1
         assert result[0].evaluator_id == "ev-1"
@@ -144,7 +144,7 @@ class TestBuildRunConfiguration:
             "ax.commands.tasks.RunConfiguration.from_dict", return_value=mock_rc
         ):
             result = _build_run_configuration(
-                {"experiment_type": "llm_generation"}
+                {"experiment_type": "LLM_GENERATION"}
             )
         assert result is mock_rc
 
@@ -264,7 +264,7 @@ class TestListTasks:
                 "--project",
                 "UHJvamVjdDox",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--limit",
                 "5",
                 "--cursor",
@@ -277,7 +277,7 @@ class TestListTasks:
             space="space-1",
             project="UHJvamVjdDox",
             dataset=None,
-            task_type="template_evaluation",
+            task_type="TEMPLATE_EVALUATION",
             limit=5,
             cursor="cursor-abc",
         )
@@ -404,7 +404,7 @@ class TestCreateTask:
                 "--name",
                 "My Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
                 "--project",
@@ -414,7 +414,7 @@ class TestCreateTask:
         assert result.exit_code == 0
         call_kwargs = mock_client.tasks.create_evaluation_task.call_args.kwargs
         assert call_kwargs["name"] == "My Task"
-        assert call_kwargs["task_type"] == "template_evaluation"
+        assert call_kwargs["task_type"] == "TEMPLATE_EVALUATION"
         assert call_kwargs["project"] == "proj-1"
         assert call_kwargs["dataset"] is None
         assert len(call_kwargs["evaluators"]) == 1
@@ -437,7 +437,7 @@ class TestCreateTask:
                 "--name",
                 "My Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
                 "--dataset",
@@ -469,7 +469,7 @@ class TestCreateTask:
                 "--name",
                 "My Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
                 "--project",
@@ -497,7 +497,7 @@ class TestCreateTask:
                 "--name",
                 "My Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
             ],
@@ -520,7 +520,7 @@ class TestCreateTask:
                 "--name",
                 "My Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
                 "--project",
@@ -549,7 +549,7 @@ class TestCreateTask:
                 "--name",
                 "My Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
                 "--project",
@@ -585,7 +585,7 @@ class TestCreateTask:
                 "--name",
                 "My Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
                 "--project",
@@ -611,7 +611,7 @@ class TestCreateTask:
                 "--name",
                 "Exp Task",
                 "--task-type",
-                "run_experiment",
+                "RUN_EXPERIMENT",
                 "--dataset",
                 "ds-1",
                 "--run-configuration",
@@ -641,7 +641,7 @@ class TestCreateTask:
                 "--name",
                 "Exp Task",
                 "--task-type",
-                "run_experiment",
+                "RUN_EXPERIMENT",
                 "--run-configuration",
                 _RUN_CONFIG_JSON,
             ],
@@ -664,7 +664,7 @@ class TestCreateTask:
                 "--name",
                 "Exp Task",
                 "--task-type",
-                "run_experiment",
+                "RUN_EXPERIMENT",
                 "--dataset",
                 "ds-1",
             ],
@@ -687,7 +687,7 @@ class TestCreateTask:
                 "--name",
                 "Exp Task",
                 "--task-type",
-                "run_experiment",
+                "RUN_EXPERIMENT",
                 "--dataset",
                 "ds-1",
                 "--run-configuration",
@@ -727,7 +727,7 @@ class TestCreateEvaluationSubcmd:
                 "--name",
                 "Eval Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
                 "--project",
@@ -737,7 +737,7 @@ class TestCreateEvaluationSubcmd:
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.tasks.create_evaluation_task.call_args.kwargs
         assert call_kwargs["name"] == "Eval Task"
-        assert call_kwargs["task_type"] == "template_evaluation"
+        assert call_kwargs["task_type"] == "TEMPLATE_EVALUATION"
         assert call_kwargs["project"] == "proj-1"
         assert len(call_kwargs["evaluators"]) == 1
         assert call_kwargs["evaluators"][0].evaluator_id == "ev-1"
@@ -757,7 +757,7 @@ class TestCreateEvaluationSubcmd:
                 "--name",
                 "Eval Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
             ],
@@ -780,7 +780,7 @@ class TestCreateEvaluationSubcmd:
                 "--name",
                 "Eval Task",
                 "--task-type",
-                "run_experiment",
+                "RUN_EXPERIMENT",
                 "--evaluators",
                 self._EVALUATORS_JSON,
                 "--project",
@@ -809,7 +809,7 @@ class TestCreateEvaluationSubcmd:
                 "--name",
                 "Eval Task",
                 "--task-type",
-                "template_evaluation",
+                "TEMPLATE_EVALUATION",
                 "--evaluators",
                 self._EVALUATORS_JSON,
                 "--project",
@@ -1177,9 +1177,9 @@ class TestTriggerRun:
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
         """--wait causes wait_for_run to be called after the run is triggered."""
-        run = _make_run(status="pending")
+        run = _make_run(status="PENDING")
         mock_client.tasks.trigger_run.return_value = run
-        completed_run = _make_run(status="completed")
+        completed_run = _make_run(status="COMPLETED")
         mock_client.tasks.wait_for_run.return_value = completed_run
 
         result = cli_runner.invoke(app, ["trigger-run", "task-1", "--wait"])
@@ -1382,12 +1382,12 @@ class TestListRuns:
         mock_client.tasks.list_runs.return_value = _make_run_list_response()
 
         result = cli_runner.invoke(
-            app, ["list-runs", "task-1", "--status", "completed"]
+            app, ["list-runs", "task-1", "--status", "COMPLETED"]
         )
         assert result.exit_code == 0
         mock_client.tasks.list_runs.assert_called_once_with(
             task="task-1",
-            status="completed",
+            status="COMPLETED",
             limit=15,
             cursor=None,
         )
@@ -1457,7 +1457,7 @@ class TestCancelRun:
     ) -> None:
         """Invoke 'cancel-run' without --force; confirm 'y' to proceed."""
         mock_client.tasks.cancel_run.return_value = _make_run(
-            status="cancelled"
+            status="CANCELLED"
         )
 
         result = cli_runner.invoke(app, ["cancel-run", "run-1"], input="y\n")
@@ -1485,7 +1485,7 @@ class TestCancelRun:
     ) -> None:
         """--force cancels without prompting."""
         mock_client.tasks.cancel_run.return_value = _make_run(
-            status="cancelled"
+            status="CANCELLED"
         )
 
         result = cli_runner.invoke(app, ["cancel-run", "run-1", "--force"])
@@ -1522,7 +1522,7 @@ class TestWaitForRun:
     ) -> None:
         """Invoke 'wait-for-run' with defaults and verify the SDK call."""
         mock_client.tasks.wait_for_run.return_value = _make_run(
-            status="completed"
+            status="COMPLETED"
         )
 
         result = cli_runner.invoke(app, ["wait-for-run", "run-1"])
@@ -1542,7 +1542,7 @@ class TestWaitForRun:
     ) -> None:
         """Custom --poll-interval and --timeout are forwarded to the SDK."""
         mock_client.tasks.wait_for_run.return_value = _make_run(
-            status="completed"
+            status="COMPLETED"
         )
 
         result = cli_runner.invoke(

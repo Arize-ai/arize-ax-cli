@@ -5,9 +5,9 @@ from typing import Annotated, Any
 
 import typer
 from arize.tasks.types import (
-    BaseEvaluationTaskRequestEvaluatorsInner,
     RunConfiguration,
     RunStatus,
+    TaskEvaluatorInput,
     TaskType,
 )
 
@@ -35,17 +35,14 @@ app = typer.Typer(
 
 def _build_evaluators(
     parsed: dict[str, Any] | list[dict[str, Any]],
-) -> list[BaseEvaluationTaskRequestEvaluatorsInner]:
-    """Parse a JSON string into a list of BaseEvaluationTaskRequestEvaluatorsInner."""
+) -> list[TaskEvaluatorInput]:
+    """Parse a JSON string into a list of TaskEvaluatorInput."""
     if not isinstance(parsed, list) or not parsed:
         raise typer.BadParameter(
             "--evaluators must be a non-empty JSON array of evaluator objects"
         )
     try:
-        evaluators = [
-            BaseEvaluationTaskRequestEvaluatorsInner.from_dict(e)
-            for e in parsed
-        ]
+        evaluators = [TaskEvaluatorInput.from_dict(e) for e in parsed]
     except Exception as exc:
         raise typer.BadParameter(f"Failed to parse evaluators: {exc}") from exc
 
@@ -118,8 +115,8 @@ def list_tasks(
         typer.Option(
             "--task-type",
             help=(
-                "Filter by task type: template_evaluation, code_evaluation, "
-                "or run_experiment"
+                "Filter by task type: TEMPLATE_EVALUATION, CODE_EVALUATION, "
+                "or RUN_EXPERIMENT"
             ),
         ),
     ] = None,
@@ -233,7 +230,7 @@ def create_task(
         typer.Option(
             "--task-type",
             help=(
-                "Task type: template_evaluation, code_evaluation, or run_experiment"
+                "Task type: TEMPLATE_EVALUATION, CODE_EVALUATION, or RUN_EXPERIMENT"
             ),
         ),
     ],
@@ -261,10 +258,10 @@ def create_task(
             help=(
                 "JSON object (or @file.json) specifying the run configuration "
                 "for run_experiment tasks. "
-                'Example: \'{"experiment_type": "llm_generation", '
+                'Example: \'{"experiment_type": "LLM_GENERATION", '
                 '"ai_integration_id": "...", "model_name": "gpt-4o", '
-                '"messages": [{"role": "user", "content": "{{input}}"}]}\'. '
-                "Required when --task-type=run_experiment."
+                '"messages": [{"role": "USER", "content": "{{input}}"}]}\'. '
+                "Required when --task-type=RUN_EXPERIMENT."
             ),
         ),
     ] = None,
@@ -336,10 +333,10 @@ def create_task(
 ) -> None:
     """Create a new task, dispatching internally based on --task-type.
 
-    Evaluation tasks (template_evaluation / code_evaluation) require --name,
+    Evaluation tasks (TEMPLATE_EVALUATION / CODE_EVALUATION) require --name,
     --task-type, --evaluators, and one of --project / --dataset.
 
-    Run-experiment tasks (run_experiment) require --name, --task-type,
+    Run-experiment tasks (RUN_EXPERIMENT) require --name, --task-type,
     --dataset, and --run-configuration. The flags --evaluators, --project,
     --experiment-ids, --sampling-rate, --is-continuous, and --query-filter are
     not valid for this task type.
@@ -452,7 +449,7 @@ def create_evaluation_task_cmd(
         TaskType,
         typer.Option(
             "--task-type",
-            help="Task type: template_evaluation or code_evaluation",
+            help="Task type: TEMPLATE_EVALUATION or CODE_EVALUATION",
         ),
     ],
     evaluators: Annotated[
@@ -532,7 +529,7 @@ def create_evaluation_task_cmd(
         typer.Option("--verbose", "-v", help="Enable verbose logs"),
     ] = False,
 ) -> None:
-    """Create a new evaluation task (template_evaluation or code_evaluation).
+    """Create a new evaluation task (TEMPLATE_EVALUATION or CODE_EVALUATION).
 
     Requires --name, --task-type, --evaluators, and one of --project / --dataset.
     """
@@ -540,7 +537,7 @@ def create_evaluation_task_cmd(
 
     if task_type == TaskType.RUN_EXPERIMENT:
         raise UsageError(
-            "--task-type run_experiment is not valid for this command; "
+            "--task-type RUN_EXPERIMENT is not valid for this command; "
             "use `ax tasks create-run-experiment` instead"
         )
     if project is None and dataset is None:
@@ -603,9 +600,9 @@ def create_run_experiment_task_cmd(
             "--run-configuration",
             help=(
                 "JSON object (or @file.json) specifying the run configuration. "
-                'Example: \'{"experiment_type": "llm_generation", '
+                'Example: \'{"experiment_type": "LLM_GENERATION", '
                 '"ai_integration_id": "...", "model_name": "gpt-4o", '
-                '"messages": [{"role": "user", "content": "{{input}}"}]}\'. '
+                '"messages": [{"role": "USER", "content": "{{input}}"}]}\'. '
             ),
         ),
     ],
@@ -1043,7 +1040,7 @@ def list_runs(
         RunStatus | None,
         typer.Option(
             "--status",
-            help="Filter by run status: pending, running, completed, failed, cancelled",
+            help="Filter by run status: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED",
         ),
     ] = None,
     limit: Annotated[
@@ -1206,7 +1203,7 @@ def wait_for_run(
         typer.Option("--verbose", "-v", help="Enable verbose logs"),
     ] = False,
 ) -> None:
-    """Wait for a task run to reach a terminal state (completed, failed, or cancelled)."""
+    """Wait for a task run to reach a terminal state (COMPLETED, FAILED, or CANCELLED)."""
     setup_logging(verbose)
     client, config = make_client()
 

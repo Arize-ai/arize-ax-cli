@@ -125,7 +125,7 @@ def is_list_response_model(model: BaseModel) -> bool:
     """Check if BaseModel is a list response that can be rendered as a table.
 
     Returns True for models that expose a ``to_df()`` method — the convention
-    used by list-response types across the SDK (e.g. ``UserListResponse``,
+    used by list-response types across the SDK (e.g. ``ListUsersResponse``,
     ``BulkDeleteResponse``).  Pagination metadata is handled separately by
     :class:`~ax.core.output.TableFormatter`, which checks for a ``pagination``
     attribute independently.

@@ -27,12 +27,12 @@ def _make_api_key_list_response(*keys: MagicMock) -> MagicMock:
     return mock
 
 
-def _make_api_key(
+def _make_api_key_redacted(
     key_id: str = _KEY_ID,
     name: str = "My Key",
     last_used_at: datetime | None = None,
 ) -> MagicMock:
-    """Build a minimal ApiKey mock (listing)."""
+    """Build a minimal ApiKeyRedacted mock (listing)."""
     mock = MagicMock()
     mock.id = key_id
     mock.name = name
@@ -40,12 +40,12 @@ def _make_api_key(
     return mock
 
 
-def _make_api_key_created(
+def _make_api_key(
     key_id: str = _KEY_ID,
     name: str = "My Key",
     key_value: str = "arize_sk_test_abc123",
 ) -> MagicMock:
-    """Build an ApiKeyCreated mock (contains raw key value)."""
+    """Build an ApiKey mock (contains raw key value)."""
     mock = MagicMock()
     mock.id = key_id
     mock.name = name
@@ -101,8 +101,8 @@ class TestListApiKeys:
     ) -> None:
         """Test that listed keys appear in the output."""
         mock_client.api_keys.list.return_value = _make_api_key_list_response(
-            _make_api_key(name="Alpha"),
-            _make_api_key(name="Beta"),
+            _make_api_key_redacted(name="Alpha"),
+            _make_api_key_redacted(name="Beta"),
         )
 
         result = _invoke(
@@ -124,9 +124,9 @@ class TestListApiKeys:
                 "api-keys",
                 "list",
                 "--key-type",
-                "service",
+                "SERVICE",
                 "--status",
-                "active",
+                "ACTIVE",
                 "--limit",
                 "5",
                 "--cursor",
@@ -188,7 +188,7 @@ class TestCreateApiKey:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that create passes name to the SDK."""
-        mock_client.api_keys.create.return_value = _make_api_key_created(
+        mock_client.api_keys.create.return_value = _make_api_key(
             name="Prod Key"
         )
 
@@ -245,7 +245,7 @@ class TestCreateApiKey:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that a 'save this key' warning appears after creating a key."""
-        mock_client.api_keys.create.return_value = _make_api_key_created()
+        mock_client.api_keys.create.return_value = _make_api_key()
 
         result = _invoke(
             [
@@ -288,8 +288,8 @@ class TestCreateServiceApiKey:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Happy path: name, space, and optional role are forwarded to the SDK."""
-        mock_client.api_keys.create_service_key.return_value = (
-            _make_api_key_created(name="Svc Key")
+        mock_client.api_keys.create_service_key.return_value = _make_api_key(
+            name="Svc Key"
         )
 
         result = _invoke(
@@ -301,7 +301,7 @@ class TestCreateServiceApiKey:
                 "--space",
                 "my-space",
                 "--space-role",
-                "member",
+                "MEMBER",
                 "--output",
                 "json",
             ],
@@ -357,9 +357,7 @@ class TestCreateServiceApiKey:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """A 'save this key' warning must appear after creating a service key."""
-        mock_client.api_keys.create_service_key.return_value = (
-            _make_api_key_created()
-        )
+        mock_client.api_keys.create_service_key.return_value = _make_api_key()
 
         result = _invoke(
             [
@@ -480,7 +478,7 @@ class TestRefreshApiKey:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that refresh passes api_key_id to the SDK."""
-        mock_client.api_keys.refresh.return_value = _make_api_key_created()
+        mock_client.api_keys.refresh.return_value = _make_api_key()
 
         result = _invoke(
             ["api-keys", "refresh", _KEY_ID, "--output", "json"],
@@ -499,7 +497,7 @@ class TestRefreshApiKey:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that a 'save this key' warning appears after refreshing."""
-        mock_client.api_keys.refresh.return_value = _make_api_key_created()
+        mock_client.api_keys.refresh.return_value = _make_api_key()
 
         result = _invoke(
             ["api-keys", "refresh", _KEY_ID, "--output", "json"],
@@ -514,7 +512,7 @@ class TestRefreshApiKey:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that --expires-at is parsed and forwarded."""
-        mock_client.api_keys.refresh.return_value = _make_api_key_created()
+        mock_client.api_keys.refresh.return_value = _make_api_key()
 
         _invoke(
             [
@@ -558,7 +556,7 @@ class TestRefreshApiKey:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that --grace-period-seconds is forwarded to the SDK."""
-        mock_client.api_keys.refresh.return_value = _make_api_key_created()
+        mock_client.api_keys.refresh.return_value = _make_api_key()
 
         _invoke(
             [
@@ -579,7 +577,7 @@ class TestRefreshApiKey:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that grace_period_seconds defaults to None when omitted."""
-        mock_client.api_keys.refresh.return_value = _make_api_key_created()
+        mock_client.api_keys.refresh.return_value = _make_api_key()
 
         _invoke(
             ["api-keys", "refresh", _KEY_ID, "--output", "json"],

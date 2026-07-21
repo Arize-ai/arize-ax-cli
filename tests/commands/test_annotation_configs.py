@@ -6,11 +6,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from arize.annotation_configs.types import (
     AnnotationConfig,
-    AnnotationConfigListResponse,
     CategoricalAnnotationConfig,
     CategoricalAnnotationValue,
     ContinuousAnnotationConfig,
     FreeformAnnotationConfig,
+    ListAnnotationConfigsResponse,
     OptimizationDirection,
     PaginationMetadata,
 )
@@ -36,7 +36,7 @@ def _freeform(
             name=name,
             created_at=_CREATED_AT,
             space_id="sp_test",
-            type="freeform",
+            type="FREEFORM",
         )
     )
 
@@ -50,7 +50,7 @@ def _continuous(
             name=name,
             created_at=_CREATED_AT,
             space_id="sp_test",
-            type="continuous",
+            type="CONTINUOUS",
             minimum_score=0.0,
             maximum_score=1.0,
         )
@@ -66,7 +66,7 @@ def _categorical(
             name=name,
             created_at=_CREATED_AT,
             space_id="sp_test",
-            type="categorical",
+            type="CATEGORICAL",
             values=[
                 CategoricalAnnotationValue(label="good"),
                 CategoricalAnnotationValue(label="bad"),
@@ -77,8 +77,8 @@ def _categorical(
 
 def _list_response(
     *configs: AnnotationConfig, has_more: bool = False
-) -> AnnotationConfigListResponse:
-    return AnnotationConfigListResponse(
+) -> ListAnnotationConfigsResponse:
+    return ListAnnotationConfigsResponse(
         annotation_configs=list(configs),
         pagination=PaginationMetadata(has_more=has_more),
     )
@@ -284,7 +284,7 @@ class TestCreateAnnotationConfig:
                 "--space",
                 "sp_abc",
                 "--type",
-                "freeform",
+                "FREEFORM",
                 "--output",
                 "json",
             ],
@@ -315,7 +315,7 @@ class TestCreateAnnotationConfig:
                 "--space",
                 "sp_abc",
                 "--type",
-                "freeform",
+                "FREEFORM",
             ],
             mock_config,
             mock_client,
@@ -343,13 +343,13 @@ class TestCreateAnnotationConfig:
                 "--space",
                 "sp_abc",
                 "--type",
-                "continuous",
+                "CONTINUOUS",
                 "--min-score",
                 "0",
                 "--max-score",
                 "1",
                 "--optimization-direction",
-                "maximize",
+                "MAXIMIZE",
                 "--output",
                 "json",
             ],
@@ -363,7 +363,7 @@ class TestCreateAnnotationConfig:
             space="sp_abc",
             minimum_score=0.0,
             maximum_score=1.0,
-            optimization_direction=OptimizationDirection("maximize"),
+            optimization_direction=OptimizationDirection("MAXIMIZE"),
         )
 
     def test_create_categorical_parses_comma_separated_values(
@@ -385,7 +385,7 @@ class TestCreateAnnotationConfig:
                 "--space",
                 "sp_abc",
                 "--type",
-                "categorical",
+                "CATEGORICAL",
                 "--value",
                 "good",
                 "--value",
@@ -422,7 +422,7 @@ class TestCreateAnnotationConfig:
                 "--space",
                 "sp_abc",
                 "--type",
-                "continuous",
+                "CONTINUOUS",
                 "--optimization-direction",
                 "sideways",
             ],
@@ -430,6 +430,50 @@ class TestCreateAnnotationConfig:
             mock_client,
         )
         assert result.exit_code != 0
+
+    def test_create_continuous_without_scores_errors_before_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Continuous configs require a complete score range."""
+        result = _invoke(
+            [
+                "annotation-configs",
+                "create",
+                "--name",
+                "Score",
+                "--space",
+                "sp_abc",
+                "--type",
+                "continuous",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        assert "Invalid value" in result.output
+        mock_client.annotation_configs.create_continuous.assert_not_called()
+
+    def test_create_categorical_without_values_errors_before_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Categorical configs require at least one value."""
+        result = _invoke(
+            [
+                "annotation-configs",
+                "create",
+                "--name",
+                "Verdict",
+                "--space",
+                "sp_abc",
+                "--type",
+                "categorical",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        assert "Invalid value" in result.output
+        mock_client.annotation_configs.create_categorical.assert_not_called()
 
     def test_create_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -448,7 +492,7 @@ class TestCreateAnnotationConfig:
                 "--space",
                 "sp_abc",
                 "--type",
-                "freeform",
+                "FREEFORM",
             ],
             mock_config,
             mock_client,

@@ -360,7 +360,7 @@ def add_user_to_space(
         typer.Option(
             "--role",
             "-r",
-            help="Predefined space role: admin, member, read-only, or annotator",
+            help="Predefined space role: ADMIN, MEMBER, READ_ONLY, or ANNOTATOR",
             prompt=True,
         ),
     ],

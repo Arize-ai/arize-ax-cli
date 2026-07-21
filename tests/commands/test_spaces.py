@@ -108,7 +108,7 @@ class TestAddUserToSpace:
                 "--user-id",
                 "user_1",
                 "--role",
-                "member",
+                "MEMBER",
             ],
         )
         assert result.exit_code == 0, result.output
@@ -133,7 +133,7 @@ class TestAddUserToSpace:
                 "--user-id",
                 "user_1",
                 "--role",
-                "member",
+                "MEMBER",
             ],
         )
         assert result.exit_code != 0

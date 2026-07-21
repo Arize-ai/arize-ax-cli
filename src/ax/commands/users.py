@@ -44,7 +44,7 @@ def list_users(
         typer.Option(
             "--status",
             "-s",
-            help="Filter by status (active, invited). Can be specified multiple times.",
+            help="Filter by status (ACTIVE, INVITED). Can be specified multiple times.",
         ),
     ] = None,
     limit: Annotated[
@@ -183,7 +183,7 @@ def create_user(
         typer.Option(
             "--role",
             "-r",
-            help="Account-level predefined role (admin, member, annotator)",
+            help="Account-level predefined role (ADMIN, MEMBER, ANNOTATOR)",
             prompt=True,
         ),
     ],
@@ -191,7 +191,7 @@ def create_user(
         str,
         typer.Option(
             "--invite-mode",
-            help="Invite mode: none, email_link, or temporary_password",
+            help="Invite mode: NONE, EMAIL_LINK, or TEMPORARY_PASSWORD",
             prompt=True,
         ),
     ],
@@ -224,7 +224,7 @@ def create_user(
 ) -> None:
     """Create a new user with a builtin account-level role.
 
-    The --role flag accepts predefined role names: admin, member, or annotator.
+    The --role flag accepts predefined role names: ADMIN, MEMBER, or ANNOTATOR.
     """
     from arize.users.types import InviteMode, PredefinedUserRole, UserRole
 
@@ -444,11 +444,11 @@ def delete_users(
     except Exception as e:
         raise APIError(f"Failed to delete users: {e}") from e
 
-    from arize.users.types import BulkDeleteResponse
+    from arize.users.types import BulkDeleteResponse, DeletionStatus
 
-    deleted = sum(1 for r in results if r.status.value == "deleted")
-    failed = sum(1 for r in results if r.status.value == "failed")
-    not_found = sum(1 for r in results if r.status.value == "not_found")
+    deleted = sum(1 for r in results if r.status == DeletionStatus.DELETED)
+    failed = sum(1 for r in results if r.status == DeletionStatus.FAILED)
+    not_found = sum(1 for r in results if r.status == DeletionStatus.NOT_FOUND)
 
     success(
         f"Delete complete: {deleted} deleted, "

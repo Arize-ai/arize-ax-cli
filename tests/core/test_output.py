@@ -151,7 +151,7 @@ class TestBaseModelTableFormatterFormatValue:
         value = {
             "oneof_schema_1_validator": None,
             "oneof_schema_2_validator": None,
-            "actual_instance": {"type": "predefined", "name": "member"},
+            "actual_instance": {"type": "predefined", "name": "MEMBER"},
             "one_of_schemas": {
                 "OrganizationPredefinedRoleAssignment",
                 "OrganizationCustomRoleAssignment",
@@ -159,7 +159,7 @@ class TestBaseModelTableFormatterFormatValue:
             "discriminator_value_class_map": {},
         }
         result = self.formatter._format_value(value)
-        assert result == "member"
+        assert result == "MEMBER"
 
     def test_oneof_custom_role_shows_id(self) -> None:
         """OneOf wrapper with a custom role should display just the role ID."""
@@ -194,10 +194,10 @@ class TestBaseModelTableFormatterFormatValue:
 
     def test_nested_dict_expanded(self) -> None:
         """Dicts nested inside a dict are recursively expanded."""
-        value = {"response_format": {"type": "json_object"}}
+        value = {"response_format": {"type": "JSON_OBJECT"}}
         result = self.formatter._format_value(value)
         assert "response_format=" in result
-        assert "type=json_object" in result
+        assert "type=JSON_OBJECT" in result
 
     def test_list_items_joined(self) -> None:
         """Non-empty lists are joined with ' | ' rather than showing 'N items'."""
@@ -316,16 +316,16 @@ class TestPromptVersionStr:
     def test_enum_values_not_repr(self) -> None:
         pv = _make_prompt_version()
         s = str(pv)
-        assert "open_ai" in s
-        assert "f_string" in s
+        assert "OPEN_AI" in s
+        assert "F_STRING" in s
         assert "<LlmProvider" not in s
         assert "<InputVariableFormat" not in s
 
     def test_message_role_and_content(self) -> None:
         pv = _make_prompt_version()
         s = str(pv)
-        assert "system" in s
-        assert "user" in s
+        assert "SYSTEM" in s
+        assert "USER" in s
         assert "You are helpful." in s
         assert "Hello, {name}!" in s
         assert "LLMMessage(" not in s
@@ -344,7 +344,7 @@ class TestPromptVersionStr:
         pv = _make_prompt_version(
             messages=[LLMMessage(role=MessageRole.USER, content="")]
         )
-        assert "user" in str(pv)
+        assert "USER" in str(pv)
 
 
 class TestInvocationParamsStr:
@@ -389,15 +389,15 @@ class TestPromptWithVersionTableRendering:
         out = capsys.readouterr().out
         assert "You are helpful." in out
         assert "Hello, {name}!" in out
-        assert "system" in out
-        assert "user" in out
+        assert "SYSTEM" in out
+        assert "USER" in out
 
     def test_enum_values_not_repr(self, capsys: pytest.CaptureFixture) -> None:
         model = _make_prompt_with_version()
         TableFormatter().format(model)
         out = capsys.readouterr().out
-        assert "open_ai" in out
-        assert "f_string" in out
+        assert "OPEN_AI" in out
+        assert "F_STRING" in out
 
 
 # Ellipsis character rich inserts when it shrinks/crops a column.
@@ -449,7 +449,7 @@ class TestPrintTableFullWidth:
             "auth_type",
             "created_by_user_id",
         ]
-        rows = [["PARKER TEST", long_id, "openAI", "True", "default", user_id]]
+        rows = [["PARKER TEST", long_id, "OPEN_AI", "True", "default", user_id]]
 
         out = _render_table(monkeypatch, capsys, columns, rows).out
 
@@ -502,10 +502,10 @@ class TestPrintTableFullWidth:
             monkeypatch,
             capsys,
             ["name", "provider"],
-            [["PARKER", "openAI"]],
+            [["PARKER", "OPEN_AI"]],
         ).out
         assert "PARKER" in out
-        assert "openAI" in out
+        assert "OPEN_AI" in out
         assert _ELLIPSIS not in out
 
 

@@ -8,7 +8,9 @@ from arize.ai_integrations.types import (
     AiIntegrationProvider,
     AiIntegrationScoping,
     AwsProviderMetadata,
+    AwsProviderMetadataKind,
     GcpProviderMetadata,
+    GcpProviderMetadataKind,
 )
 
 from ax.core.client_factory import make_client
@@ -67,34 +69,36 @@ def _parse_provider_metadata(
         return None
 
     normalized: dict[str, Any] = dict(provider_metadata)
-    if provider == AiIntegrationProvider.AWSBEDROCK:
-        normalized.setdefault("kind", "aws")
-        if normalized.get("kind") != "aws":
+    if provider == AiIntegrationProvider.AWS_BEDROCK:
+        aws_kind = AwsProviderMetadataKind.AWS.value
+        normalized.setdefault("kind", aws_kind)
+        if normalized.get("kind") != aws_kind:
             raise UsageError(
-                "--provider-metadata.kind must be 'aws' for awsBedrock"
+                f"--provider-metadata.kind must be {aws_kind!r} for AWS_BEDROCK"
             )
         parsed_aws = AwsProviderMetadata.from_dict(normalized)
         if parsed_aws is None:
             raise UsageError(
-                "--provider-metadata is missing or invalid for awsBedrock"
+                "--provider-metadata is missing or invalid for AWS_BEDROCK"
             )
         return parsed_aws
 
-    if provider == AiIntegrationProvider.VERTEXAI:
-        normalized.setdefault("kind", "gcp")
-        if normalized.get("kind") != "gcp":
+    if provider == AiIntegrationProvider.VERTEX_AI:
+        gcp_kind = GcpProviderMetadataKind.GCP.value
+        normalized.setdefault("kind", gcp_kind)
+        if normalized.get("kind") != gcp_kind:
             raise UsageError(
-                "--provider-metadata.kind must be 'gcp' for vertexAI"
+                f"--provider-metadata.kind must be {gcp_kind!r} for VERTEX_AI"
             )
         parsed_gcp = GcpProviderMetadata.from_dict(normalized)
         if parsed_gcp is None:
             raise UsageError(
-                "--provider-metadata is missing or invalid for vertexAI"
+                "--provider-metadata is missing or invalid for VERTEX_AI"
             )
         return parsed_gcp
 
     raise UsageError(
-        "--provider-metadata is only supported for awsBedrock and vertexAI"
+        "--provider-metadata is only supported for AWS_BEDROCK and VERTEX_AI"
     )
 
 
@@ -248,8 +252,8 @@ def create_ai_integration(
         typer.Option(
             "--provider",
             help=(
-                "LLM provider: openAI, azureOpenAI, awsBedrock, vertexAI, "
-                "anthropic, custom, nvidiaNim, gemini"
+                "LLM provider: OPEN_AI, AZURE_OPEN_AI, AWS_BEDROCK, "
+                "VERTEX_AI, ANTHROPIC, CUSTOM, NVIDIA_NIM, GEMINI"
             ),
         ),
     ],
@@ -296,7 +300,7 @@ def create_ai_integration(
         typer.Option(
             "--auth-type",
             help=(
-                "Authentication type: default, proxy_with_headers, bearer_token"
+                "Authentication type: DEFAULT, PROXY_WITH_HEADERS, BEARER_TOKEN"
             ),
         ),
     ] = None,
@@ -316,7 +320,7 @@ def create_ai_integration(
             "--provider-metadata",
             help=(
                 "Provider-specific metadata as a JSON object or path to a JSON file. "
-                "Required for awsBedrock (role_arn) and vertexAI "
+                "Required for AWS_BEDROCK (role_arn) and VERTEX_AI "
                 "(project_id, location, project_access_label)."
             ),
         ),
@@ -343,8 +347,8 @@ def create_ai_integration(
     Provider-specific requirements:
 
     \b
-    - awsBedrock:  --provider-metadata '{"role_arn": "..."}'
-    - vertexAI:    --provider-metadata '{"project_id": "...",
+    - AWS_BEDROCK: --provider-metadata '{"role_arn": "..."}'
+    - VERTEX_AI:   --provider-metadata '{"project_id": "...",
                        "location": "...", "project_access_label": "..."}'
     """
     parsed_headers = (
@@ -422,8 +426,8 @@ def update_ai_integration(
         typer.Option(
             "--provider",
             help=(
-                "Updated LLM provider: openAI, azureOpenAI, awsBedrock, vertexAI, "
-                "anthropic, custom, nvidiaNim, gemini"
+                "Updated LLM provider: OPEN_AI, AZURE_OPEN_AI, AWS_BEDROCK, "
+                "VERTEX_AI, ANTHROPIC, CUSTOM, NVIDIA_NIM, GEMINI"
             ),
         ),
     ] = None,
@@ -470,7 +474,7 @@ def update_ai_integration(
         typer.Option(
             "--auth-type",
             help=(
-                "Updated authentication type: default, proxy_with_headers, bearer_token"
+                "Updated authentication type: DEFAULT, PROXY_WITH_HEADERS, BEARER_TOKEN"
             ),
         ),
     ] = None,

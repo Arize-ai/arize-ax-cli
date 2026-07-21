@@ -295,7 +295,7 @@ def add_user_to_organization(
         typer.Option(
             "--role",
             "-r",
-            help="Predefined organization role: admin, member, read-only, or annotator",
+            help="Predefined organization role: ADMIN, MEMBER, READ_ONLY, or ANNOTATOR",
             prompt=True,
         ),
     ],

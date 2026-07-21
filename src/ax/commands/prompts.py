@@ -245,7 +245,7 @@ def create_prompt(
             "--provider",
             help=(
                 "LLM provider "
-                "(open_ai, azure_open_ai, aws_bedrock, vertex_ai, anthropic, custom)"
+                "(OPEN_AI, AZURE_OPEN_AI, AWS_BEDROCK, VERTEX_AI, ANTHROPIC, CUSTOM)"
             ),
         ),
     ],
@@ -253,7 +253,7 @@ def create_prompt(
         InputVariableFormat,
         typer.Option(
             "--input-variable-format",
-            help="Variable interpolation format (f_string, mustache, none)",
+            help="Variable interpolation format (F_STRING, MUSTACHE, NONE)",
         ),
     ],
     messages: Annotated[
@@ -332,14 +332,14 @@ def create_prompt(
 
     \b
     [
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "Summarize: {text}"},
-      {"role": "assistant", "tool_calls": [
-        {"id": "tool-call-1", "type": "function",
+      {"role": "SYSTEM", "content": "You are a helpful assistant."},
+      {"role": "USER", "content": "Summarize: {text}"},
+      {"role": "ASSISTANT", "tool_calls": [
+        {"id": "tool-call-1", "type": "FUNCTION",
          "function": {"name": "search",
                       "arguments": "{\"query\": \"summarize {text}\"}"}}
       ]},
-      {"role": "tool", "tool_call_id": "tool-call-1",
+      {"role": "TOOL", "tool_call_id": "tool-call-1",
        "content": "This is the result of the search function."},
     ]
     """
@@ -626,7 +626,7 @@ def create_version(
             "--provider",
             help=(
                 "LLM provider "
-                "(open_ai, azure_open_ai, aws_bedrock, vertex_ai, anthropic, custom)"
+                "(OPEN_AI, AZURE_OPEN_AI, AWS_BEDROCK, VERTEX_AI, ANTHROPIC, CUSTOM)"
             ),
         ),
     ],
@@ -634,7 +634,7 @@ def create_version(
         InputVariableFormat,
         typer.Option(
             "--input-variable-format",
-            help="Variable interpolation format (f_string, mustache, none)",
+            help="Variable interpolation format (F_STRING, MUSTACHE, NONE)",
         ),
     ],
     messages: Annotated[
@@ -714,8 +714,8 @@ def create_version(
 
     \b
     [
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user",   "content": "Summarize: {text}"}
+      {"role": "SYSTEM", "content": "You are a helpful assistant."},
+      {"role": "USER",   "content": "Summarize: {text}"}
     ]
     """
     parsed_messages = _build_llm_messages(load_json(messages))
