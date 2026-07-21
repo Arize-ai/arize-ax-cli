@@ -157,7 +157,9 @@ class TestExchangeCode:
         with patch(
             "ax.auth.oauth_client.requests.Session", return_value=session
         ) as session_factory:
-            client.exchange_code(code="abc", code_verifier="v", redirect_uri="u")
+            client.exchange_code(
+                code="abc", code_verifier="v", redirect_uri="u"
+            )
 
         session_factory.assert_called_once_with()
         assert session.trust_env is False

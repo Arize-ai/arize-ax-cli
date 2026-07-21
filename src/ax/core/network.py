@@ -1,24 +1,18 @@
-"""Shared outbound-network configuration for every AX CLI transport."""
+"""Shared outbound HTTP(S)-network configuration for the AX CLI."""
 
 from __future__ import annotations
 
 import logging
 import os
 import ssl
-import threading
-from contextlib import contextmanager
 from dataclasses import dataclass
 from ipaddress import ip_address, ip_network
 from pathlib import Path
-from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from ax.config.schema import NetworkConfig, ProxyMode
 from ax.core.exceptions import ConfigError
 from ax.core.proxy import is_http_connect_proxy_url
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
 
 _log = logging.getLogger(__name__)
 
@@ -37,15 +31,21 @@ _CA_BUNDLE_ENV_VARS = (
     "REQUESTS_CA_BUNDLE",
     "SSL_CERT_FILE",
 )
-_GRPC_PROXY_ENV = "grpc_proxy"
-_NO_GRPC_PROXY_ENV = "no_grpc_proxy"
-_GRPC_CA_ENV_VARS = (
-    "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH",
-    "OTEL_EXPORTER_OTLP_CERTIFICATE",
-    "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+_CHILD_PROXY_ENV_VARS = (
+    "http_proxy",
+    "HTTP_PROXY",
+    "https_proxy",
+    "HTTPS_PROXY",
+    "all_proxy",
+    "ALL_PROXY",
 )
-_MISSING = object()
-_GRPC_ENV_LOCK = threading.RLock()
+_CHILD_NO_PROXY_ENV_VARS = ("no_proxy", "NO_PROXY")
+_CHILD_CA_BUNDLE_ENV_VARS = (
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_FILE",
+    "PIP_CERT",
+    "CURL_CA_BUNDLE",
+)
 
 
 def _split_no_proxy_host_port(entry: str) -> tuple[str, int | None]:
@@ -113,9 +113,8 @@ def _first_supported_environment_proxy() -> str:
 def _validate_proxy_url(proxy_url: str) -> str:
     """Validate and return an HTTP CONNECT proxy URL.
 
-    gRPC supports HTTP CONNECT proxies and urllib3 supports the same URL form.
-    Limiting the shared setting to ``http://`` keeps Flight, OTLP, and REST
-    behavior identical.
+    The CLI's HTTP clients support this URL form for both HTTP requests and
+    HTTPS requests tunneled with CONNECT.
     """
     if not proxy_url:
         return ""
@@ -128,14 +127,12 @@ def _validate_proxy_url(proxy_url: str) -> str:
 
 @dataclass(frozen=True)
 class NetworkSettings:
-    """Resolved proxy, bypass, and TLS settings for one CLI invocation."""
+    """Resolved proxy, bypass, and TLS settings for HTTP(S) requests."""
 
     proxy_url: str = ""
     no_proxy: str = ""
     ca_bundle: str = ""
     request_verify: bool = True
-    override_grpc_proxy: bool = True
-    override_grpc_no_proxy: bool = True
 
     @classmethod
     def from_config(
@@ -179,8 +176,6 @@ class NetworkSettings:
             no_proxy=no_proxy,
             ca_bundle=ca_bundle,
             request_verify=request_verify,
-            override_grpc_proxy=config.proxy_mode == ProxyMode.URL,
-            override_grpc_no_proxy=bool(configured_no_proxy),
         )
 
     @classmethod
@@ -262,42 +257,31 @@ class NetworkSettings:
             return context
         return ssl.create_default_context(cafile=self.ca_bundle or None)
 
-    @contextmanager
-    def grpc_environment(self) -> Iterator[None]:
-        """Temporarily expose this policy to gRPC C-Core channel construction.
+    def subprocess_environment(self) -> dict[str, str]:
+        """Return a child environment with this HTTP(S) policy applied.
 
-        gRPC reads proxy and CA settings from process environment variables. The
-        lock and restoration keep that unavoidable bridge scoped to SDK client
-        construction, rather than leaking one profile's policy into another.
+        Package managers read the conventional proxy and CA variables rather
+        than AX's profile. Clear their ambient values first so a profile-pinned
+        proxy cannot be superseded by (for example) ``ALL_PROXY=socks5://...``.
         """
-        names = (_GRPC_PROXY_ENV, _NO_GRPC_PROXY_ENV, *_GRPC_CA_ENV_VARS)
-        with _GRPC_ENV_LOCK:
-            previous = {name: os.environ.get(name, _MISSING) for name in names}
-            try:
-                if self.override_grpc_proxy:
-                    _set_environment_value(_GRPC_PROXY_ENV, self.proxy_url)
-                elif self.proxy_url and not os.environ.get(
-                    _GRPC_PROXY_ENV, ""
-                ).strip():
-                    os.environ[_GRPC_PROXY_ENV] = self.proxy_url
+        environment = os.environ.copy()
+        for name in (
+            *_CHILD_PROXY_ENV_VARS,
+            *_CHILD_NO_PROXY_ENV_VARS,
+            *_CHILD_CA_BUNDLE_ENV_VARS,
+        ):
+            environment.pop(name, None)
 
-                if self.override_grpc_no_proxy:
-                    _set_environment_value(_NO_GRPC_PROXY_ENV, self.no_proxy)
-                elif self.no_proxy and not os.environ.get(
-                    _NO_GRPC_PROXY_ENV, ""
-                ).strip():
-                    os.environ[_NO_GRPC_PROXY_ENV] = self.no_proxy
-
-                if self.ca_bundle:
-                    for name in _GRPC_CA_ENV_VARS:
-                        os.environ[name] = self.ca_bundle
-                yield
-            finally:
-                for name, value in previous.items():
-                    if value is _MISSING:
-                        os.environ.pop(name, None)
-                    else:
-                        os.environ[name] = value
+        if self.proxy_url:
+            for name in _CHILD_PROXY_ENV_VARS:
+                environment[name] = self.proxy_url
+        if self.no_proxy:
+            for name in _CHILD_NO_PROXY_ENV_VARS:
+                environment[name] = self.no_proxy
+        if self.ca_bundle:
+            for name in _CHILD_CA_BUNDLE_ENV_VARS:
+                environment[name] = self.ca_bundle
+        return environment
 
     def redacted_proxy_url(self) -> str:
         """Return a display-safe representation of the configured proxy URL."""
@@ -314,11 +298,3 @@ class NetworkSettings:
             authority = parsed.netloc.rsplit("@", maxsplit=1)[-1]
             return f"{parsed.scheme}://{username}:***@{authority}"
         return f"{parsed.scheme}://{username}:***@{host}{port}"
-
-
-def _set_environment_value(name: str, value: str) -> None:
-    """Set a process variable, or remove it for an explicit empty policy."""
-    if value:
-        os.environ[name] = value
-    else:
-        os.environ.pop(name, None)

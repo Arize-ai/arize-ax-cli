@@ -43,6 +43,5 @@ def make_client() -> tuple[ArizeClient, Config]:
         proxy_url=network.proxy_for(sdk_config.api_url),
         ssl_ca_cert=network.ca_bundle,
     )
-    with network.grpc_environment():
-        client = ArizeClient(**asdict(sdk_config))
+    client = ArizeClient(**asdict(sdk_config))
     return client, config

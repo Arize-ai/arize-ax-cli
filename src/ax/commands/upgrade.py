@@ -106,7 +106,11 @@ def upgrade(
         if manager is None:
             raise typer.Exit(code=0)
 
-    result = subprocess.run(_UPGRADE_COMMANDS[manager], check=False)  # noqa: S603
+    result = subprocess.run(  # noqa: S603
+        _UPGRADE_COMMANDS[manager],
+        check=False,
+        env=network.subprocess_environment(),
+    )
     if result.returncode == 0:
         _write_cache(
             _DEFAULT_CACHE_PATH,

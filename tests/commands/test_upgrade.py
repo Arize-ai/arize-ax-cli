@@ -8,8 +8,23 @@ import pytest
 from typer.testing import CliRunner
 
 from ax.cli import app
+from ax.config.schema import (
+    AuthConfig,
+    Config,
+    NetworkConfig,
+    ProfileConfig,
+    ProxyMode,
+)
 
 runner = CliRunner()
+
+
+def _assert_upgrade_subprocess(mock_run: MagicMock, command: list[str]) -> None:
+    """Assert a package-manager command receives an explicit child environment."""
+    args, kwargs = mock_run.call_args
+    assert args == (command,)
+    assert kwargs["check"] is False
+    assert isinstance(kwargs["env"], dict)
 
 
 @pytest.mark.unit
@@ -39,8 +54,8 @@ def test_upgrade_pip_flag() -> None:
     ):
         result = runner.invoke(app, ["upgrade", "--pip"])
     assert result.exit_code == 0
-    mock_run.assert_called_once_with(
-        ["pip", "install", "--upgrade", "arize-ax-cli"], check=False
+    _assert_upgrade_subprocess(
+        mock_run, ["pip", "install", "--upgrade", "arize-ax-cli"]
     )
 
 
@@ -58,9 +73,7 @@ def test_upgrade_pipx_flag() -> None:
     ):
         result = runner.invoke(app, ["upgrade", "--pipx"])
     assert result.exit_code == 0
-    mock_run.assert_called_once_with(
-        ["pipx", "upgrade", "arize-ax-cli"], check=False
-    )
+    _assert_upgrade_subprocess(mock_run, ["pipx", "upgrade", "arize-ax-cli"])
 
 
 @pytest.mark.unit
@@ -77,8 +90,8 @@ def test_upgrade_uv_flag() -> None:
     ):
         result = runner.invoke(app, ["upgrade", "--uv"])
     assert result.exit_code == 0
-    mock_run.assert_called_once_with(
-        ["uv", "tool", "upgrade", "arize-ax-cli"], check=False
+    _assert_upgrade_subprocess(
+        mock_run, ["uv", "tool", "upgrade", "arize-ax-cli"]
     )
 
 
@@ -99,9 +112,43 @@ def test_upgrade_no_flag_prompts_user() -> None:
         result = runner.invoke(app, ["upgrade"])
     assert result.exit_code == 0
     mock_select.assert_called_once()
-    mock_run.assert_called_once_with(
-        ["pipx", "upgrade", "arize-ax-cli"], check=False
+    _assert_upgrade_subprocess(mock_run, ["pipx", "upgrade", "arize-ax-cli"])
+
+
+@pytest.mark.unit
+def test_upgrade_passes_profile_network_policy_to_package_manager(
+    tmp_path,
+) -> None:
+    """The download subprocess receives proxy, bypass, and CA configuration."""
+    ca_bundle = tmp_path / "corporate-ca.pem"
+    ca_bundle.write_text("placeholder")
+    config = Config(
+        profile=ProfileConfig(name="proxy"),
+        auth=AuthConfig(auth_method="api-key", api_key="ak-test"),
+        network=NetworkConfig(
+            proxy_mode=ProxyMode.URL,
+            proxy_url="http://profile-proxy.example.com:8080",
+            no_proxy="localhost",
+            ca_bundle=str(ca_bundle),
+        ),
     )
+    with (
+        patch("ax.commands.upgrade.__version__", "0.13.0"),
+        patch("ax.commands.upgrade.ConfigManager.load", return_value=config),
+        patch("ax.commands.upgrade.fetch_pypi_version", return_value="0.14.0"),
+        patch("ax.cli._start_upgrade_check"),
+        patch(
+            "ax.commands.upgrade.subprocess.run",
+            return_value=MagicMock(returncode=0),
+        ) as mock_run,
+    ):
+        result = runner.invoke(app, ["upgrade", "--pip"])
+
+    assert result.exit_code == 0
+    environment = mock_run.call_args.kwargs["env"]
+    assert environment["HTTPS_PROXY"] == "http://profile-proxy.example.com:8080"
+    assert environment["NO_PROXY"] == "localhost"
+    assert environment["PIP_CERT"] == str(ca_bundle)
 
 
 @pytest.mark.unit

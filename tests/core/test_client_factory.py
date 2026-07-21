@@ -13,7 +13,8 @@ from ax.config.schema import (
     ProxyMode,
 )
 from ax.core.client_factory import make_client
-from ax.core.network import _GRPC_PROXY_ENV
+
+_GRPC_PROXY_ENV = "grpc_proxy"
 
 
 @pytest.fixture(autouse=True)
@@ -30,8 +31,6 @@ def clear_network_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "ALL_PROXY",
         "no_proxy",
         "NO_PROXY",
-        "grpc_proxy",
-        "no_grpc_proxy",
         "ARIZE_SSL_CA_CERT",
         "REQUESTS_CA_BUNDLE",
         "SSL_CERT_FILE",
@@ -65,7 +64,7 @@ def test_make_client_passes_proxy_and_ca_bundle_to_sdk() -> None:
 
 
 def test_make_client_bypasses_rest_proxy_for_no_proxy_host() -> None:
-    """REST follows the same no_proxy policy as gRPC and OAuth."""
+    """REST follows the configured no_proxy policy."""
     config = Config(
         profile=ProfileConfig(name="proxy"),
         auth=AuthConfig(auth_method="api-key", api_key="ak-test"),
@@ -85,11 +84,11 @@ def test_make_client_bypasses_rest_proxy_for_no_proxy_host() -> None:
     assert arize_client.call_args.kwargs["proxy_url"] == ""
 
 
-def test_make_client_restores_grpc_environment_after_construction(
+def test_make_client_does_not_change_grpc_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """SDK construction sees the profile policy without retaining it globally."""
-    monkeypatch.setenv("grpc_proxy", "http://caller-proxy.example.com:8080")
+    """HTTP(S)-only proxy configuration leaves gRPC settings untouched."""
+    monkeypatch.setenv(_GRPC_PROXY_ENV, "http://caller-proxy.example.com:8080")
     config = Config(
         profile=ProfileConfig(name="proxy"),
         auth=AuthConfig(auth_method="api-key", api_key="ak-test"),
@@ -99,24 +98,10 @@ def test_make_client_restores_grpc_environment_after_construction(
         ),
     )
 
-    def assert_grpc_proxy_is_scoped(**kwargs):
-        assert kwargs["proxy_url"] == "http://profile-proxy.example.com:8080"
-        assert (
-            os.environ.get(_GRPC_PROXY_ENV)
-            == "http://profile-proxy.example.com:8080"
-        )
-        return object()
-
     with (
         patch("ax.core.client_factory.ConfigManager.load", return_value=config),
-        patch(
-            "ax.core.client_factory.ArizeClient",
-            side_effect=assert_grpc_proxy_is_scoped,
-        ),
+        patch("ax.core.client_factory.ArizeClient"),
     ):
         make_client()
 
-    assert (
-        os.environ.get(_GRPC_PROXY_ENV)
-        == "http://caller-proxy.example.com:8080"
-    )
+    assert os.environ[_GRPC_PROXY_ENV] == "http://caller-proxy.example.com:8080"

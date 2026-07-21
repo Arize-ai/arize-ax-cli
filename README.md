@@ -502,16 +502,17 @@ proxy_mode = "system"
 # ca_bundle = "${ARIZE_SSL_CA_CERT}"
 ```
 
-The proxy is applied to REST, OAuth, PyPI/GitHub downloads, Arrow Flight, and
-OTLP/gRPC. The proxy must support HTTP CONNECT and HTTP/2 tunneling for Flight
-and OTLP. Only `http://` proxy URLs are supported: in `system` mode,
-environment values with other schemes (e.g. `socks5://`) are skipped with a
-warning; in `url` mode they are rejected. `ca_bundle` is the preferred way to
-trust a TLS-inspecting corporate proxy; do not disable certificate
-verification unless troubleshooting a controlled environment. When no
-supported proxy is configured, every AX transport connects directly; AX does
-not defer to OS-level proxy discovery because it could select a proxy scheme
-that Flight and OTLP cannot use.
+The proxy is applied to CLI-managed HTTP(S) traffic: REST, OAuth, PyPI/GitHub
+downloads, and the package-manager process started by `ax upgrade`. HTTPS
+requests use HTTP CONNECT through the configured proxy. Arrow Flight and
+OTLP/gRPC do not currently use this configuration; configure those transports
+through their own supported environment or network settings. Only `http://`
+proxy URLs are supported: in `system` mode, environment values with other
+schemes (e.g. `socks5://`) are skipped with a warning; in `url` mode they are
+rejected. `ca_bundle` is the preferred way to trust a TLS-inspecting corporate
+proxy; do not disable certificate verification unless troubleshooting a
+controlled environment. When no supported proxy is configured, AX's HTTP(S)
+transports connect directly; AX does not defer to OS-level proxy discovery.
 
 `no_proxy` accepts a comma-separated list. Each entry may be a hostname
 (`api.example.com`), a domain suffix (`.example.com`, which also matches the
@@ -519,16 +520,10 @@ bare domain), an IP or CIDR range (`10.0.0.0/8`), a bracketed IPv6 address,
 or any of these with a port (`host:443`, matched against the URL's explicit
 port or the scheme default). `*` may appear anywhere in the list and bypasses
 the proxy for everything. `*.example.com` is accepted as a domain suffix.
-Caveat: Arrow Flight and OTLP use gRPC's own bypass matching, which supports
-hostnames, suffixes, and CIDR ranges but ignores port qualifiers.
 
-While constructing gRPC transports, the CLI temporarily exports the resolved
-settings as `grpc_proxy` and `no_grpc_proxy`, then restores the caller's
-environment. In `system` mode a `grpc_proxy`/`no_grpc_proxy` you set yourself
-is preserved; in `url` mode the profile's values take precedence. When
-`ca_bundle` is set, it is also temporarily exported as
-`GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` and `OTEL_EXPORTER_OTLP_CERTIFICATE` so
-Flight and trace export trust the same CA.
+`ax auth login` opens the authorization URL in your browser. The browser uses
+its own operating-system or browser proxy configuration; a profile-only proxy
+cannot configure that browser request.
 
 **Storage** (optional)
 
@@ -1991,8 +1986,6 @@ The CLI respects these environment variables:
   bypass hosts
 - `ARIZE_SSL_CA_CERT`, then `REQUESTS_CA_BUNDLE`, then `SSL_CERT_FILE`:
   CA bundle for TLS-inspecting proxy certificates
-- `grpc_proxy` / `no_grpc_proxy`: Set by the CLI for Arrow Flight and
-  OTLP/gRPC; your own values are preserved in `system` proxy mode
 - Any other `ARIZE_*` variables will be detected during `ax profiles create`
 
 ### Debugging

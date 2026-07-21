@@ -144,7 +144,7 @@ Every command follows this pattern:
 from typing import Annotated
 import typer
 from ax.core.decorators import handle_errors
-from ax.config.manager import ConfigManager
+from ax.core.client_factory import make_client
 from ax.utils.console import success, spinner
 
 @app.command("list")
@@ -160,25 +160,22 @@ def list_items(
     ] = False,
 ) -> None:
     """List items with optional filters."""
-    # 1. Load active profile config
-    config = ConfigManager.load(expand_env_vars=True)
+    # 1. Load the active profile and create a proxy-aware REST client
+    client, config = make_client()
 
-    # 2. Create SDK client
-    client = ArizeClient(**asdict(config.to_sdk_config()))
-
-    # 3. Parse output options
+    # 2. Parse output options
     output_format, output_file = parse_output_option(
         output if output else config.output.format
     )
 
-    # 4. Make API call with spinner
+    # 3. Make API call with spinner
     try:
         with spinner("Fetching items"):
             response = client.items.list()
     except Exception as e:
         raise APIError(f"Failed to list items: {e}") from e
 
-    # 5. Output results
+    # 4. Output results
     output_data(response, format_type=output_format, output_file=output_file)
 ```
 

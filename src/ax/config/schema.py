@@ -354,7 +354,7 @@ class ProxyMode(StrEnum):
 
 
 class NetworkConfig(BaseModel):
-    """Outbound proxy and TLS settings shared by every CLI transport."""
+    """Outbound proxy and TLS settings for CLI-managed HTTP(S) traffic."""
 
     proxy_mode: ProxyMode = Field(default=ProxyMode.SYSTEM)
     proxy_url: str = Field(default="")
@@ -370,7 +370,7 @@ class NetworkConfig(BaseModel):
     @field_validator("proxy_url")
     @classmethod
     def _validate_literal_proxy_url(cls, v: str) -> str:
-        """Reject literal proxy URLs gRPC cannot use, but retain env refs."""
+        """Reject literal URLs unsupported by the CLI's HTTP(S) clients."""
         if not v or (v.startswith("${") and v.endswith("}")):
             return v
         if not is_http_connect_proxy_url(v):

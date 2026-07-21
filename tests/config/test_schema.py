@@ -266,7 +266,7 @@ class TestNetworkConfig:
         assert network.ca_bundle == "/tmp/ca.pem"
 
     def test_rejects_unsupported_literal_proxy_url(self) -> None:
-        """Profiles fail early when a proxy cannot tunnel gRPC."""
+        """Profiles fail early when a proxy cannot tunnel HTTPS requests."""
         with pytest.raises(ValidationError, match="proxy_url must use"):
             NetworkConfig(proxy_url="socks5://proxy.example.com:1080")
 
@@ -279,7 +279,9 @@ class TestNetworkConfig:
             "http://proxy.example.com:65536",
         ],
     )
-    def test_rejects_proxy_url_without_a_valid_port(self, proxy_url: str) -> None:
+    def test_rejects_proxy_url_without_a_valid_port(
+        self, proxy_url: str
+    ) -> None:
         """HTTP CONNECT profiles require a concrete TCP endpoint."""
         with pytest.raises(ValidationError, match="proxy_url must use"):
             NetworkConfig(proxy_url=proxy_url)

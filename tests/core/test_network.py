@@ -1,15 +1,10 @@
 """Tests for the shared proxy and TLS policy."""
 
-import os
-
 import pytest
 
 from ax.config.schema import NetworkConfig, ProxyMode
 from ax.core.exceptions import ConfigError
 from ax.core.network import NetworkSettings
-
-_GRPC_PROXY_ENV = "grpc_proxy"
-_NO_GRPC_PROXY_ENV = "no_grpc_proxy"
 
 
 @pytest.fixture(autouse=True)
@@ -26,14 +21,9 @@ def clear_proxy_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "ALL_PROXY",
         "no_proxy",
         "NO_PROXY",
-        "grpc_proxy",
-        "no_grpc_proxy",
         "ARIZE_SSL_CA_CERT",
         "REQUESTS_CA_BUNDLE",
         "SSL_CERT_FILE",
-        "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH",
-        "OTEL_EXPORTER_OTLP_CERTIFICATE",
-        "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -192,78 +182,68 @@ def test_profile_ca_bundle_must_exist() -> None:
         )
 
 
-def test_grpc_environment_normalizes_proxy_settings_and_restores_them(
-    monkeypatch: pytest.MonkeyPatch,
+def test_subprocess_environment_uses_the_resolved_proxy_and_ca_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    """Flight and OTLP receive the same resolved proxy and bypass list."""
-    monkeypatch.setenv(_GRPC_PROXY_ENV, "")
-    monkeypatch.setenv(_NO_GRPC_PROXY_ENV, "")
+    """Package managers inherit the profile policy instead of ambient values."""
+    ca_bundle = tmp_path / "corporate-ca.pem"
+    ca_bundle.write_text("placeholder")
+    monkeypatch.setenv("HTTPS_PROXY", "socks5://ambient-proxy:1080")
+    monkeypatch.setenv("NO_PROXY", "ambient.example.com")
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "ambient-ca.pem")
     settings = NetworkSettings(
-        proxy_url="http://proxy.example.com:8080",
+        proxy_url="http://profile-proxy.example.com:8080",
         no_proxy="localhost,.internal.example.com",
+        ca_bundle=str(ca_bundle),
     )
 
-    with settings.grpc_environment():
-        assert os.environ[_GRPC_PROXY_ENV] == "http://proxy.example.com:8080"
-        assert os.environ[_NO_GRPC_PROXY_ENV] == "localhost,.internal.example.com"
+    environment = settings.subprocess_environment()
 
-    assert os.environ[_GRPC_PROXY_ENV] == ""
-    assert os.environ[_NO_GRPC_PROXY_ENV] == ""
-
-
-def test_system_mode_exports_arize_proxy_to_grpc(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flight and OTLP must see a proxy that only ARIZE_PROXY_URL provides.
-
-    gRPC C-Core reads grpc_proxy/https_proxy/http_proxy but never
-    ARIZE_PROXY_URL, so system mode must export the resolved proxy or
-    Flight/OTLP silently bypass it.
-    """
-    monkeypatch.setenv("ARIZE_PROXY_URL", "http://arize-proxy:8080")
-    monkeypatch.setenv("NO_PROXY", "localhost")
-
-    settings = NetworkSettings.from_config(NetworkConfig(), request_verify=True)
-    with settings.grpc_environment():
-        assert os.environ[_GRPC_PROXY_ENV] == "http://arize-proxy:8080"
-        assert os.environ[_NO_GRPC_PROXY_ENV] == "localhost"
-
-
-def test_system_mode_preserves_existing_grpc_proxy(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """AX system mode must not replace a deliberately distinct gRPC proxy."""
-    monkeypatch.setenv(_GRPC_PROXY_ENV, "http://grpc-proxy.example.com:8080")
-    monkeypatch.setenv(_NO_GRPC_PROXY_ENV, "grpc.internal.example.com")
-
-    settings = NetworkSettings.from_config(NetworkConfig(), request_verify=True)
-    with settings.grpc_environment():
-        assert os.environ[_GRPC_PROXY_ENV] == "http://grpc-proxy.example.com:8080"
-        assert os.environ[_NO_GRPC_PROXY_ENV] == "grpc.internal.example.com"
-
-
-def test_grpc_environment_restores_ca_bundle_after_channel_construction(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A profile CA cannot leak into a later profile in the same process."""
     for name in (
-        "GRPC_DEFAULT_SSL_ROOTS_FILE_PATH",
-        "OTEL_EXPORTER_OTLP_CERTIFICATE",
-        "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+        "http_proxy",
+        "HTTP_PROXY",
+        "https_proxy",
+        "HTTPS_PROXY",
+        "all_proxy",
+        "ALL_PROXY",
     ):
-        monkeypatch.setenv(name, "caller-ca.pem")
+        assert environment[name] == "http://profile-proxy.example.com:8080"
+    assert environment["NO_PROXY"] == "localhost,.internal.example.com"
+    assert environment["no_proxy"] == "localhost,.internal.example.com"
+    for name in (
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+        "PIP_CERT",
+        "CURL_CA_BUNDLE",
+    ):
+        assert environment[name] == str(ca_bundle)
 
-    with NetworkSettings(ca_bundle="profile-ca.pem").grpc_environment():
-        assert os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] == "profile-ca.pem"
-        assert os.environ["OTEL_EXPORTER_OTLP_CERTIFICATE"] == "profile-ca.pem"
-        assert (
-            os.environ["OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE"]
-            == "profile-ca.pem"
-        )
 
-    assert os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] == "caller-ca.pem"
-    assert os.environ["OTEL_EXPORTER_OTLP_CERTIFICATE"] == "caller-ca.pem"
-    assert os.environ["OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE"] == "caller-ca.pem"
+def test_subprocess_environment_removes_unsupported_ambient_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A direct AX policy must not leak ambient proxy settings to a child."""
+    monkeypatch.setenv("HTTPS_PROXY", "socks5://ambient-proxy:1080")
+    monkeypatch.setenv("NO_PROXY", "ambient.example.com")
+    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "ambient-ca.pem")
+
+    environment = NetworkSettings().subprocess_environment()
+
+    for name in (
+        "http_proxy",
+        "HTTP_PROXY",
+        "https_proxy",
+        "HTTPS_PROXY",
+        "all_proxy",
+        "ALL_PROXY",
+        "no_proxy",
+        "NO_PROXY",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+        "PIP_CERT",
+        "CURL_CA_BUNDLE",
+    ):
+        assert name not in environment
 
 
 def test_no_proxy_supports_cidr_and_host_port() -> None:
