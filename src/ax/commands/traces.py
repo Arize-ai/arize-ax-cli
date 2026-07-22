@@ -54,14 +54,16 @@ def list_spans(
         str | None,
         typer.Option(
             "--start-time",
-            help="Start of time window, inclusive (ISO 8601, e.g. 2024-01-01T00:00:00Z).",
+            help="Start of time window, inclusive (ISO 8601, e.g. "
+            "2024-01-01T00:00:00Z; UTC assumed if no offset).",
         ),
     ] = None,
     end_time: Annotated[
         str | None,
         typer.Option(
             "--end-time",
-            help="End of time window, exclusive (ISO 8601, e.g. 2024-01-02T00:00:00Z). Defaults to now.",
+            help="End of time window, exclusive (ISO 8601, e.g. "
+            "2024-01-02T00:00:00Z; UTC assumed if no offset). Defaults to now.",
         ),
     ] = None,
     filter: Annotated[
@@ -191,14 +193,14 @@ def export_traces(
         str | None,
         typer.Option(
             "--start-time",
-            help="Override start of time window (ISO 8601)",
+            help="Override start of time window (ISO 8601; UTC assumed if no offset)",
         ),
     ] = None,
     end_time: Annotated[
         str | None,
         typer.Option(
             "--end-time",
-            help="Override end of time window (ISO 8601)",
+            help="Override end of time window (ISO 8601; UTC assumed if no offset)",
         ),
     ] = None,
     output_dir: Annotated[

@@ -2,6 +2,7 @@
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 from unittest.mock import MagicMock, patch
@@ -175,6 +176,41 @@ class TestExportTracesRest:
         assert result.exit_code == 0
         phase1_kwargs = mock_client.spans.list.call_args_list[0].kwargs
         assert phase1_kwargs["filter"] == "status_code = 'ERROR'"
+
+    def test_naive_time_window_normalized_to_utc(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Naive --start-time/--end-time reach the SDK as tz-aware UTC."""
+        phase1_response = MagicMock()
+        phase1_response.spans = [self._make_span("t1", "s1")]
+        phase2_response = MagicMock()
+        phase2_response.spans = [self._make_span("t1", "s1")]
+        mock_client.spans.list.side_effect = [phase1_response, phase2_response]
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "export",
+                "TW9kZWw6MTIz",
+                "--start-time",
+                "2026-07-06T00:00:00",
+                "--end-time",
+                "2026-07-07T00:00:00",
+                "--stdout",
+            ],
+        )
+
+        assert result.exit_code == 0
+        phase1_kwargs = mock_client.spans.list.call_args_list[0].kwargs
+        assert phase1_kwargs["start_time"] == datetime(
+            2026, 7, 6, tzinfo=timezone.utc
+        )
+        assert phase1_kwargs["end_time"] == datetime(
+            2026, 7, 7, tzinfo=timezone.utc
+        )
 
     def test_no_spans_found(
         self,

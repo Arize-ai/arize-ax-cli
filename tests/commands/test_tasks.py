@@ -1,5 +1,6 @@
 """Tests for task CLI commands."""
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1342,6 +1343,70 @@ class TestTriggerRun:
 
         result = cli_runner.invoke(app, ["trigger-run", "task-1", "--wait"])
         assert result.exit_code != 0
+
+    @pytest.mark.unit
+    def test_naive_data_window_normalized_to_utc(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Naive --data-start-time/--data-end-time are made tz-aware (UTC)."""
+        mock_client.tasks.trigger_run.return_value = _make_run()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "trigger-run",
+                "task-1",
+                "--data-start-time",
+                "2026-07-06T00:00:00",
+                "--data-end-time",
+                "2026-07-07T00:00:00",
+            ],
+        )
+
+        assert result.exit_code == 0
+        _, kwargs = mock_client.tasks.trigger_run.call_args
+        assert kwargs["data_start_time"] == datetime(
+            2026, 7, 6, tzinfo=timezone.utc
+        )
+        assert kwargs["data_end_time"] == datetime(
+            2026, 7, 7, tzinfo=timezone.utc
+        )
+
+    @pytest.mark.unit
+    def test_tz_aware_data_window_accepted(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Explicit timezones (trailing Z or offset) are accepted and honored."""
+        mock_client.tasks.trigger_run.return_value = _make_run()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "trigger-run",
+                "task-1",
+                "--data-start-time",
+                "2026-07-06T00:00:00Z",
+                "--data-end-time",
+                "2026-07-07T05:00:00+05:00",
+            ],
+        )
+
+        assert result.exit_code == 0
+        _, kwargs = mock_client.tasks.trigger_run.call_args
+        assert kwargs["data_start_time"] == datetime(
+            2026, 7, 6, tzinfo=timezone.utc
+        )
+        # explicit +05:00 offset honored: same instant as 00:00Z, still aware
+        assert kwargs["data_end_time"].utcoffset() is not None
+        assert kwargs["data_end_time"] == datetime(
+            2026, 7, 7, tzinfo=timezone.utc
+        )
 
 
 # ---------------------------------------------------------------------------

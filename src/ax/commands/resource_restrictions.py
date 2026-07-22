@@ -3,6 +3,7 @@
 from typing import Annotated
 
 import typer
+from arize.resource_restrictions.types import ResourceRestrictionType
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
@@ -26,6 +27,78 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["--help", "-h"]},
 )
+
+
+@app.command("list")
+@handle_errors
+def list_resource_restrictions(
+    resource_type: Annotated[
+        ResourceRestrictionType | None,
+        typer.Option(
+            "--resource-type",
+            "-t",
+            help="Filter by resource type (currently only PROJECT)",
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            "-l",
+            help="Maximum number of resource restrictions to return",
+        ),
+    ] = 15,
+    cursor: Annotated[
+        str | None,
+        typer.Option(
+            "--cursor",
+            "-c",
+            help="Pagination cursor for next page",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """List resource restrictions you are permitted to manage.
+
+    Results are paginated; use `--cursor` with the pagination info from a
+    previous response to fetch the next page. Currently only `PROJECT`
+    resources are supported.
+    """
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner("Fetching resource restrictions"):
+            response = client.resource_restrictions.list(
+                resource_type=resource_type,
+                limit=limit,
+                cursor=cursor,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to list resource restrictions: {e}") from e
+    else:
+        output_data(
+            response, format_type=output_format, output_file=output_file
+        )
 
 
 @app.command("restrict")

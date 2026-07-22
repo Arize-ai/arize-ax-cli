@@ -7,7 +7,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from ax.commands.datasets import _validate_examples_structure, app
+from ax.commands.datasets import (
+    _validate_examples_structure,
+    app,
+)
 
 
 class TestDatasetCommands:
@@ -24,6 +27,8 @@ class TestDatasetCommands:
             "create",
             "delete",
             "update",
+            "update-examples",
+            "delete-examples",
         ):
             assert expected in names
         assert "list_examples" not in names
@@ -511,6 +516,132 @@ class TestAppendDataset:
         assert call_kwargs["examples"][0]["question"] == "What is 2+2?"
 
 
+class TestUpdateExamplesDataset:
+    """Tests for the 'ax datasets update-examples' command."""
+
+    def test_update_with_json_string(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify update-examples forwards inline JSON to the SDK."""
+        mock_client.datasets.update_examples.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        examples = [{"id": "ex-1", "answer": "4"}]
+        result = cli_runner.invoke(
+            app,
+            ["update-examples", "ds-1", "--json", json.dumps(examples)],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.update_examples.assert_called_once_with(
+            dataset="ds-1",
+            space=None,
+            dataset_version_id="",
+            examples=examples,
+            new_version=None,
+        )
+
+    def test_update_with_file(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """Verify update-examples reads a CSV file and forwards parsed examples."""
+        mock_client.datasets.update_examples.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        csv_file = tmp_path / "data.csv"
+        csv_file.write_text("id,answer\nex-1,4\n")
+
+        result = cli_runner.invoke(
+            app,
+            ["update-examples", "ds-1", "--file", str(csv_file)],
+        )
+        assert result.exit_code == 0
+        call_kwargs = mock_client.datasets.update_examples.call_args.kwargs
+        assert call_kwargs["dataset"] == "ds-1"
+        assert call_kwargs["examples"][0]["id"] == "ex-1"
+        assert call_kwargs["examples"][0]["answer"] == 4
+
+    def test_update_with_version_and_new_version(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --version-id and --new-version are forwarded."""
+        mock_client.datasets.update_examples.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        examples = [{"id": "ex-1", "q": "hello"}]
+        result = cli_runner.invoke(
+            app,
+            [
+                "update-examples",
+                "ds-1",
+                "--json",
+                json.dumps(examples),
+                "--version-id",
+                "v2",
+                "--new-version",
+                "snapshot",
+            ],
+        )
+        assert result.exit_code == 0
+        call_kwargs = mock_client.datasets.update_examples.call_args.kwargs
+        assert call_kwargs["dataset_version_id"] == "v2"
+        assert call_kwargs["new_version"] == "snapshot"
+
+    def test_update_requires_exactly_one_input(
+        self,
+        cli_runner: CliRunner,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """Neither or both inputs should fail."""
+        result_none = cli_runner.invoke(app, ["update-examples", "ds-1"])
+        assert result_none.exit_code != 0
+
+        csv_file = tmp_path / "data.csv"
+        csv_file.write_text("id,b\nex-1,2\n")
+        result_both = cli_runner.invoke(
+            app,
+            [
+                "update-examples",
+                "ds-1",
+                "--json",
+                '[{"id":"ex-1"}]',
+                "--file",
+                str(csv_file),
+            ],
+        )
+        assert result_both.exit_code != 0
+
+    def test_update_with_stdin_dash(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify '--file -' reads JSON from stdin."""
+        mock_client.datasets.update_examples.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"})
+        )
+        stdin_data = '[{"id": "ex-1", "answer": "4"}]'
+        result = cli_runner.invoke(
+            app,
+            ["update-examples", "ds-1", "--file", "-"],
+            input=stdin_data,
+        )
+        assert result.exit_code == 0
+        call_kwargs = mock_client.datasets.update_examples.call_args.kwargs
+        assert call_kwargs["examples"][0]["id"] == "ex-1"
+
+
 class TestDeleteDataset:
     """Tests for the 'ax datasets delete' command."""
 
@@ -799,3 +930,205 @@ class TestAnnotateDatasetExamples:
         )
         assert result.exit_code == 0, result.output
         assert "example" in result.output.lower()
+
+
+class TestDeleteDatasetExamples:
+    """Tests for the 'ax datasets delete-examples' command."""
+
+    def test_delete_examples_force_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--example-ids forwards ids/version to the SDK and skips prompt."""
+        mock_client.datasets.delete_examples.return_value = MagicMock(
+            model_dump=MagicMock(
+                return_value={
+                    "completed": True,
+                    "deleted_example_ids": ["a", "b"],
+                    "not_deleted_example_ids": [],
+                }
+            )
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete-examples",
+                "ds-1",
+                "--version-id",
+                "v1",
+                "--example-ids",
+                '["a", "b"]',
+                "--force",
+                "--output",
+                "json",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.datasets.delete_examples.assert_called_once_with(
+            dataset="ds-1",
+            space=None,
+            dataset_version_id="v1",
+            examples=["a", "b"],
+        )
+
+    def test_delete_examples_confirms_yes_calls_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Confirming the prompt proceeds with deletion."""
+        mock_client.datasets.delete_examples.return_value = MagicMock(
+            model_dump=MagicMock(
+                return_value={
+                    "completed": True,
+                    "deleted_example_ids": ["a", "b"],
+                    "not_deleted_example_ids": [],
+                }
+            )
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete-examples",
+                "ds-1",
+                "--version-id",
+                "v1",
+                "--example-ids",
+                '["a"]',
+                "--output",
+                "json",
+            ],
+            input="y\n",
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.datasets.delete_examples.assert_called_once_with(
+            dataset="ds-1",
+            space=None,
+            dataset_version_id="v1",
+            examples=["a"],
+        )
+
+    def test_delete_examples_declines_does_not_call_sdk(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Declining the confirmation leaves the examples untouched."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete-examples",
+                "ds-1",
+                "--version-id",
+                "v1",
+                "--example-ids",
+                '["a"]',
+            ],
+            input="n\n",
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.delete_examples.assert_not_called()
+
+    def test_delete_examples_with_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--space is forwarded when deleting by dataset name."""
+        mock_client.datasets.delete_examples.return_value = MagicMock(
+            model_dump=MagicMock(
+                return_value={
+                    "completed": True,
+                    "deleted_example_ids": ["a", "b"],
+                    "not_deleted_example_ids": [],
+                }
+            )
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete-examples",
+                "my-dataset",
+                "--version-id",
+                "v1",
+                "--example-ids",
+                '["a"]',
+                "--force",
+                "--space",
+                "space-abc",
+                "--output",
+                "json",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        mock_client.datasets.delete_examples.assert_called_once_with(
+            dataset="my-dataset",
+            space="space-abc",
+            dataset_version_id="v1",
+            examples=["a"],
+        )
+
+    def test_delete_examples_missing_input_errors(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Omitting --example-ids fails before any SDK call."""
+        result = cli_runner.invoke(
+            app,
+            ["delete-examples", "ds-1", "--version-id", "v1", "--force"],
+        )
+        assert result.exit_code != 0
+        mock_client.datasets.delete_examples.assert_not_called()
+
+    def test_delete_examples_invalid_json_errors(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Malformed --example-ids JSON fails before any SDK call."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete-examples",
+                "ds-1",
+                "--version-id",
+                "v1",
+                "--example-ids",
+                "not-json",
+                "--force",
+            ],
+        )
+        assert result.exit_code != 0
+        mock_client.datasets.delete_examples.assert_not_called()
+
+    def test_delete_examples_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """An SDK error results in a non-zero exit code."""
+        mock_client.datasets.delete_examples.side_effect = Exception(
+            "not found"
+        )
+        result = cli_runner.invoke(
+            app,
+            [
+                "delete-examples",
+                "ds-1",
+                "--version-id",
+                "v1",
+                "--example-ids",
+                '["a"]',
+                "--force",
+            ],
+        )
+        assert result.exit_code != 0

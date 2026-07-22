@@ -1,5 +1,6 @@
 """Tests for spans CLI commands."""
 
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -116,6 +117,38 @@ class TestExportSpans:
         call_kwargs = mock_client.spans.list.call_args.kwargs
         assert call_kwargs["filter"] is None
         assert call_kwargs["limit"] == 100
+
+    def test_naive_time_window_normalized_to_utc(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Naive --start-time/--end-time reach the SDK as tz-aware UTC."""
+        response = MagicMock()
+        response.spans = []
+        mock_client.spans.list.return_value = response
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "export",
+                "TW9kZWw6MTIz",
+                "--start-time",
+                "2026-07-06T00:00:00",
+                "--end-time",
+                "2026-07-07T00:00:00",
+                "--stdout",
+            ],
+        )
+        assert result.exit_code == 0
+        call_kwargs = mock_client.spans.list.call_args.kwargs
+        assert call_kwargs["start_time"] == datetime(
+            2026, 7, 6, tzinfo=timezone.utc
+        )
+        assert call_kwargs["end_time"] == datetime(
+            2026, 7, 7, tzinfo=timezone.utc
+        )
 
     def test_export_with_trace_id(
         self,

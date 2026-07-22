@@ -65,6 +65,7 @@ def _make_record(
         annotations=[],
         evaluations=[],
         assigned_users=[],
+        trace_annotations=[],
     )
 
 

@@ -1,6 +1,5 @@
 """Task management commands."""
 
-from datetime import datetime
 from typing import Annotated, Any
 
 import typer
@@ -22,6 +21,7 @@ from ax.utils.console import (
     spinner,
     warning,
 )
+from ax.utils.datetime_parse import parse_optional_iso8601
 from ax.utils.file_io import parse_output_option
 from ax.utils.json_source import load_json
 
@@ -836,17 +836,18 @@ def delete_task(
 def trigger_run(
     task_id: Annotated[str, typer.Argument(help="Task name or ID")],
     data_start_time: Annotated[
-        datetime | None,
+        str | None,
         typer.Option(
             "--data-start-time",
-            help="ISO 8601 start of the data window to evaluate (evaluation tasks only)",
+            help="ISO 8601 start of the data window; UTC assumed if no offset (evaluation tasks only)",
         ),
     ] = None,
     data_end_time: Annotated[
-        datetime | None,
+        str | None,
         typer.Option(
             "--data-end-time",
-            help="ISO 8601 end of the data window (evaluation tasks only, defaults to now)",
+            help="ISO 8601 end of the data window; UTC assumed if no offset "
+            "(evaluation tasks only, defaults to now)",
         ),
     ] = None,
     max_spans: Annotated[
@@ -986,6 +987,9 @@ def trigger_run(
             raise UsageError("--tracing-metadata must be a JSON object")
         parsed_tracing_metadata = raw
 
+    data_start_dt = parse_optional_iso8601(data_start_time)
+    data_end_dt = parse_optional_iso8601(data_end_time)
+
     client, config = make_client()
 
     output_format, output_file = parse_output_option(
@@ -996,8 +1000,8 @@ def trigger_run(
         with spinner("Triggering task run", success_msg="Task run triggered"):
             run = client.tasks.trigger_run(
                 task=task_id,
-                data_start_time=data_start_time,
-                data_end_time=data_end_time,
+                data_start_time=data_start_dt,
+                data_end_time=data_end_dt,
                 max_spans=max_spans,
                 override_evaluations=override_evaluations,
                 experiment_ids=_parse_comma_separated_ids(experiment_ids),

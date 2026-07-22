@@ -591,7 +591,7 @@ Once installed, test tab completion:
 
 ```bash
 ax <TAB>         # Shows available commands (cache, datasets, experiments, profiles, projects, spans, traces)
-ax datasets <TAB> # Shows dataset subcommands (list, get, export, create, append, update, delete)
+ax datasets <TAB> # Shows dataset subcommands (list, get, export, create, append, update-examples, delete-examples, update, delete)
 ax datasets list --<TAB>  # Shows available options
 ```
 
@@ -694,6 +694,11 @@ ax annotation-configs create --name "Score" --space <space> --type CONTINUOUS \
 ax annotation-configs create --name "Verdict" --space <space> --type CATEGORICAL \
   --value good --value neutral --value bad --optimization-direction MAXIMIZE
 
+# Update an annotation config (pick the subcommand for its type; only the fields you pass change)
+ax annotation-configs update freeform <annotation-config> --new-name "New name"
+ax annotation-configs update continuous <annotation-config> --min-score 0 --max-score 10
+ax annotation-configs update categorical <annotation-config> --value good --value bad
+
 # Delete an annotation config
 ax annotation-configs delete <annotation-config> [--force]
 ```
@@ -782,7 +787,7 @@ ax annotation-queues add-records <queue> \
 
 ### API Keys
 
-> **Security note:** The raw key value is only returned once (on `create` and `refresh`). Store it securely immediately — it cannot be retrieved again.
+> **Security note:** The raw key value is only returned once (on `create`, `create-service-key`, and `refresh`). Store it securely immediately — it cannot be retrieved again.
 
 ```bash
 # List API keys
@@ -792,8 +797,15 @@ ax api-keys list [--key-type USER|SERVICE] [--status ACTIVE|REVOKED] \
 # Create a user key (authenticates as you)
 ax api-keys create --name "My Key" [--description "..."] [--expires-at 2025-12-31T23:59:59]
 
-# Create a service key (scoped to a space)
-ax api-keys create --name "CI Key" --key-type SERVICE --space <space-name-or-id>
+# Create a service key (scoped to one or more orgs and spaces)
+ax api-keys create-service-key --name "CI bot" \
+  --assignments '[{"org_id":"<org-id>","role":"READ_ONLY",
+                   "spaces":[{"space":"prod","role":"MEMBER"},
+                              {"space":"staging"}]}]' \
+  [--account-role MEMBER] [--description "..."] [--expires-at 2025-12-31T23:59:59]
+
+# Load assignments from a file
+ax api-keys create-service-key --name "CI bot" --assignments bindings.json
 
 # Refresh a key (revokes old key, issues replacement)
 ax api-keys refresh <key-id> [--expires-at 2025-12-31T23:59:59] \
@@ -803,19 +815,39 @@ ax api-keys refresh <key-id> [--expires-at 2025-12-31T23:59:59] \
 ax api-keys revoke <key-id> [--force]
 ```
 
+**`create-service-key` options:**
+
+| Option | Description |
+| --- | --- |
+| `--name`, `-n` | Key name (max 256 characters) _(required)_ |
+| `--assignments`, `-a` | JSON array describing org/space assignments, or a path to a `.json` file _(required)_. Each entry: `{"org_id": "<id>", "role": "<org-role>", "spaces": [{"space": "<name-or-id>", "role": "<space-role>"}]}`. `role` is optional at both levels. |
+| `--account-role` | Account-level role for the bot user: `ADMIN`, `MEMBER`, or `ANNOTATOR`. Defaults to `MEMBER`. |
+| `--description` | Optional description (max 1000 characters) |
+| `--expires-at` | Expiration datetime (ISO 8601; UTC assumed if no offset). Omit for no expiration. |
+
+**Assignment role values:**
+
+| Level | Predefined values | Custom role | Server default when omitted |
+| --- | --- | --- | --- |
+| Space (`spaces[].role`) | `ADMIN`, `MEMBER`, `READ_ONLY`, `ANNOTATOR` | `{"type": "CUSTOM", "id": "<role-id>"}` | `MEMBER` |
+| Org (`role`) | `ADMIN`, `MEMBER`, `READ_ONLY`, `ANNOTATOR` | `{"type": "CUSTOM", "id": "<role-id>"}` | `READ_ONLY` |
+| Account (`--account-role`) | `ADMIN`, `MEMBER`, `ANNOTATOR` | — | `MEMBER` |
+
+> Obtain org IDs with `ax organizations list --output json`.
+
 **`refresh` options:**
 
 | Option | Description |
 | ------------------------- | --------------------------------------------------------------------------- |
-| `--expires-at` | New expiration for the replacement key (ISO 8601). Omit for no expiration. |
+| `--expires-at` | New expiration for the replacement key (ISO 8601; UTC assumed if no offset). Omit for no expiration. |
 | `--grace-period-seconds`  | Seconds the old key stays valid after refresh so clients can rotate. Omit (or pass `0`) to revoke the old key immediately. |
 
 **Key types:**
 
 | Type      | Description                                                              |
 | --------- | ------------------------------------------------------------------------ |
-| `user`    | Authenticates as the creating user. Global, so `--space` not needed.    |
-| `service` | Scoped to a specific space. `--space` (name or ID) is required.         |
+| `USER`    | Authenticates as the creating user. Created with `ax api-keys create`.   |
+| `SERVICE` | Backed by a dedicated bot user scoped to specific orgs and spaces. Created with `ax api-keys create-service-key`. |
 
 ### Cache
 
@@ -831,6 +863,21 @@ cache_enabled = true
 ```bash
 # Clear the cache
 ax cache clear
+```
+
+### Resource Restrictions
+
+Resource restrictions prevent roles bound at higher hierarchy levels (space, org, account) from granting access to a specific resource; currently only `PROJECT` resources are supported.
+
+```bash
+# List resource restrictions you can manage
+ax resource-restrictions list [--resource-type PROJECT] [--limit 50] [--cursor <cursor>]
+
+# Restrict a resource (prevents higher-level roles from granting access)
+ax resource-restrictions restrict --resource-id <global-id>
+
+# Remove a restriction from a resource
+ax resource-restrictions unrestrict --resource-id <global-id> [--force]
 ```
 
 ### Datasets
@@ -861,6 +908,16 @@ ax datasets append <dataset> --file new_examples.csv [--version-id <version-id>]
 
 # Append examples from stdin
 ax datasets append <dataset> --file -
+
+# Update existing examples in place, matched by ID (patch — omitted fields are kept)
+ax datasets update-examples <dataset> --json '[{"id": "<example-id>", "answer": "..."}]'
+
+# Update examples and capture the change as a new dataset version
+ax datasets update-examples <dataset> --file updates.csv --new-version "v2"
+
+# Delete specific examples from a dataset version (inline JSON array of IDs)
+ax datasets delete-examples <dataset> --version-id <version-id> \
+  --example-ids '["<example-id>", "<example-id>"]' [--force]
 
 # Update a dataset (e.g. rename)
 ax datasets update <dataset> --new-name "New Name" [--space <space>]
@@ -1393,8 +1450,8 @@ ax spans export <project-id> --stdout
 | `--space`      | Space ID (required when using `--all` for Arrow Flight export)        |
 | `--limit`, `-n`   | Maximum number of spans to export (default: 100)                      |
 | `--days`          | Lookback window in days (default: 30)                                 |
-| `--start-time`    | Override start of time window (ISO 8601)                              |
-| `--end-time`      | Override end of time window (ISO 8601)                                |
+| `--start-time`    | Override start of time window (ISO 8601; UTC assumed if no offset)    |
+| `--end-time`      | Override end of time window (ISO 8601; UTC assumed if no offset)      |
 | `--output-dir`    | Output directory (default: current directory)                         |
 | `--stdout`        | Print JSON to stdout instead of saving to file                        |
 | `--verbose`, `-v` | Enable verbose logs                                                   |
@@ -1594,8 +1651,8 @@ ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 
 | Option | Description |
 | --- | --- |
-| `--data-start-time` | ISO 8601 start of the data window (evaluation tasks only) |
-| `--data-end-time` | ISO 8601 end of the data window (defaults to now; evaluation tasks only) |
+| `--data-start-time` | ISO 8601 start of the data window; UTC assumed if no offset (evaluation tasks only) |
+| `--data-end-time` | ISO 8601 end of the data window; UTC assumed if no offset (defaults to now; evaluation tasks only) |
 | `--max-spans` | Maximum spans to evaluate (default: 10 000; evaluation tasks only) |
 | `--override-evaluations` | Re-evaluate data that already has labels (evaluation tasks only) |
 | `--experiment-ids` | Comma-separated experiment IDs; dataset-based evaluation tasks only |
@@ -1623,8 +1680,8 @@ ax traces list <project-id> [--start-time <iso8601>] [--end-time <iso8601>] \
 
 | Option            | Description                                                             |
 | ----------------- | ----------------------------------------------------------------------- |
-| `--start-time`    | Start of time window, inclusive (ISO 8601, e.g. `2024-01-01T00:00:00Z`) |
-| `--end-time`      | End of time window, exclusive (ISO 8601). Defaults to now               |
+| `--start-time`    | Start of time window, inclusive (ISO 8601, e.g. `2024-01-01T00:00:00Z`; UTC assumed if no offset) |
+| `--end-time`      | End of time window, exclusive (ISO 8601; UTC assumed if no offset). Defaults to now               |
 | `--filter`        | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`)   |
 | `--limit`, `-n`   | Maximum number of traces to return (default: 15)                        |
 | `--cursor`        | Pagination cursor for the next page                                     |

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from arize.resource_restrictions.types import ResourceRestrictionType
 from typer.testing import CliRunner, Result
 
 from ax.cli import app
@@ -62,6 +63,92 @@ def _invoke(
         ),
     ):
         return runner.invoke(app, args, input=cli_input)
+
+
+# ---------------------------------------------------------------------------
+# ax resource-restrictions list
+# ---------------------------------------------------------------------------
+
+
+class TestListResourceRestrictions:
+    """Tests for `ax resource-restrictions list`."""
+
+    def test_list_no_filters_calls_sdk_correctly(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that list with no filters calls the SDK with defaults."""
+        mock_response = MagicMock()
+        mock_response.resource_restrictions = [_make_resource_restriction()]
+        mock_client.resource_restrictions.list.return_value = mock_response
+
+        result = _invoke(
+            [
+                "resource-restrictions",
+                "list",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.resource_restrictions.list.assert_called_once_with(
+            resource_type=None,
+            limit=15,
+            cursor=None,
+        )
+
+    def test_list_with_filters_forwards_arguments(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that list forwards resource_type, limit, and cursor verbatim."""
+        mock_response = MagicMock()
+        mock_response.resource_restrictions = [_make_resource_restriction()]
+        mock_client.resource_restrictions.list.return_value = mock_response
+
+        result = _invoke(
+            [
+                "resource-restrictions",
+                "list",
+                "--resource-type",
+                "PROJECT",
+                "--limit",
+                "5",
+                "--cursor",
+                "abc",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.resource_restrictions.list.assert_called_once_with(
+            resource_type=ResourceRestrictionType.PROJECT,
+            limit=5,
+            cursor="abc",
+        )
+
+    def test_list_sdk_error_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that an SDK error during list causes a non-zero exit."""
+        mock_client.resource_restrictions.list.side_effect = RuntimeError(
+            "Internal error"
+        )
+        result = _invoke(
+            [
+                "resource-restrictions",
+                "list",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
 
 
 # ---------------------------------------------------------------------------

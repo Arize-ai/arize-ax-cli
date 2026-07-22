@@ -299,3 +299,193 @@ class TestDatasetsAnnotateExamples:
             test_space_id,
         )
         assert result.returncode != 0
+
+
+class TestDatasetsDeleteExamples:
+    """ax datasets delete-examples — real create → delete → verify lifecycle.
+
+    These tests exercise the full round trip against the live API (create a
+    dataset, discover its real version + example IDs, delete a subset, then
+    re-read from the server to confirm the effect). Unit tests mock the SDK, so
+    only an integration test can catch a mismatch between the CLI's arguments
+    and what the server actually does.
+    """
+
+    @staticmethod
+    def _create_dataset(space_id: str, name: str, examples: list[dict]) -> str:
+        """Create a dataset with *examples* and return its ID."""
+        result = ax(
+            "datasets",
+            "create",
+            "--name",
+            name,
+            "--space",
+            space_id,
+            "--json",
+            json.dumps(examples),
+            "--output",
+            "json",
+        )
+        assert result.returncode == 0, (
+            f"Dataset create failed:\n{result.stderr}"
+        )
+        created: dict[str, Any] = json.loads(result.stdout)
+        dataset_id = created.get("id") or created.get("dataset_id")
+        assert dataset_id
+        return dataset_id
+
+    @staticmethod
+    def _latest_version_id(dataset_id: str, space_id: str) -> str:
+        """Return the newest dataset version ID for *dataset_id*."""
+        dataset = ax_json("datasets", "get", dataset_id, "--space", space_id)
+        versions = dataset.get("versions") or []
+        assert versions, f"No versions on dataset: {dataset}"
+        latest = max(versions, key=lambda v: v["created_at"])
+        return latest["id"]
+
+    @staticmethod
+    def _example_ids(dataset_id: str, space_id: str) -> list[str]:
+        """Return all example IDs currently in *dataset_id* (latest version)."""
+        result = ax(
+            "datasets", "export", dataset_id, "--space", space_id, "--stdout"
+        )
+        assert result.returncode == 0, f"Export failed:\n{result.stderr}"
+        examples = json.loads(result.stdout)
+        return [ex["id"] for ex in examples]
+
+    @pytest.mark.integration
+    def test_delete_examples_removes_only_requested_subset(
+        self, test_space_id: str
+    ) -> None:
+        """Deleting a subset removes exactly those examples, leaving the rest.
+
+        Verifies against a fresh server read, not just the command's response.
+        """
+        name = f"ax-cli-del-ex-{uuid.uuid4().hex[:8]}"
+        dataset_id = self._create_dataset(
+            test_space_id,
+            name,
+            [{"question": "q1"}, {"question": "q2"}, {"question": "q3"}],
+        )
+        try:
+            version_id = self._latest_version_id(dataset_id, test_space_id)
+            ids = self._example_ids(dataset_id, test_space_id)
+            assert len(ids) == 3, f"Expected 3 examples, got {ids}"
+
+            to_delete = ids[:2]
+            survivor = ids[2]
+
+            result = ax(
+                "datasets",
+                "delete-examples",
+                dataset_id,
+                "--space",
+                test_space_id,
+                "--version-id",
+                version_id,
+                "--example-ids",
+                json.dumps(to_delete),
+                "--force",
+                "--output",
+                "json",
+            )
+            assert result.returncode == 0, (
+                f"delete-examples failed:\n{result.stderr}"
+            )
+            payload: dict[str, Any] = json.loads(result.stdout)
+            assert payload.get("completed") is True
+            assert sorted(payload.get("deleted_example_ids", [])) == sorted(
+                to_delete
+            )
+
+            # Confirm server-side state: deleted gone, survivor intact.
+            remaining = self._example_ids(dataset_id, test_space_id)
+            assert survivor in remaining
+            for deleted in to_delete:
+                assert deleted not in remaining
+        finally:
+            ax(
+                "datasets",
+                "delete",
+                dataset_id,
+                "--space",
+                test_space_id,
+                "--force",
+            )
+
+    @pytest.mark.integration
+    def test_delete_examples_is_idempotent(self, test_space_id: str) -> None:
+        """Re-deleting already-removed IDs is partial-tolerant (exits 0)."""
+        name = f"ax-cli-del-idem-{uuid.uuid4().hex[:8]}"
+        dataset_id = self._create_dataset(
+            test_space_id, name, [{"question": "q1"}, {"question": "q2"}]
+        )
+        try:
+            version_id = self._latest_version_id(dataset_id, test_space_id)
+            ids = self._example_ids(dataset_id, test_space_id)
+
+            first = ax(
+                "datasets",
+                "delete-examples",
+                dataset_id,
+                "--space",
+                test_space_id,
+                "--version-id",
+                version_id,
+                "--example-ids",
+                json.dumps(ids),
+                "--force",
+                "--output",
+                "json",
+            )
+            assert first.returncode == 0, (
+                f"First delete failed:\n{first.stderr}"
+            )
+
+            # Deleting the same IDs again must not error.
+            second = ax(
+                "datasets",
+                "delete-examples",
+                dataset_id,
+                "--space",
+                test_space_id,
+                "--version-id",
+                version_id,
+                "--example-ids",
+                json.dumps(ids),
+                "--force",
+                "--output",
+                "json",
+            )
+            assert second.returncode == 0, (
+                f"Idempotent re-delete failed:\n{second.stderr}"
+            )
+            assert json.loads(second.stdout).get("completed") is True
+        finally:
+            ax(
+                "datasets",
+                "delete",
+                dataset_id,
+                "--space",
+                test_space_id,
+                "--force",
+            )
+
+    @pytest.mark.integration
+    def test_delete_examples_nonexistent_dataset_fails(
+        self, test_space_id: str
+    ) -> None:
+        """Deleting from a nonexistent dataset exits non-zero."""
+        result = ax(
+            "datasets",
+            "delete-examples",
+            "nonexistent-dataset-id",
+            "--space",
+            test_space_id,
+            "--version-id",
+            "nonexistent-version",
+            "--example-ids",
+            json.dumps([str(uuid.uuid4())]),
+            "--force",
+        )
+        assert result.returncode != 0

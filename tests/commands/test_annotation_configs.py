@@ -501,6 +501,238 @@ class TestCreateAnnotationConfig:
 
 
 # ---------------------------------------------------------------------------
+# ax annotation-configs update
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateAnnotationConfig:
+    """Tests for `ax annotation-configs update`."""
+
+    def test_update_freeform_calls_sdk_correctly(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that updating a freeform config forwards --new-name."""
+        mock_client.annotation_configs.update_freeform.return_value = _freeform(
+            name="X"
+        )
+
+        result = _invoke(
+            [
+                "annotation-configs",
+                "update",
+                "freeform",
+                "ac_free_1",
+                "--new-name",
+                "X",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.annotation_configs.update_freeform.assert_called_once_with(
+            annotation_config="ac_free_1",
+            space=None,
+            name="X",
+        )
+
+    def test_update_continuous_passes_score_range_and_direction(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --min-score, --max-score, and --optimization-direction
+        are forwarded to update_continuous with name left as None.
+        """
+        mock_client.annotation_configs.update_continuous.return_value = (
+            _continuous()
+        )
+
+        result = _invoke(
+            [
+                "annotation-configs",
+                "update",
+                "continuous",
+                "ac_cont_1",
+                "--min-score",
+                "0",
+                "--max-score",
+                "1",
+                "--optimization-direction",
+                "MAXIMIZE",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.annotation_configs.update_continuous.assert_called_once_with(
+            annotation_config="ac_cont_1",
+            space=None,
+            name=None,
+            minimum_score=0.0,
+            maximum_score=1.0,
+            optimization_direction=OptimizationDirection("MAXIMIZE"),
+        )
+
+    def test_update_categorical_passes_replacement_values(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that repeated --value options build a CategoricalAnnotationValue list."""
+        mock_client.annotation_configs.update_categorical.return_value = (
+            _categorical()
+        )
+
+        result = _invoke(
+            [
+                "annotation-configs",
+                "update",
+                "categorical",
+                "ac_cat_1",
+                "--value",
+                "good",
+                "--value",
+                "bad",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.annotation_configs.update_categorical.assert_called_once_with(
+            annotation_config="ac_cat_1",
+            space=None,
+            name=None,
+            values=[
+                CategoricalAnnotationValue(label="good"),
+                CategoricalAnnotationValue(label="bad"),
+            ],
+            optimization_direction=None,
+        )
+
+    def test_update_freeform_with_value_errors_before_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--value is not valid for freeform updates."""
+        result = _invoke(
+            [
+                "annotation-configs",
+                "update",
+                "freeform",
+                "ac_free_1",
+                "--value",
+                "x",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.annotation_configs.update_freeform.assert_not_called()
+
+    def test_update_categorical_with_min_score_errors_before_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--min-score/--max-score are not valid for categorical updates."""
+        result = _invoke(
+            [
+                "annotation-configs",
+                "update",
+                "categorical",
+                "ac_cat_1",
+                "--min-score",
+                "0",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.annotation_configs.update_categorical.assert_not_called()
+
+    def test_update_freeform_with_optimization_direction_errors_before_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--optimization-direction is not valid for freeform updates."""
+        result = _invoke(
+            [
+                "annotation-configs",
+                "update",
+                "freeform",
+                "ac_free_1",
+                "--optimization-direction",
+                "MAXIMIZE",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.annotation_configs.update_freeform.assert_not_called()
+
+    def test_update_continuous_with_value_errors_before_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--value is not valid for continuous updates."""
+        result = _invoke(
+            [
+                "annotation-configs",
+                "update",
+                "continuous",
+                "ac_cont_1",
+                "--value",
+                "x",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.annotation_configs.update_continuous.assert_not_called()
+
+    def test_update_freeform_with_min_score_errors_before_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--min-score/--max-score are not valid for freeform updates."""
+        result = _invoke(
+            [
+                "annotation-configs",
+                "update",
+                "freeform",
+                "ac_free_1",
+                "--min-score",
+                "0",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.annotation_configs.update_freeform.assert_not_called()
+
+    def test_update_sdk_error_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that an SDK error during update causes a non-zero exit."""
+        mock_client.annotation_configs.update_freeform.side_effect = (
+            RuntimeError("Not found")
+        )
+
+        result = _invoke(
+            [
+                "annotation-configs",
+                "update",
+                "freeform",
+                "ac_999",
+                "--new-name",
+                "X",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+
+
+# ---------------------------------------------------------------------------
 # ax annotation-configs delete
 # ---------------------------------------------------------------------------
 

@@ -323,6 +323,204 @@ def create_annotation_config(
         )
 
 
+# ---------------------------------------------------------------------------
+# ax annotation-configs update <type>
+# ---------------------------------------------------------------------------
+
+update_app = typer.Typer(
+    name="update",
+    help="Update an annotation config (choose the subcommand for its type)",
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["--help", "-h"]},
+)
+app.add_typer(update_app)
+
+# Shared option types for the update subcommands.
+NameOrIdArg = Annotated[
+    str, typer.Argument(help="Annotation config name or ID")
+]
+SpaceOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--space",
+        "-s",
+        help="Space name or ID (required if using a name instead of an ID)",
+    ),
+]
+NewNameOpt = Annotated[
+    str | None,
+    typer.Option("--new-name", help="New name for the annotation config"),
+]
+OutputOpt = Annotated[
+    str,
+    typer.Option(
+        "--output",
+        "-o",
+        help="Output format (table, json, csv, parquet) or file path",
+    ),
+]
+VerboseOpt = Annotated[
+    bool,
+    typer.Option("--verbose", "-v", help="Enable verbose logs"),
+]
+
+
+def _emit_updated(
+    updated_config: (
+        ContinuousAnnotationConfig
+        | CategoricalAnnotationConfig
+        | FreeformAnnotationConfig
+    ),
+    output: str,
+) -> None:
+    """Render an updated annotation config using the configured output format."""
+    _, config = make_client()
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+    output_data(
+        updated_config,
+        format_type=output_format,
+        output_file=output_file,
+    )
+
+
+@update_app.command("continuous")
+@handle_errors
+def update_continuous_annotation_config(
+    name_or_id: NameOrIdArg,
+    space: SpaceOpt = None,
+    new_name: NewNameOpt = None,
+    min_score: Annotated[
+        float | None,
+        typer.Option("--min-score", help="New minimum score"),
+    ] = None,
+    max_score: Annotated[
+        float | None,
+        typer.Option("--max-score", help="New maximum score"),
+    ] = None,
+    optimization_direction: Annotated[
+        OptimizationDirection | None,
+        typer.Option(
+            "--optimization-direction",
+            help="New optimization direction (MAXIMIZE, MINIMIZE, or NONE)",
+        ),
+    ] = None,
+    output: OutputOpt = "",
+    verbose: VerboseOpt = False,
+) -> None:
+    """Update a CONTINUOUS annotation config.
+
+    Only the fields you pass are changed; omitted fields are left unchanged.
+    """
+    setup_logging(verbose)
+    client, _ = make_client()
+
+    try:
+        with spinner(
+            "Updating annotation config",
+            success_msg="Annotation config updated successfully",
+        ):
+            updated_config = client.annotation_configs.update_continuous(
+                annotation_config=name_or_id,
+                space=space,
+                name=new_name,
+                minimum_score=min_score,
+                maximum_score=max_score,
+                optimization_direction=optimization_direction,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to update annotation config: {e}") from e
+    else:
+        _emit_updated(updated_config, output)
+
+
+@update_app.command("categorical")
+@handle_errors
+def update_categorical_annotation_config(
+    name_or_id: NameOrIdArg,
+    space: SpaceOpt = None,
+    new_name: NewNameOpt = None,
+    values: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--value",
+            help="Replacement label value (repeat for multiple)",
+        ),
+    ] = None,
+    optimization_direction: Annotated[
+        OptimizationDirection | None,
+        typer.Option(
+            "--optimization-direction",
+            help="New optimization direction (MAXIMIZE, MINIMIZE, or NONE)",
+        ),
+    ] = None,
+    output: OutputOpt = "",
+    verbose: VerboseOpt = False,
+) -> None:
+    """Update a CATEGORICAL annotation config.
+
+    Only the fields you pass are changed; omitted fields are left unchanged.
+    """
+    setup_logging(verbose)
+    client, _ = make_client()
+
+    categorical_values: list[CategoricalAnnotationValue] | None = None
+    if values:
+        categorical_values = [
+            CategoricalAnnotationValue(label=v) for v in values
+        ]
+
+    try:
+        with spinner(
+            "Updating annotation config",
+            success_msg="Annotation config updated successfully",
+        ):
+            updated_config = client.annotation_configs.update_categorical(
+                annotation_config=name_or_id,
+                space=space,
+                name=new_name,
+                values=categorical_values,
+                optimization_direction=optimization_direction,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to update annotation config: {e}") from e
+    else:
+        _emit_updated(updated_config, output)
+
+
+@update_app.command("freeform")
+@handle_errors
+def update_freeform_annotation_config(
+    name_or_id: NameOrIdArg,
+    space: SpaceOpt = None,
+    new_name: NewNameOpt = None,
+    output: OutputOpt = "",
+    verbose: VerboseOpt = False,
+) -> None:
+    """Update a FREEFORM annotation config.
+
+    Only the fields you pass are changed; omitted fields are left unchanged.
+    """
+    setup_logging(verbose)
+    client, _ = make_client()
+
+    try:
+        with spinner(
+            "Updating annotation config",
+            success_msg="Annotation config updated successfully",
+        ):
+            updated_config = client.annotation_configs.update_freeform(
+                annotation_config=name_or_id,
+                space=space,
+                name=new_name,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to update annotation config: {e}") from e
+    else:
+        _emit_updated(updated_config, output)
+
+
 @app.command("delete")
 @handle_errors
 def delete_annotation_config(

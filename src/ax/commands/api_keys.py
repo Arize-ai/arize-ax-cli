@@ -3,12 +3,19 @@
 from typing import Annotated
 
 import typer
+from arize._generated.api_client.models.organization_role import (
+    OrganizationRole,
+)
+from arize._generated.api_client.models.user_role import UserRole
+from arize._generated.api_client.models.user_space_role import UserSpaceRole
 from arize.api_keys.types import (
-    ApiKeyAccountRole,
-    ApiKeyOrganizationRole,
-    ApiKeySpaceRole,
     ApiKeyStatus,
     ApiKeyType,
+    OrganizationRoleAssignment,
+    OrgBinding,
+    SpaceBinding,
+    SpaceRoleAssignment,
+    UserRoleAssignment,
 )
 
 from ax.core.client_factory import make_client
@@ -24,6 +31,7 @@ from ax.utils.console import (
 )
 from ax.utils.datetime_parse import parse_optional_iso8601
 from ax.utils.file_io import parse_output_option
+from ax.utils.json_source import load_json
 
 # Create api-keys subcommand app
 app = typer.Typer(
@@ -133,8 +141,8 @@ def create_api_key(
         typer.Option(
             "--expires-at",
             help=(
-                "Expiration datetime in ISO 8601 format "
-                "(e.g. '2025-12-31T23:59:59'). If omitted, key never expires."
+                "Expiration datetime in ISO 8601 format; UTC assumed if no "
+                "offset (e.g. '2025-12-31T23:59:59'). If omitted, key never expires."
             ),
         ),
     ] = None,
@@ -191,6 +199,164 @@ def create_api_key(
         )
 
 
+_SPACE_ROLES = ", ".join(r.value for r in UserSpaceRole)
+_ORG_ROLES = ", ".join(r.value for r in OrganizationRole)
+
+
+def _build_space_role(
+    role_raw: str | dict | None,
+) -> SpaceRoleAssignment | None:
+    """Build a SpaceRoleAssignment from a predefined role name or custom role dict."""
+    if role_raw is None:
+        return None
+    if isinstance(role_raw, str):
+        try:
+            UserSpaceRole(role_raw)
+        except ValueError as e:
+            raise typer.BadParameter(
+                f"Invalid space role {role_raw!r}. Valid values: {_SPACE_ROLES}"
+            ) from e
+        return SpaceRoleAssignment.from_dict(
+            {"type": "PREDEFINED", "name": role_raw}
+        )
+    if isinstance(role_raw, dict):
+        role_type = role_raw.get("type", "").upper()
+        if role_type == "CUSTOM":
+            role_id = role_raw.get("id")
+            if not isinstance(role_id, str) or not role_id:
+                raise typer.BadParameter(
+                    "Custom space role requires a non-empty 'id' field."
+                )
+            return SpaceRoleAssignment.from_dict(
+                {"type": "CUSTOM", "id": role_id}
+            )
+        raise typer.BadParameter(
+            f"Unrecognized space role type {role_type!r}. "
+            f"Use a predefined role name ({_SPACE_ROLES}) or "
+            '{"type": "CUSTOM", "id": "<role-id>"}.'
+        )
+    raise typer.BadParameter(
+        "Space role must be a predefined role name string or a custom role object."
+    )
+
+
+def _build_org_role(
+    role_raw: str | dict | None,
+) -> OrganizationRoleAssignment | None:
+    """Build an OrganizationRoleAssignment from a predefined role name or custom role dict."""
+    if role_raw is None:
+        return None
+    if isinstance(role_raw, str):
+        try:
+            OrganizationRole(role_raw)
+        except ValueError as e:
+            raise typer.BadParameter(
+                f"Invalid org role {role_raw!r}. Valid values: {_ORG_ROLES}"
+            ) from e
+        return OrganizationRoleAssignment.from_dict(
+            {"type": "PREDEFINED", "name": role_raw}
+        )
+    if isinstance(role_raw, dict):
+        role_type = role_raw.get("type", "").upper()
+        if role_type == "CUSTOM":
+            role_id = role_raw.get("id")
+            if not isinstance(role_id, str) or not role_id:
+                raise typer.BadParameter(
+                    "Custom org role requires a non-empty 'id' field."
+                )
+            return OrganizationRoleAssignment.from_dict(
+                {"type": "CUSTOM", "id": role_id}
+            )
+        raise typer.BadParameter(
+            f"Unrecognized org role type {role_type!r}. "
+            f"Use a predefined role name ({_ORG_ROLES}) or "
+            '{"type": "CUSTOM", "id": "<role-id>"}.'
+        )
+    raise typer.BadParameter(
+        "Org role must be a predefined role name string or a custom role object."
+    )
+
+
+def _build_account_role(name: str | None) -> UserRoleAssignment | None:
+    """Wrap a predefined account-role name into a UserRoleAssignment."""
+    if name is None:
+        return None
+    return UserRoleAssignment.from_dict({"type": "PREDEFINED", "name": name})
+
+
+def _parse_assignments(assignments_raw: str) -> list[OrgBinding]:
+    """Parse and validate the --assignments JSON into a list of OrgBinding.
+
+    Accepts an inline JSON string or a filesystem path to a ``.json`` file.
+
+    Args:
+        assignments_raw: Raw value of the --assignments option.
+
+    Returns:
+        List of :class:`OrgBinding` objects ready to pass to the SDK.
+
+    Raises:
+        typer.BadParameter: If the input is not valid JSON, not a list, or any
+            entry is structurally invalid.
+    """
+    parsed = load_json(assignments_raw)
+
+    if not isinstance(parsed, list) or len(parsed) == 0:
+        raise typer.BadParameter(
+            "--assignments must be a non-empty JSON array of org binding objects."
+        )
+
+    org_bindings: list[OrgBinding] = []
+    for i, entry in enumerate(parsed):
+        if not isinstance(entry, dict):
+            raise typer.BadParameter(
+                f"--assignments entry {i}: expected an object, "
+                f"got {type(entry).__name__}."
+            )
+        org_id = entry.get("org_id")
+        if not isinstance(org_id, str) or not org_id:
+            raise typer.BadParameter(
+                f"--assignments entry {i}: 'org_id' must be a non-empty string."
+            )
+        spaces_raw = entry.get("spaces")
+        if not spaces_raw or not isinstance(spaces_raw, list):
+            raise typer.BadParameter(
+                f"--assignments entry {i} (org_id={org_id!r}): "
+                "'spaces' must be a non-empty array."
+            )
+
+        space_bindings: list[SpaceBinding] = []
+        for j, sb in enumerate(spaces_raw):
+            # SpaceBinding.space is required by the SDK
+            if not isinstance(sb, dict) or "space" not in sb:
+                raise typer.BadParameter(
+                    f"--assignments entry {i}.spaces[{j}]: "
+                    "each space binding must be an object with a 'space' field."
+                )
+            space_name = sb["space"]
+            if not isinstance(space_name, str) or not space_name:
+                raise typer.BadParameter(
+                    f"--assignments entry {i}.spaces[{j}]: "
+                    "'space' must be a non-empty string."
+                )
+            space_bindings.append(
+                SpaceBinding(
+                    space=space_name,
+                    role=_build_space_role(sb.get("role")),
+                )
+            )
+
+        org_bindings.append(
+            OrgBinding(
+                org_id=org_id,
+                spaces=space_bindings,
+                role=_build_org_role(entry.get("role")),
+            )
+        )
+
+    return org_bindings
+
+
 @app.command("create-service-key")
 @handle_errors
 def create_service_api_key(
@@ -202,12 +368,22 @@ def create_service_api_key(
             help="Name for the API key (max 256 characters)",
         ),
     ],
-    space: Annotated[
+    assignments: Annotated[
         str,
         typer.Option(
-            "--space",
-            "-s",
-            help="Space name or ID the service key is scoped to",
+            "--assignments",
+            "-a",
+            help=(
+                "JSON array describing the org/space assignments for the service "
+                "key's bot user, or a path to a .json file. "
+                "Each entry: "
+                '{"org_id": "<id>", "role": "<org-role>", '
+                '"spaces": [{"space": "<name-or-id>", "role": "<space-role>"}]}. '
+                "'role' is optional at both levels; omit to use server defaults "
+                "(space=MEMBER, org=READ_ONLY). Custom roles use "
+                '{"type": "CUSTOM", "id": "<role-id>"}. '
+                "Obtain org IDs with: ax organizations list --output json"
+            ),
         ),
     ],
     description: Annotated[
@@ -222,30 +398,19 @@ def create_service_api_key(
         typer.Option(
             "--expires-at",
             help=(
-                "Expiration datetime in ISO 8601 format "
-                "(e.g. '2025-12-31T23:59:59'). If omitted, key never expires."
+                "Expiration datetime in ISO 8601 format; UTC assumed if no "
+                "offset (e.g. '2025-12-31T23:59:59'). If omitted, key never expires."
             ),
         ),
     ] = None,
-    space_role: Annotated[
-        ApiKeySpaceRole | None,
-        typer.Option(
-            "--space-role",
-            help="Space role for the bot user: ADMIN, MEMBER, READ_ONLY",
-        ),
-    ] = None,
-    org_role: Annotated[
-        ApiKeyOrganizationRole | None,
-        typer.Option(
-            "--org-role",
-            help="Organization role for the bot user: ADMIN, MEMBER, READ_ONLY",
-        ),
-    ] = None,
     account_role: Annotated[
-        ApiKeyAccountRole | None,
+        UserRole | None,
         typer.Option(
             "--account-role",
-            help="Account role for the bot user: ADMIN or MEMBER",
+            help=(
+                "Account-level role for the bot user: ADMIN, MEMBER, or "
+                "ANNOTATOR. Defaults to MEMBER when omitted."
+            ),
         ),
     ] = None,
     output: Annotated[
@@ -265,16 +430,28 @@ def create_service_api_key(
         ),
     ] = False,
 ) -> None:
-    """Create a new service API key scoped to a space.
+    r"""Create a new service API key with org and space assignments.
 
-    Service keys are backed by a dedicated bot user with configurable roles.
-    When no roles are specified the server applies its defaults
-    (space_role=MEMBER, org_role=READ_ONLY, account_role=MEMBER).
+    Service keys are backed by a dedicated bot user scoped to one or more
+    organizations, each containing one or more spaces. Pass ``--assignments``
+    as an inline JSON array or a path to a JSON file.
+
+    Example (single org, two spaces)::
+
+        ax api-keys create-service-key \
+            --name "CI bot" \
+            --assignments '[{"org_id":"T3Jn...","role":"READ_ONLY",
+                             "spaces":[{"space":"prod","role":"MEMBER"},
+                                       {"space":"staging"}]}]'
+
+    When no role is specified for a space or org the server applies its
+    defaults (space=MEMBER, org=READ_ONLY, account=MEMBER).
 
     The raw key value is printed once after creation — save it securely,
     it will not be shown again.
     """
     expires_at_dt = parse_optional_iso8601(expires_at)
+    org_bindings = _parse_assignments(assignments)
 
     setup_logging(verbose)
     client, config = make_client()
@@ -290,12 +467,12 @@ def create_service_api_key(
         ):
             key_created = client.api_keys.create_service_key(
                 name=name,
-                space=space,
+                orgs=org_bindings,
                 description=description,
                 expires_at=expires_at_dt,
-                space_role=space_role,
-                org_role=org_role,
-                account_role=account_role,
+                account_role=_build_account_role(
+                    account_role.value if account_role else None
+                ),
             )
     except Exception as e:
         raise APIError(f"Failed to create service API key: {e}") from e
@@ -370,9 +547,9 @@ def refresh_api_key(
         typer.Option(
             "--expires-at",
             help=(
-                "New expiration datetime in ISO 8601 format "
-                "(e.g. '2025-12-31T23:59:59'). If omitted, replacement key "
-                "never expires."
+                "New expiration datetime in ISO 8601 format; UTC assumed if no "
+                "offset (e.g. '2025-12-31T23:59:59'). If omitted, replacement "
+                "key never expires."
             ),
         ),
     ] = None,

@@ -147,14 +147,14 @@ def export_spans(
         str | None,
         typer.Option(
             "--start-time",
-            help="Override start of time window (ISO 8601)",
+            help="Override start of time window (ISO 8601; UTC assumed if no offset)",
         ),
     ] = None,
     end_time: Annotated[
         str | None,
         typer.Option(
             "--end-time",
-            help="Override end of time window (ISO 8601)",
+            help="Override end of time window (ISO 8601; UTC assumed if no offset)",
         ),
     ] = None,
     output_dir: Annotated[
@@ -314,14 +314,15 @@ def annotate_spans(
         str | None,
         typer.Option(
             "--start-time",
-            help="Start of span lookup window (ISO 8601). If omitted, the server default applies.",
+            help="Start of span lookup window (ISO 8601; UTC assumed if no "
+            "offset). If omitted, the server default applies.",
         ),
     ] = None,
     end_time: Annotated[
         str | None,
         typer.Option(
             "--end-time",
-            help="End of span lookup window (ISO 8601). Defaults to now.",
+            help="End of span lookup window (ISO 8601; UTC assumed if no offset). Defaults to now.",
         ),
     ] = None,
     days: Annotated[

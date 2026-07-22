@@ -1,10 +1,17 @@
 """Tests for api-keys CLI commands."""
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from arize.api_keys.types import ApiKeySpaceRole, ApiKeyStatus, ApiKeyType
+from arize.api_keys.types import (
+    ApiKeyStatus,
+    ApiKeyType,
+    OrgBinding,
+    SpaceBinding,
+)
 from typer.testing import CliRunner, Result
 
 from ax.cli import app
@@ -281,13 +288,35 @@ class TestCreateApiKey:
 # ---------------------------------------------------------------------------
 
 
+_ASSIGNMENTS_ONE = json.dumps(
+    [{"org_id": "O1", "spaces": [{"space": "my-space", "role": "MEMBER"}]}]
+)
+
+_ASSIGNMENTS_MULTI = json.dumps(
+    [
+        {
+            "org_id": "O1",
+            "role": "READ_ONLY",
+            "spaces": [
+                {"space": "prod", "role": "MEMBER"},
+                {"space": "staging"},
+            ],
+        },
+        {
+            "org_id": "O2",
+            "spaces": [{"space": "sandbox", "role": "ADMIN"}],
+        },
+    ]
+)
+
+
 class TestCreateServiceApiKey:
     """Tests for `ax api-keys create-service-key`."""
 
     def test_create_service_key_calls_sdk_correctly(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Happy path: name, space, and optional role are forwarded to the SDK."""
+        """Happy path: name and assignments build the expected OrgBinding list."""
         mock_client.api_keys.create_service_key.return_value = _make_api_key(
             name="Svc Key"
         )
@@ -298,10 +327,8 @@ class TestCreateServiceApiKey:
                 "create-service-key",
                 "--name",
                 "Svc Key",
-                "--space",
-                "my-space",
-                "--space-role",
-                "MEMBER",
+                "--assignments",
+                _ASSIGNMENTS_ONE,
                 "--output",
                 "json",
             ],
@@ -312,19 +339,160 @@ class TestCreateServiceApiKey:
         assert result.exit_code == 0, result.output
         call_kwargs = mock_client.api_keys.create_service_key.call_args.kwargs
         assert call_kwargs["name"] == "Svc Key"
-        assert call_kwargs["space"] == "my-space"
-        assert call_kwargs["space_role"] == ApiKeySpaceRole.MEMBER
+        orgs: list[OrgBinding] = call_kwargs["orgs"]
+        assert len(orgs) == 1
+        assert orgs[0].org_id == "O1"
+        assert len(orgs[0].spaces) == 1
+        space: SpaceBinding = orgs[0].spaces[0]
+        assert space.space == "my-space"
+        assert space.role is not None
+        assert space.role.actual_instance.name == "MEMBER"
 
-    def test_create_service_key_missing_space_exits_nonzero(
+    def test_create_service_key_multi_org_multi_space(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """--space is required; omitting it must fail."""
+        """Multi-org/multi-space assignments build the correct nested structure."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key()
+
         result = _invoke(
             [
                 "api-keys",
                 "create-service-key",
                 "--name",
-                "Svc Key",
+                "Multi Key",
+                "--assignments",
+                _ASSIGNMENTS_MULTI,
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        orgs: list[OrgBinding] = (
+            mock_client.api_keys.create_service_key.call_args.kwargs["orgs"]
+        )
+        assert len(orgs) == 2
+        # First org: READ_ONLY at org level, two spaces
+        assert orgs[0].org_id == "O1"
+        assert orgs[0].role is not None
+        assert orgs[0].role.actual_instance.name == "READ_ONLY"
+        assert len(orgs[0].spaces) == 2
+        assert orgs[0].spaces[0].space == "prod"
+        assert orgs[0].spaces[1].space == "staging"
+        assert orgs[0].spaces[1].role is None  # no role → None
+        # Second org: no org role, one space
+        assert orgs[1].org_id == "O2"
+        assert orgs[1].role is None
+
+    def test_create_service_key_account_role_forwarded(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--account-role is wrapped into a UserRoleAssignment."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key()
+
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                _ASSIGNMENTS_ONE,
+                "--account-role",
+                "MEMBER",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        account_role = mock_client.api_keys.create_service_key.call_args.kwargs[
+            "account_role"
+        ]
+        assert account_role is not None
+        assert account_role.actual_instance.name == "MEMBER"
+
+    def test_create_service_key_no_account_role_passes_none(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Omitting --account-role passes account_role=None to the SDK."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key()
+
+        _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                _ASSIGNMENTS_ONE,
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert (
+            mock_client.api_keys.create_service_key.call_args.kwargs[
+                "account_role"
+            ]
+            is None
+        )
+
+    def test_create_service_key_assignments_from_file(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """--assignments path/to/file.json reads the JSON from disk."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key()
+        assignments_file = tmp_path / "assignments.json"
+        assignments_file.write_text(_ASSIGNMENTS_ONE)
+
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "File Key",
+                "--assignments",
+                str(assignments_file),
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        orgs = mock_client.api_keys.create_service_key.call_args.kwargs["orgs"]
+        assert orgs[0].org_id == "O1"
+
+    def test_create_service_key_missing_assignments_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--assignments is required; omitting it must fail."""
+        result = _invoke(
+            ["api-keys", "create-service-key", "--name", "Svc Key"],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_invalid_json_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Malformed JSON in --assignments must produce a non-zero exit."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                "{not json}",
             ],
             mock_config,
             mock_client,
@@ -332,19 +500,76 @@ class TestCreateServiceApiKey:
         assert result.exit_code != 0
         mock_client.api_keys.create_service_key.assert_not_called()
 
-    def test_create_service_key_invalid_space_role_exits_nonzero(
+    def test_create_service_key_empty_list_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Invalid --space-role value fails Typer validation."""
+        """An empty assignments array must produce a non-zero exit."""
         result = _invoke(
             [
                 "api-keys",
                 "create-service-key",
                 "--name",
-                "Svc Key",
-                "--space",
-                "my-space",
-                "--space-role",
+                "Key",
+                "--assignments",
+                "[]",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_missing_org_id_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Binding entry without org_id must produce a non-zero exit."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                json.dumps([{"spaces": [{"space": "prod"}]}]),
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_empty_spaces_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Binding entry with empty spaces array must produce a non-zero exit."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                json.dumps([{"org_id": "O1", "spaces": []}]),
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_invalid_account_role_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Invalid --account-role value fails Typer validation."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                _ASSIGNMENTS_ONE,
+                "--account-role",
                 "superadmin",
             ],
             mock_config,
@@ -365,8 +590,8 @@ class TestCreateServiceApiKey:
                 "create-service-key",
                 "--name",
                 "My Key",
-                "--space",
-                "my-space",
+                "--assignments",
+                _ASSIGNMENTS_ONE,
                 "--output",
                 "json",
             ],
@@ -390,13 +615,251 @@ class TestCreateServiceApiKey:
                 "create-service-key",
                 "--name",
                 "Svc Key",
-                "--space",
-                "my-space",
+                "--assignments",
+                _ASSIGNMENTS_ONE,
             ],
             mock_config,
             mock_client,
         )
         assert result.exit_code != 0
+
+    def test_create_service_key_nonexistent_file_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """A nonexistent file path must produce a clean non-zero exit."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                "/tmp/does-not-exist-ax-test.json",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_spaces_not_a_list_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Binding entry where 'spaces' is not a list must produce a non-zero exit."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                json.dumps([{"org_id": "O1", "spaces": "not-a-list"}]),
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_forwards_description_and_expires_at(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--description and --expires-at are forwarded to the SDK."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key()
+
+        _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                _ASSIGNMENTS_ONE,
+                "--description",
+                "My service key",
+                "--expires-at",
+                "2030-01-01T00:00:00",
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        kwargs = mock_client.api_keys.create_service_key.call_args.kwargs
+        assert kwargs["description"] == "My service key"
+        assert kwargs["expires_at"] == datetime(
+            2030, 1, 1, 0, 0, 0, tzinfo=timezone.utc
+        )
+
+    def test_create_service_key_invalid_space_role_in_assignments_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """An invalid space role name in --assignments must produce a clean error."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                json.dumps(
+                    [
+                        {
+                            "org_id": "O1",
+                            "spaces": [{"space": "prod", "role": "SUPERADMIN"}],
+                        }
+                    ]
+                ),
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_invalid_org_role_in_assignments_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """An invalid org role name in --assignments must produce a clean error."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                json.dumps(
+                    [
+                        {
+                            "org_id": "O1",
+                            "role": "SUPERADMIN",
+                            "spaces": [{"space": "prod"}],
+                        }
+                    ]
+                ),
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_non_array_assignments_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """A non-array JSON value in --assignments must produce a non-zero exit."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                '"not a list"',
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_space_binding_missing_space_field_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Space binding without 'space' field must produce a non-zero exit."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                json.dumps([{"org_id": "O1", "spaces": [{"role": "MEMBER"}]}]),
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
+
+    def test_create_service_key_custom_space_role(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Custom space/org roles specified as objects are forwarded correctly."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key()
+
+        assignments = json.dumps(
+            [
+                {
+                    "org_id": "O1",
+                    "role": {"type": "CUSTOM", "id": "custom-org-role-id"},
+                    "spaces": [
+                        {
+                            "space": "prod",
+                            "role": {
+                                "type": "CUSTOM",
+                                "id": "custom-space-role-id",
+                            },
+                        }
+                    ],
+                }
+            ]
+        )
+
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Custom Role Key",
+                "--assignments",
+                assignments,
+                "--output",
+                "json",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        orgs: list[OrgBinding] = (
+            mock_client.api_keys.create_service_key.call_args.kwargs["orgs"]
+        )
+        assert orgs[0].role is not None
+        assert orgs[0].role.actual_instance.id == "custom-org-role-id"
+        assert orgs[0].spaces[0].role is not None
+        assert (
+            orgs[0].spaces[0].role.actual_instance.id == "custom-space-role-id"
+        )
+
+    def test_create_service_key_invalid_custom_role_missing_id_exits_nonzero(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Custom role without 'id' must produce a non-zero exit."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Key",
+                "--assignments",
+                json.dumps(
+                    [
+                        {
+                            "org_id": "O1",
+                            "spaces": [
+                                {"space": "prod", "role": {"type": "CUSTOM"}}
+                            ],
+                        }
+                    ]
+                ),
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.api_keys.create_service_key.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +974,7 @@ class TestRefreshApiKey:
     def test_refresh_passes_expires_at(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that --expires-at is parsed and forwarded."""
+        """Test that a naive --expires-at is forwarded as tz-aware UTC."""
         mock_client.api_keys.refresh.return_value = _make_api_key()
 
         _invoke(
@@ -527,7 +990,9 @@ class TestRefreshApiKey:
         )
 
         call_kwargs = mock_client.api_keys.refresh.call_args.kwargs
-        assert call_kwargs["expires_at"] == datetime(2025, 12, 31, 0, 0, 0)
+        assert call_kwargs["expires_at"] == datetime(
+            2025, 12, 31, 0, 0, 0, tzinfo=timezone.utc
+        )
 
     def test_refresh_invalid_expires_at_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock

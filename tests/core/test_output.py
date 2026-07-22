@@ -524,12 +524,14 @@ class TestOverflowHint:
         capsys: pytest.CaptureFixture,
     ) -> None:
         """Narrow interactive terminal -> hint printed to stderr."""
+        # rich honors an explicit width only when height is also set; otherwise
+        # a dumb terminal (TERM=dumb/unknown) clamps to 80x25 and ignores width.
         result = _render_table(
             monkeypatch,
             capsys,
             _WIDE_COLS,
             _WIDE_ROW,
-            console=Console(force_terminal=True, width=40),
+            console=Console(force_terminal=True, width=40, height=25),
         )
         assert _HINT in result.err
 
@@ -544,7 +546,7 @@ class TestOverflowHint:
             capsys,
             _WIDE_COLS,
             _WIDE_ROW,
-            console=Console(force_terminal=True, width=10_000),
+            console=Console(force_terminal=True, width=10_000, height=25),
         )
         assert _HINT not in result.err
 

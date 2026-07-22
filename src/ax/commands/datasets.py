@@ -504,6 +504,133 @@ def append_examples(
         )
 
 
+@app.command("update-examples")
+@handle_errors
+def update_examples(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Dataset name or ID to update examples in"),
+    ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
+    json_data: Annotated[
+        str | None,
+        typer.Option(
+            "--json",
+            help='JSON array of examples, e.g. \'[{"id": "...", "answer": "..."}]\'',
+        ),
+    ] = None,
+    file: Annotated[
+        str | None,
+        typer.Option(
+            "--file",
+            "-f",
+            help="Data file (CSV, JSON, JSONL, or Parquet), or '-' for stdin",
+        ),
+    ] = None,
+    version_id: Annotated[
+        str | None,
+        typer.Option(
+            "--version-id",
+            help="Dataset version ID to update (default: latest version)",
+        ),
+    ] = None,
+    new_version: Annotated[
+        str | None,
+        typer.Option(
+            "--new-version",
+            help="Name for a new dataset version to capture the update "
+            "(default: update the selected version in place)",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Update existing examples in a dataset, matched by ID.
+
+    Provide examples via --json (inline JSON array) or --file (CSV/JSON/JSONL/Parquet).
+    Exactly one input source is required. Each example must include an ``id``
+    identifying the row to update; the update is a patch, so fields you omit are
+    left unchanged rather than removed.
+
+    By default the selected version is updated in place. Pass --new-version to
+    capture the update as a new dataset version instead.
+    """
+    setup_logging(verbose)
+
+    if json_data and file:
+        raise typer.BadParameter("Provide either --json or --file, not both.")
+    if not json_data and not file:
+        raise typer.BadParameter("Provide examples via --json or --file.")
+
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    if json_data:
+        try:
+            parsed = json.loads(json_data)
+        except json.JSONDecodeError as e:
+            raise typer.BadParameter(f"Invalid JSON: {e}") from e
+
+        if not isinstance(parsed, list):
+            raise typer.BadParameter(
+                f"Expected a JSON array, got {type(parsed).__name__}. "
+                "Wrap examples in brackets: [{...}, ...]"
+            )
+
+        _validate_examples_structure(parsed)
+        examples: list[dict[str, object]] = parsed
+    else:
+        df = read_data_file(file)  # type: ignore[arg-type]
+        records: list[dict[str, object]] = df.to_dict(orient="records")  # type: ignore[assignment]
+        _validate_examples_structure(records)
+        examples = records
+
+    try:
+        with spinner(
+            "Updating examples",
+            success_msg=f"Updated {len(examples)} example(s)",
+        ):
+            dataset = client.datasets.update_examples(
+                dataset=name_or_id,
+                space=space,
+                dataset_version_id=version_id or "",
+                examples=examples,
+                new_version=new_version,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to update examples: {e}") from e
+    else:
+        output_data(
+            dataset,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
 @app.command("update")
 @handle_errors
 def update_dataset(
@@ -630,6 +757,130 @@ def delete_dataset(
         raise APIError(f"Failed to delete dataset: {e}") from e
 
 
+@app.command("delete-examples")
+@handle_errors
+def delete_examples(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Dataset name or ID"),
+    ],
+    version_id: Annotated[
+        str,
+        typer.Option(
+            "--version-id",
+            help="Dataset version ID to delete examples from",
+            prompt=True,
+        ),
+    ],
+    example_ids: Annotated[
+        str,
+        typer.Option(
+            "--example-ids",
+            help="JSON array of example IDs (UUIDs), e.g. "
+            '\'["550e8400-e29b-41d4-a716-446655440000", '
+            '"6ba7b810-9dad-11d1-80b4-00c04fd430c8"]\'',
+        ),
+    ],
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID (required if using dataset name instead of ID)",
+        ),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Skip confirmation prompt",
+        ),
+    ] = False,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Delete a batch of examples from a dataset version.
+
+    Provide the example IDs via --example-ids as an inline JSON array of
+    ID strings (UUIDs), e.g. '["550e8400-e29b-41d4-a716-446655440000"]'.
+
+    Deletion is idempotent and partial-tolerant: examples that no longer
+    exist are silently skipped rather than causing a failure. Up to 1000
+    examples may be deleted per request. A specific --version-id is
+    required since deletions apply to a single dataset version.
+    """
+    setup_logging(verbose)
+
+    if not example_ids:
+        raise typer.BadParameter("Provide example IDs via --example-ids.")
+    try:
+        parsed = json.loads(example_ids)
+    except json.JSONDecodeError as e:
+        raise typer.BadParameter(f"Invalid JSON: {e}") from e
+    if not isinstance(parsed, list):
+        raise typer.BadParameter(
+            f"Expected a JSON array of ID strings, got "
+            f"{type(parsed).__name__}. Example: "
+            "'[\"550e8400-e29b-41d4-a716-446655440000\"]'"
+        )
+    ids = [s for s in (str(item).strip() for item in parsed) if s]
+    if not ids:
+        raise typer.BadParameter("No example IDs found in the provided input.")
+
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    if not force:
+        warning(
+            f"This will permanently delete {len(ids)} example(s) "
+            "from the dataset"
+        )
+
+        if not confirm("Are you sure?", default=False):
+            info("Examples not deleted")
+            raise typer.Exit()
+
+    try:
+        with spinner(
+            "Deleting examples",
+            success_msg=f"Requested deletion of {len(ids)} example(s)",
+        ):
+            response = client.datasets.delete_examples(
+                dataset=name_or_id,
+                space=space,
+                dataset_version_id=version_id,
+                examples=ids,
+            )
+    except AxError:
+        raise
+    except Exception as e:
+        raise APIError(f"Failed to delete examples: {e}") from e
+    else:
+        output_data(
+            response,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
 @app.command("annotate-examples")
 @handle_errors
 def annotate_examples(
@@ -676,6 +927,10 @@ def annotate_examples(
     setup_logging(verbose)
 
     annotations = parse_annotations(file)
+    if len(annotations) > 1000:
+        raise typer.BadParameter(
+            "A maximum of 1000 examples can be annotated per request."
+        )
 
     client, _ = make_client()
 

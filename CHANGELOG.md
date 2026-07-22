@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.27.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.26.0...arize-ax-cli/v0.27.0) (2026-07-22)
+
+
+### 🎁 New Features
+
+* **annotation-configs:** add update command ([#79603](https://github.com/Arize-ai/arize/issues/79603)) ([28606ec](https://github.com/Arize-ai/arize/commit/28606ecb697c10bc85bff878ef1cbb6167d69fc2))
+* **service-keys:** update create-service-key for new SDK orgs/spaces bindings API ([#80155](https://github.com/Arize-ai/arize/issues/80155)) ([4c1e5dc](https://github.com/Arize-ai/arize/commit/4c1e5dc24784c62f0430719a60d58066be2d5388))
+* **datasets:** add delete-examples command ([#79602](https://github.com/Arize-ai/arize/issues/79602)) ([c30e294](https://github.com/Arize-ai/arize/commit/c30e2944d43d7aa929f6de42638b86218fe9ac16))
+* **datasets:** add update examples function ([#78671](https://github.com/Arize-ai/arize/issues/78671)) ([57e993f](https://github.com/Arize-ai/arize/commit/57e993f007c0d452acc43515cfdd32fc28ba7ecc))
+* **resource-restrictions:** add list command ([#79601](https://github.com/Arize-ai/arize/issues/79601)) ([fc71bc3](https://github.com/Arize-ai/arize/commit/fc71bc3c8d40072937f786b5a6bc22ec7998024f))
+
+
+### 🐛 Bug Fixes
+
+* assume UTC for naive datetimes across all CLI commands ([#79024](https://github.com/Arize-ai/arize/issues/79024)) ([3632b93](https://github.com/Arize-ai/arize/commit/3632b939ecee13e87a58dc77b9c6cc9e3fa04cd5))
+
 ## [0.26.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.25.1...arize-ax-cli/v0.26.0) (2026-07-17)
 
 > **Minor release.** The v2 REST API standardization ([#78907](https://github.com/Arize-ai/arize/pull/78907)) is technically breaking, but **only affects endpoints/methods in `alpha` or `beta`** — all gated behind the pre-release opt-in and documented with a warning. **No stable surface changes.**
