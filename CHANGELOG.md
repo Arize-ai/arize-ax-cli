@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.27.0...arize-ax-cli/v0.27.1) (2026-07-28)
+
+
+### ❔ Miscellaneous Chores
+
+* Bump CLI arize dependency to 8.43.1 ([#80864](https://github.com/Arize-ai/arize/issues/80864)) ([1ee945e](https://github.com/Arize-ai/arize/commit/1ee945e2663e0217debed5e1627f53a926c55c2e))
+
 ## [0.27.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.26.0...arize-ax-cli/v0.27.0) (2026-07-22)
 
 
