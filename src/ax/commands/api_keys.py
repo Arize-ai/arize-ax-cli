@@ -3,6 +3,7 @@
 from typing import Annotated
 
 import typer
+from arize import ArizeClient
 from arize._generated.api_client.models.organization_role import (
     OrganizationRole,
 )
@@ -13,23 +14,27 @@ from arize.api_keys.types import (
     ApiKeyType,
     OrganizationRoleAssignment,
     OrgBinding,
+    ServiceApiKeyCreated,
     SpaceBinding,
     SpaceRoleAssignment,
+    UserApiKeyCreated,
     UserRoleAssignment,
 )
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
-from ax.core.exceptions import APIError
+from ax.core.exceptions import APIError, FileIOError
 from ax.core.output import output_data
 from ax.utils.console import (
     confirm,
     info,
     setup_logging,
     spinner,
+    success,
     warning,
 )
 from ax.utils.datetime_parse import parse_optional_iso8601
+from ax.utils.dotenv import validate_dotenv_path, write_api_key_to_dotenv
 from ax.utils.file_io import parse_output_option
 from ax.utils.json_source import load_json
 
@@ -40,6 +45,49 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["--help", "-h"]},
 )
+
+_SAVE_KEY_WARNING = "Save this API key now — it will not be shown again."
+
+
+def _write_key_to_dotenv_or_revoke(
+    client: ArizeClient,
+    env_file: str,
+    key_created: UserApiKeyCreated | ServiceApiKeyCreated,
+) -> None:
+    """Write a newly created key to a dotenv file, revoking it on failure.
+
+    The key exists server-side before the file is written and its raw value
+    is never printed, so a write failure would strand an unusable, orphaned
+    credential. To avoid that, the key is revoked before the error is
+    surfaced. Only the key id (not the secret) is ever included in messages.
+
+    Args:
+        client: Authenticated SDK client used to revoke on failure.
+        env_file: Target dotenv file path.
+        key_created: The created key response (provides ``key`` and ``id``).
+
+    Raises:
+        FileIOError: If the write fails. The message states whether the key
+            was revoked automatically or must be revoked manually.
+    """
+    api_key = key_created.key
+    try:
+        write_api_key_to_dotenv(env_file, api_key)
+    except (FileIOError, KeyboardInterrupt) as write_error:
+        try:
+            client.api_keys.revoke(api_key_id=key_created.id)
+        except Exception as revoke_error:
+            raise FileIOError(
+                f"{write_error} The newly created key could not be revoked "
+                f"automatically ({revoke_error}); revoke it manually with "
+                f"'ax api-keys revoke {key_created.id}'."
+            ) from revoke_error
+        if isinstance(write_error, KeyboardInterrupt):
+            raise
+        raise FileIOError(
+            f"{write_error} The newly created key was revoked; resolve the "
+            f"file issue and re-run."
+        ) from write_error
 
 
 @app.command("list")
@@ -162,6 +210,13 @@ def create_api_key(
             help="Enable verbose logs",
         ),
     ] = False,
+    env_file: Annotated[
+        str | None,
+        typer.Option(
+            "--env-file",
+            help="Write the new key to ARIZE_API_KEY in a dotenv or .envrc file",
+        ),
+    ] = None,
 ) -> None:
     """Create a new user API key.
 
@@ -171,6 +226,8 @@ def create_api_key(
     To create a space-scoped service key, use ``create-service-key`` instead.
     """
     expires_at_dt = parse_optional_iso8601(expires_at)
+    if env_file is not None:
+        validate_dotenv_path(env_file)
 
     setup_logging(verbose)
     client, config = make_client()
@@ -180,9 +237,7 @@ def create_api_key(
     )
 
     try:
-        with spinner(
-            "Creating API key", success_msg="API key created successfully"
-        ):
+        with spinner("Creating API key"):
             key_created = client.api_keys.create(
                 name=name,
                 description=description,
@@ -191,12 +246,20 @@ def create_api_key(
     except Exception as e:
         raise APIError(f"Failed to create API key: {e}") from e
     else:
-        warning("Save this API key now — it will not be shown again.")
-        output_data(
-            key_created,
-            format_type=output_format,
-            output_file=output_file,
-        )
+        if env_file is not None:
+            _write_key_to_dotenv_or_revoke(client, env_file, key_created)
+            success(f"API key written to {env_file}")
+        else:
+            success("API key created successfully")
+
+        if env_file is None or output_file:
+            if not output_file:
+                warning(_SAVE_KEY_WARNING)
+            output_data(
+                key_created,
+                format_type=output_format,
+                output_file=output_file,
+            )
 
 
 _SPACE_ROLES = ", ".join(r.value for r in UserSpaceRole)
@@ -429,6 +492,13 @@ def create_service_api_key(
             help="Enable verbose logs",
         ),
     ] = False,
+    env_file: Annotated[
+        str | None,
+        typer.Option(
+            "--env-file",
+            help="Write the new key to ARIZE_API_KEY in a dotenv or .envrc file",
+        ),
+    ] = None,
 ) -> None:
     r"""Create a new service API key with org and space assignments.
 
@@ -452,6 +522,8 @@ def create_service_api_key(
     """
     expires_at_dt = parse_optional_iso8601(expires_at)
     org_bindings = _parse_assignments(assignments)
+    if env_file is not None:
+        validate_dotenv_path(env_file)
 
     setup_logging(verbose)
     client, config = make_client()
@@ -461,10 +533,7 @@ def create_service_api_key(
     )
 
     try:
-        with spinner(
-            "Creating service API key",
-            success_msg="Service API key created successfully",
-        ):
+        with spinner("Creating service API key"):
             key_created = client.api_keys.create_service_key(
                 name=name,
                 orgs=org_bindings,
@@ -477,12 +546,20 @@ def create_service_api_key(
     except Exception as e:
         raise APIError(f"Failed to create service API key: {e}") from e
     else:
-        warning("Save this API key now — it will not be shown again.")
-        output_data(
-            key_created,
-            format_type=output_format,
-            output_file=output_file,
-        )
+        if env_file is not None:
+            _write_key_to_dotenv_or_revoke(client, env_file, key_created)
+            success(f"Service API key written to {env_file}")
+        else:
+            success("Service API key created successfully")
+
+        if env_file is None or output_file:
+            if not output_file:
+                warning(_SAVE_KEY_WARNING)
+            output_data(
+                key_created,
+                format_type=output_format,
+                output_file=output_file,
+            )
 
 
 @app.command("revoke")
@@ -613,7 +690,8 @@ def refresh_api_key(
     except Exception as e:
         raise APIError(f"Failed to refresh API key: {e}") from e
     else:
-        warning("Save this API key now — it will not be shown again.")
+        if not output_file:
+            warning(_SAVE_KEY_WARNING)
         output_data(
             key_created,
             format_type=output_format,

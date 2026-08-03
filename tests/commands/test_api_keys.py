@@ -15,6 +15,7 @@ from arize.api_keys.types import (
 from typer.testing import CliRunner, Result
 
 from ax.cli import app
+from ax.core.exceptions import APIError, FileIOError
 
 runner = CliRunner()
 
@@ -248,10 +249,10 @@ class TestCreateApiKey:
         assert result.exit_code != 0
         mock_client.api_keys.create.assert_not_called()
 
-    def test_create_displays_save_warning(
+    def test_create_displays_save_warning_when_printed(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that a 'save this key' warning appears after creating a key."""
+        """A key printed to the terminal warns that it won't be shown again."""
         mock_client.api_keys.create.return_value = _make_api_key()
 
         result = _invoke(
@@ -269,6 +270,236 @@ class TestCreateApiKey:
 
         assert result.exit_code == 0, result.output
         assert "Save this API key now" in result.output
+
+    def test_create_writes_key_to_env_file(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """--env-file replaces an existing user-key assignment."""
+        mock_client.api_keys.create.return_value = _make_api_key(
+            key_value="new-user-key"
+        )
+        dotenv_path = tmp_path / ".env"
+        dotenv_path.write_text('export ARIZE_API_KEY="old-key" # current\n')
+
+        result = _invoke(
+            [
+                "api-keys",
+                "create",
+                "--name",
+                "My Key",
+                "--env-file",
+                str(dotenv_path),
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert dotenv_path.read_text() == (
+            'export ARIZE_API_KEY="new-user-key" # current\n'
+        )
+        assert "API key written to" in result.output
+        assert dotenv_path.name in "".join(result.output.splitlines())
+        assert "new-user-key" not in result.output
+        assert "Save this API key now" not in result.output
+
+    def test_create_output_file_suppresses_save_warning(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """A key persisted to an --output file needs no save warning."""
+        mock_client.api_keys.create.return_value = _make_api_key()
+        output_path = tmp_path / "created-key.json"
+
+        with patch("ax.commands.api_keys.output_data"):
+            result = _invoke(
+                [
+                    "api-keys",
+                    "create",
+                    "--name",
+                    "My Key",
+                    "--output",
+                    str(output_path),
+                ],
+                mock_config,
+                mock_client,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Save this API key now" not in result.output
+
+    def test_create_writes_to_env_and_output_file(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """--env-file and an --output file both receive the created key."""
+        mock_client.api_keys.create.return_value = _make_api_key(
+            key_value="new-user-key"
+        )
+        dotenv_path = tmp_path / ".env"
+        output_path = tmp_path / "created-key.json"
+
+        with patch("ax.commands.api_keys.output_data") as output_data:
+            result = _invoke(
+                [
+                    "api-keys",
+                    "create",
+                    "--name",
+                    "My Key",
+                    "--env-file",
+                    str(dotenv_path),
+                    "--output",
+                    str(output_path),
+                ],
+                mock_config,
+                mock_client,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert dotenv_path.read_text() == "ARIZE_API_KEY=new-user-key\n"
+        output_data.assert_called_once_with(
+            mock_client.api_keys.create.return_value,
+            format_type="json",
+            output_file=str(output_path),
+        )
+
+    def test_create_invalid_env_file_does_not_create_key(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """Invalid --env-file targets fail before creating a nonrecoverable key."""
+        result = _invoke(
+            [
+                "api-keys",
+                "create",
+                "--name",
+                "My Key",
+                "--env-file",
+                str(tmp_path / "key.txt"),
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code != 0
+        assert "dotenv filename" in result.output
+        mock_client.api_keys.create.assert_not_called()
+
+    def test_create_symlink_env_file_does_not_create_key(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """A symlinked --env-file target is rejected before the key is created."""
+        real_target = tmp_path / "secrets.env"
+        real_target.write_text("ARIZE_API_KEY=old-key\n")
+        symlink_path = tmp_path / ".env"
+        symlink_path.symlink_to(real_target)
+
+        result = _invoke(
+            [
+                "api-keys",
+                "create",
+                "--name",
+                "My Key",
+                "--env-file",
+                str(symlink_path),
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code != 0
+        assert "symlink" in result.output
+        mock_client.api_keys.create.assert_not_called()
+        assert symlink_path.is_symlink()
+
+    def test_create_env_write_failure_revokes_key(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """A dotenv write failure revokes the orphaned key without printing it."""
+        mock_client.api_keys.create.return_value = _make_api_key(
+            key_value="new-user-key"
+        )
+
+        with patch(
+            "ax.commands.api_keys.write_api_key_to_dotenv",
+            side_effect=FileIOError("permission denied"),
+        ):
+            result = _invoke(
+                [
+                    "api-keys",
+                    "create",
+                    "--name",
+                    "My Key",
+                    "--env-file",
+                    str(tmp_path / ".env"),
+                ],
+                mock_config,
+                mock_client,
+            )
+
+        assert result.exit_code != 0
+        assert "permission denied" in result.output
+        assert "created successfully" not in result.output
+        assert "new-user-key" not in result.output
+        mock_client.api_keys.revoke.assert_called_once_with(api_key_id=_KEY_ID)
+
+    def test_create_env_write_interrupted_revokes_key(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """An interrupted dotenv write revokes the key and exits as cancelled."""
+        mock_client.api_keys.create.return_value = _make_api_key(
+            key_value="new-user-key"
+        )
+
+        with patch(
+            "ax.commands.api_keys.write_api_key_to_dotenv",
+            side_effect=KeyboardInterrupt,
+        ):
+            result = _invoke(
+                [
+                    "api-keys",
+                    "create",
+                    "--name",
+                    "My Key",
+                    "--env-file",
+                    str(tmp_path / ".env"),
+                ],
+                mock_config,
+                mock_client,
+            )
+
+        assert result.exit_code == 130
+        assert "Operation cancelled by user" in result.output
+        assert "new-user-key" not in result.output
+        mock_client.api_keys.revoke.assert_called_once_with(api_key_id=_KEY_ID)
+
+    def test_create_env_write_and_revoke_failure_reports_key_id(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """When rollback fails too, the key id and manual revoke are surfaced."""
+        mock_client.api_keys.create.return_value = _make_api_key(
+            key_value="new-user-key"
+        )
+        mock_client.api_keys.revoke.side_effect = APIError("network down")
+
+        with patch(
+            "ax.commands.api_keys.write_api_key_to_dotenv",
+            side_effect=FileIOError("permission denied"),
+        ):
+            result = _invoke(
+                [
+                    "api-keys",
+                    "create",
+                    "--name",
+                    "My Key",
+                    "--env-file",
+                    str(tmp_path / ".env"),
+                ],
+                mock_config,
+                mock_client,
+            )
+
+        assert result.exit_code != 0
+        collapsed = " ".join(result.output.split())
+        assert f"ax api-keys revoke {_KEY_ID}" in collapsed
+        assert "new-user-key" not in result.output
 
     def test_create_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -347,6 +578,143 @@ class TestCreateServiceApiKey:
         assert space.space == "my-space"
         assert space.role is not None
         assert space.role.actual_instance.name == "MEMBER"
+
+    def test_create_service_key_writes_key_to_env_file(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """--env-file appends a newly created service key."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key(
+            key_value="new-service-key"
+        )
+        dotenv_path = tmp_path / ".env.production.local"
+        dotenv_path.write_text("OTHER=value")
+
+        result = _invoke(
+            [
+                "api-keys",
+                "create-service-key",
+                "--name",
+                "Svc Key",
+                "--assignments",
+                _ASSIGNMENTS_ONE,
+                "--env-file",
+                str(dotenv_path),
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            dotenv_path.read_text()
+            == "OTHER=value\nARIZE_API_KEY=new-service-key\n"
+        )
+        assert "Service API key written to" in result.output
+        assert dotenv_path.name in "".join(result.output.splitlines())
+        assert "new-service-key" not in result.output
+        assert "Save this API key now" not in result.output
+
+    def test_create_service_key_writes_to_env_and_output_file(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """Service-key creation writes to both requested file destinations."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key(
+            key_value="new-service-key"
+        )
+        dotenv_path = tmp_path / ".env.local"
+        output_path = tmp_path / "service-key.json"
+
+        with patch("ax.commands.api_keys.output_data") as output_data:
+            result = _invoke(
+                [
+                    "api-keys",
+                    "create-service-key",
+                    "--name",
+                    "Svc Key",
+                    "--assignments",
+                    _ASSIGNMENTS_ONE,
+                    "--env-file",
+                    str(dotenv_path),
+                    "--output",
+                    str(output_path),
+                ],
+                mock_config,
+                mock_client,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert dotenv_path.read_text() == "ARIZE_API_KEY=new-service-key\n"
+        output_data.assert_called_once_with(
+            mock_client.api_keys.create_service_key.return_value,
+            format_type="json",
+            output_file=str(output_path),
+        )
+
+    def test_create_service_key_env_write_failure_revokes_key(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """A service-key dotenv write failure revokes the orphaned key."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key(
+            key_value="new-service-key"
+        )
+
+        with patch(
+            "ax.commands.api_keys.write_api_key_to_dotenv",
+            side_effect=FileIOError("permission denied"),
+        ):
+            result = _invoke(
+                [
+                    "api-keys",
+                    "create-service-key",
+                    "--name",
+                    "Svc Key",
+                    "--assignments",
+                    _ASSIGNMENTS_ONE,
+                    "--env-file",
+                    str(tmp_path / ".env"),
+                ],
+                mock_config,
+                mock_client,
+            )
+
+        assert result.exit_code != 0
+        assert "permission denied" in result.output
+        assert "created successfully" not in result.output
+        assert "new-service-key" not in result.output
+        mock_client.api_keys.revoke.assert_called_once_with(api_key_id=_KEY_ID)
+
+    def test_create_service_key_env_and_revoke_failure_reports_key_id(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """When service-key rollback fails, the manual revoke is surfaced."""
+        mock_client.api_keys.create_service_key.return_value = _make_api_key(
+            key_value="new-service-key"
+        )
+        mock_client.api_keys.revoke.side_effect = APIError("network down")
+
+        with patch(
+            "ax.commands.api_keys.write_api_key_to_dotenv",
+            side_effect=FileIOError("permission denied"),
+        ):
+            result = _invoke(
+                [
+                    "api-keys",
+                    "create-service-key",
+                    "--name",
+                    "Svc Key",
+                    "--assignments",
+                    _ASSIGNMENTS_ONE,
+                    "--env-file",
+                    str(tmp_path / ".env"),
+                ],
+                mock_config,
+                mock_client,
+            )
+
+        assert result.exit_code != 0
+        collapsed = " ".join(result.output.split())
+        assert f"ax api-keys revoke {_KEY_ID}" in collapsed
+        assert "new-service-key" not in result.output
 
     def test_create_service_key_multi_org_multi_space(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -578,10 +946,10 @@ class TestCreateServiceApiKey:
         assert result.exit_code != 0
         mock_client.api_keys.create_service_key.assert_not_called()
 
-    def test_create_service_key_displays_save_warning(
+    def test_create_service_key_displays_save_warning_when_printed(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """A 'save this key' warning must appear after creating a service key."""
+        """A key printed to the terminal warns that it won't be shown again."""
         mock_client.api_keys.create_service_key.return_value = _make_api_key()
 
         result = _invoke(
@@ -956,10 +1324,10 @@ class TestRefreshApiKey:
             grace_period_seconds=None,
         )
 
-    def test_refresh_displays_save_warning(
+    def test_refresh_displays_save_warning_when_printed(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that a 'save this key' warning appears after refreshing."""
+        """Refresh mints a new one-time key, so it warns when printed."""
         mock_client.api_keys.refresh.return_value = _make_api_key()
 
         result = _invoke(
@@ -970,6 +1338,23 @@ class TestRefreshApiKey:
 
         assert result.exit_code == 0, result.output
         assert "Save this API key now" in result.output
+
+    def test_refresh_output_file_suppresses_save_warning(
+        self, mock_config: MagicMock, mock_client: MagicMock, tmp_path: Path
+    ) -> None:
+        """A refreshed key persisted to an --output file needs no warning."""
+        mock_client.api_keys.refresh.return_value = _make_api_key()
+        output_path = tmp_path / "refreshed-key.json"
+
+        with patch("ax.commands.api_keys.output_data"):
+            result = _invoke(
+                ["api-keys", "refresh", _KEY_ID, "--output", str(output_path)],
+                mock_config,
+                mock_client,
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Save this API key now" not in result.output
 
     def test_refresh_passes_expires_at(
         self, mock_config: MagicMock, mock_client: MagicMock

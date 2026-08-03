@@ -310,10 +310,10 @@ class TestCreateServiceKey:
         assert key_id
         ax("api-keys", "revoke", key_id, "--force")
 
-    def test_create_displays_save_warning(
+    def test_create_displays_save_warning_when_printed(
         self, test_org_id: str, test_space_id: str
     ) -> None:
-        """The 'Save this API key now' warning must appear in stderr."""
+        """A key printed to the terminal warns that it won't be shown again."""
         name = f"ax-cli-svc-warn-{uuid.uuid4().hex[:8]}"
         assignments = json.dumps(
             [{"org_id": test_org_id, "spaces": [{"space": test_space_id}]}]

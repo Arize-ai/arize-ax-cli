@@ -795,17 +795,26 @@ ax api-keys list [--key-type USER|SERVICE] [--status ACTIVE|REVOKED] \
   [--limit 15] [--cursor <cursor>]
 
 # Create a user key (authenticates as you)
-ax api-keys create --name "My Key" [--description "..."] [--expires-at 2025-12-31T23:59:59]
+ax api-keys create --name "My Key" [--description "..."] [--expires-at 2025-12-31T23:59:59] \
+  [--env-file .env]
 
 # Create a service key (scoped to one or more orgs and spaces)
 ax api-keys create-service-key --name "CI bot" \
   --assignments '[{"org_id":"<org-id>","role":"READ_ONLY",
                    "spaces":[{"space":"prod","role":"MEMBER"},
                               {"space":"staging"}]}]' \
-  [--account-role MEMBER] [--description "..."] [--expires-at 2025-12-31T23:59:59]
+  [--account-role MEMBER] [--description "..."] [--expires-at 2025-12-31T23:59:59] \
+  [--env-file .env]
 
 # Load assignments from a file
 ax api-keys create-service-key --name "CI bot" --assignments bindings.json
+
+# Save a newly generated key to a dotenv file
+ax api-keys create --name "Local development" --env-file .env.local
+
+# Also save the full API-key response to JSON
+ax api-keys create --name "Local development" \
+  --env-file .env.local --output created-key.json
 
 # Refresh a key (revokes old key, issues replacement)
 ax api-keys refresh <key-id> [--expires-at 2025-12-31T23:59:59] \
@@ -824,6 +833,7 @@ ax api-keys revoke <key-id> [--force]
 | `--account-role` | Account-level role for the bot user: `ADMIN`, `MEMBER`, or `ANNOTATOR`. Defaults to `MEMBER`. |
 | `--description` | Optional description (max 1000 characters) |
 | `--expires-at` | Expiration datetime (ISO 8601; UTC assumed if no offset). Omit for no expiration. |
+| `--env-file` | Write the new key as `ARIZE_API_KEY` to a dotenv file such as `.env` or `.env.local`, or a direnv `.envrc` file (where the assignment is written as `export ARIZE_API_KEY='...'` so direnv exports it). |
 
 **Assignment role values:**
 

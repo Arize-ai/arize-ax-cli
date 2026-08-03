@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.27.1...arize-ax-cli/v0.28.0) (2026-08-03)
+
+
+### 🎁 New Features
+
+* write API keys to dotenv files ([#81125](https://github.com/Arize-ai/arize/issues/81125)) ([28ffd1c](https://github.com/Arize-ai/arize/commit/28ffd1c3c5cfc2039e146cdd5b4f52fac488200f))
+
 ## [0.27.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.27.0...arize-ax-cli/v0.27.1) (2026-07-28)
 
 
