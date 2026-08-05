@@ -2,7 +2,7 @@
 
 import webbrowser
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode
 
 import requests
 import typer
@@ -22,10 +22,27 @@ app = typer.Typer(
 )
 
 _LOGIN_TIMEOUT_SECONDS = 300.0  # 5 minutes for user to complete browser login
+_UTM_QUERY_PARAMS = frozenset(
+    {"utm_source", "utm_medium", "utm_campaign", "utm_content"}
+)
+
+
+def _parse_utm_params(value: str | None) -> dict[str, str]:
+    """Extract approved UTM values from a URL-style query string."""
+    if value is None:
+        return {}
+
+    return {
+        key: query_value
+        for key, query_value in parse_qsl(value, keep_blank_values=True)
+        if key in _UTM_QUERY_PARAMS
+    }
 
 
 def perform_oauth_login(
-    base_url: str, login_timeout_seconds: float = _LOGIN_TIMEOUT_SECONDS
+    base_url: str,
+    login_timeout_seconds: float = _LOGIN_TIMEOUT_SECONDS,
+    utm_params: str | None = None,
 ) -> OAuthCredentials:
     """Open the browser, complete PKCE flow, return fresh OAuthCredentials.
 
@@ -34,6 +51,7 @@ def perform_oauth_login(
     Args:
         base_url: The Arize app URL to authenticate against (e.g. "https://app.arize.com").
         login_timeout_seconds: Seconds to wait for the browser callback before timing out.
+        utm_params: URL-style UTM query parameters to include in the login request.
 
     Returns:
         Fresh OAuthCredentials with access_token, refresh_token, expires_at, user_email.
@@ -51,17 +69,17 @@ def perform_oauth_login(
     server.start()
     redirect_uri = f"http://127.0.0.1:{server.port}/callback"
 
-    query = urlencode(
-        {
-            "response_type": "code",
-            "client_id": OAUTH_CLIENT_ID,
-            "redirect_uri": redirect_uri,
-            "state": state,
-            "scope": "openid email",
-            "code_challenge": challenge,
-            "code_challenge_method": method,
-        }
-    )
+    query_params = {
+        "response_type": "code",
+        "client_id": OAUTH_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "state": state,
+        "scope": "openid email",
+        "code_challenge": challenge,
+        "code_challenge_method": method,
+    }
+    query_params.update(_parse_utm_params(utm_params))
+    query = urlencode(query_params)
     authorize_url = f"{base_url}/oauth2/authorize?{query}"
 
     rprint(f"Opening [cyan]{authorize_url}[/cyan] in your browser...")
@@ -98,7 +116,9 @@ def perform_oauth_login(
 
 @app.command("login")
 @handle_errors
-def login_cmd() -> None:
+def login_cmd(
+    utm_params: str | None = typer.Option(None, "--utm-params", hidden=True),
+) -> None:
     """Sign in to the active profile via the browser.
 
     Writes fresh OAuth tokens to the active profile. The profile must already
@@ -133,7 +153,10 @@ def login_cmd() -> None:
             raise typer.Exit(code=0)
 
     resolved_base_url = cfg.routing.resolve_app_url()
-    oauth_creds = perform_oauth_login(base_url=resolved_base_url)
+    oauth_creds = perform_oauth_login(
+        base_url=resolved_base_url,
+        utm_params=utm_params,
+    )
     new_auth = AuthConfig(auth_method=AuthMethod.OAUTH, oauth=oauth_creds)
     new_cfg = cfg.model_copy(update={"auth": new_auth})
     ConfigManager.save(new_cfg, profile_name)

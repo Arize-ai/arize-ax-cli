@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.28.0...arize-ax-cli/v0.28.1) (2026-08-05)
+
+
+### 🐛 Bug Fixes
+
+* **oauth:** preserve signup attribution through login ([#81170](https://github.com/Arize-ai/arize/issues/81170)) ([47b33f9](https://github.com/Arize-ai/arize/commit/47b33f95d02bcd0e4080beb7a7c82eb6766165b5))
+
 ## [0.28.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.27.1...arize-ax-cli/v0.28.0) (2026-08-03)
 
 

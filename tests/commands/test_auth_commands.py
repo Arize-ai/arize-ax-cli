@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from typer.testing import CliRunner
@@ -71,6 +71,53 @@ def _isolate_home(tmp_path: Path, monkeypatch):
 
 
 class TestLogin:
+    def test_forwards_hidden_utm_params_to_oauth_authorize_url(self):
+        ConfigManager.save(_logged_out_oauth_config(), "p1")
+        ConfigManager.set_active_profile("p1")
+        captured_url: dict[str, str] = {}
+
+        def _capture_open(url):
+            captured_url["url"] = url
+
+        with (
+            patch(
+                "ax.commands.auth.webbrowser.open", side_effect=_capture_open
+            ),
+            patch("ax.commands.auth.LoopbackServer") as srv_cls,
+            patch("ax.commands.auth.OAuthClient") as client_cls,
+        ):
+            srv = srv_cls.return_value
+            srv.port = 53682
+            srv.wait.return_value = MagicMock(code="the-code", state="state")
+            client_cls.return_value.exchange_code.return_value = MagicMock(
+                access_token="arz_at_new",
+                refresh_token="arz_rt_new",
+                expires_in=3600,
+                user_email="user@example.com",
+            )
+            result = runner.invoke(
+                app,
+                [
+                    "login",
+                    "--utm-params",
+                    "utm_source=ax&utm_medium=cli&utm_campaign=signup&utm_content=cli&unknown=drop",
+                ],
+            )
+
+        assert result.exit_code == 0, result.stdout
+        query = parse_qs(urlparse(captured_url["url"]).query)
+        assert query["utm_source"] == ["ax"]
+        assert query["utm_medium"] == ["cli"]
+        assert query["utm_campaign"] == ["signup"]
+        assert query["utm_content"] == ["cli"]
+        assert "unknown" not in query
+
+    def test_hides_utm_params_from_login_help(self):
+        result = runner.invoke(app, ["login", "--help"])
+
+        assert result.exit_code == 0, result.stdout
+        assert "--utm-params" not in result.stdout
+
     def test_runs_full_flow_on_active_oauth_profile(self):
         # Logged-out OAuth profile — `ax auth login` should run the browser flow.
         ConfigManager.save(_logged_out_oauth_config(), "p1")
