@@ -1,7 +1,5 @@
 """Tests for configuration schema module."""
 
-from pathlib import Path
-
 import pytest
 from arize import Region, SDKConfiguration
 from pydantic import ValidationError
@@ -13,7 +11,6 @@ from ax.config.schema import (
     ProfileConfig,
     RoutingConfig,
     SecurityConfig,
-    StorageConfig,
     TransportConfig,
     UpdateConfig,
 )
@@ -216,42 +213,6 @@ class TestSecurityConfig:
         assert security.request_verify == "${ARIZE_REQUEST_VERIFY}"
 
 
-class TestStorageConfig:
-    """Tests for StorageConfig model."""
-
-    def test_default_storage_config(self) -> None:
-        """Test default storage config values."""
-        storage = StorageConfig()
-        assert storage.directory == "~/.arize"
-        assert storage.cache_enabled is True
-
-    def test_expanded_directory(self) -> None:
-        """Test that expanded_directory returns expanded path."""
-        storage = StorageConfig(directory="~/.arize")
-        expanded = storage.expanded_directory
-        assert isinstance(expanded, Path)
-        assert "~" not in str(expanded)
-        assert str(expanded).endswith(".arize")
-
-    def test_cache_dir_property(self) -> None:
-        """Test that cache_dir returns correct path."""
-        storage = StorageConfig(directory="~/.arize")
-        cache_dir = storage.cache_dir
-        assert isinstance(cache_dir, Path)
-        assert str(cache_dir).endswith("cache")
-
-    def test_custom_directory(self) -> None:
-        """Test creating storage config with custom directory."""
-        storage = StorageConfig(directory="/custom/path")
-        assert storage.directory == "/custom/path"
-        assert storage.expanded_directory == Path("/custom/path")
-
-    def test_cache_disabled(self) -> None:
-        """Test disabling cache."""
-        storage = StorageConfig(cache_enabled=False)
-        assert storage.cache_enabled is False
-
-
 class TestOutputConfig:
     """Tests for OutputConfig model."""
 
@@ -303,7 +264,6 @@ class TestConfig:
             routing=RoutingConfig(region="us-east-1b"),
             transport=TransportConfig(stream_max_workers=16),
             security=SecurityConfig(request_verify=False),
-            storage=StorageConfig(directory="/custom/path"),
             output=OutputConfig(format="json"),
         )
         assert config.profile.name == "production"
@@ -311,7 +271,6 @@ class TestConfig:
         assert config.routing.region == "us-east-1b"
         assert config.transport.stream_max_workers == 16
         assert config.security.request_verify is False
-        assert config.storage.directory == "/custom/path"
         assert config.output.format == "json"
 
     def test_extra_fields_ignored(self) -> None:

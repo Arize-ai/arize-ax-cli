@@ -43,9 +43,6 @@ class TestCreateConfigFromToml:
             b"stream_max_workers = 16\n"
             b"\n[security]\n"
             b"request_verify = true\n"
-            b"\n[storage]\n"
-            b'directory = "~/.arize"\n'
-            b"cache_enabled = true\n"
             b"\n[output]\n"
             b'format = "json"\n'
         )
@@ -57,6 +54,21 @@ class TestCreateConfigFromToml:
         assert result.transport.stream_max_workers == 16
         assert result.security.request_verify is True
         assert result.output.format == "json"
+
+    def test_legacy_storage_section_is_ignored(self, tmp_path: Path) -> None:
+        """Legacy cache settings do not prevent a profile from loading."""
+        toml_file = tmp_path / "config.toml"
+        toml_file.write_bytes(
+            b'[auth]\napi_key = "test-key-123"\n'
+            b"\n[storage]\n"
+            b'directory = "/tmp/arize"\n'
+            b"cache_enabled = false\n"
+        )
+
+        result = create_config_from_toml(str(toml_file), profile="test")
+
+        assert result.auth.api_key == "test-key-123"
+        assert not hasattr(result, "storage")
 
     def test_env_var_refs_preserved(self, tmp_path: Path) -> None:
         """Env var references like ${ARIZE_API_KEY} are preserved as strings."""
@@ -136,21 +148,17 @@ class TestCreateConfigFromFlags:
 
         assert config.output.format == "json"
 
-    def test_security_and_storage_nested_correctly(self) -> None:
-        """Security and storage flat keys are grouped into their sections."""
+    def test_security_is_nested_correctly(self) -> None:
+        """Security keys are grouped into their section."""
         config = create_config_from_flags(
             profile="test",
             flat={
                 "api_key": "k",
                 "request_verify": False,
-                "directory": "/tmp/arize",
-                "cache_enabled": False,
             },
         )
 
         assert config.security.request_verify is False
-        assert config.storage.directory == "/tmp/arize"
-        assert config.storage.cache_enabled is False
 
     def test_profile_name_embedded(self) -> None:
         """The profile name is correctly embedded in the returned Config."""
@@ -208,26 +216,22 @@ class TestMergeConfigWithFlags:
             existing.transport.stream_max_queue_bound
         )
 
-    def test_merge_auth_security_storage_output(
+    def test_merge_auth_security_output(
         self, sample_config_data: dict[str, object]
     ) -> None:
-        """Auth, security, storage, and output keys merge in one call."""
+        """Auth, security, and output keys merge in one call."""
         existing = Config.model_validate(sample_config_data)
         merged = merge_config_with_flags(
             existing,
             {
                 "api_key": "new-key",
                 "request_verify": False,
-                "directory": "/tmp/x",
-                "cache_enabled": False,
                 "output_format": "json",
             },
         )
 
         assert merged.auth.api_key == "new-key"
         assert merged.security.request_verify is False
-        assert merged.storage.directory == "/tmp/x"
-        assert merged.storage.cache_enabled is False
         assert merged.output.format == "json"
 
     def test_invalid_region_raises_config_error(

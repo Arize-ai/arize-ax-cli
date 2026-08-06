@@ -24,7 +24,6 @@ from ax.config.schema import (
     ProfileConfig,
     RoutingConfig,
     SecurityConfig,
-    StorageConfig,
     TransportConfig,
 )
 from ax.core.error_formatter import format_validation_error
@@ -130,7 +129,6 @@ def advanced_setup(
     routing_config = read_routing()
     transport_config = read_transport()
     security_config = read_security()
-    storage_config = StorageConfig()
     output_config = OutputConfig(
         format=read_output_format(),
     )
@@ -140,7 +138,6 @@ def advanced_setup(
         routing=routing_config,
         transport=transport_config,
         security=security_config,
-        storage=storage_config,
         output=output_config,
     )
 
@@ -211,7 +208,6 @@ _TRANSPORT_KEYS = (
     "pyarrow_max_chunksize",
     "max_http_payload_size_mb",
 )
-_STORAGE_KEYS = ("directory", "cache_enabled")
 
 
 def create_config_from_flags(
@@ -246,10 +242,6 @@ def create_config_from_flags(
 
     if "request_verify" in flat:
         data["security"] = {"request_verify": flat["request_verify"]}
-
-    storage = {k: flat[k] for k in _STORAGE_KEYS if k in flat}
-    if storage:
-        data["storage"] = storage
 
     if "output_format" in flat:
         data["output"] = {"format": flat["output_format"]}
@@ -287,8 +279,6 @@ def merge_config_with_flags(existing: Config, flat: dict[str, Any]) -> Config:
 
     if "request_verify" in flat:
         data["security"]["request_verify"] = flat["request_verify"]
-
-    data["storage"].update({k: flat[k] for k in _STORAGE_KEYS if k in flat})
 
     if "output_format" in flat:
         data["output"]["format"] = flat["output_format"]
@@ -361,7 +351,6 @@ def create_config_from_env_vars(
         security_kwargs["request_verify"] = _env_ref(env_vars["request_verify"])
     security_config = SecurityConfig(**security_kwargs)
 
-    storage_config = StorageConfig()
     output_config = OutputConfig(
         format=read_output_format(),
     )
@@ -371,6 +360,5 @@ def create_config_from_env_vars(
         routing=routing_config,
         transport=transport_config,
         security=security_config,
-        storage=storage_config,
         output=output_config,
     )

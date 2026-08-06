@@ -72,6 +72,5 @@ def sample_config_data() -> dict[str, object]:
             "max_http_payload_size_mb": 8,
         },
         "security": {"request_verify": True},
-        "storage": {"directory": "~/.arize", "cache_enabled": True},
         "output": {"format": "table"},
     }

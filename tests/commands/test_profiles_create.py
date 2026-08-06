@@ -748,3 +748,50 @@ class TestProfilesCreateOAuth:
         assert loaded.routing.single_host == "arize.my-company.com"
         assert loaded.routing.region == ""
         assert loaded.auth.uses_oauth
+
+    def test_forwards_hidden_utm_params_to_oauth_login(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """--utm-params is forwarded verbatim to perform_oauth_login, which
+        applies the allowlist when it builds the authorize URL.
+        """
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setattr(ConfigManager, "CONFIG_DIR", tmp_path / ".arize")
+        monkeypatch.setattr(
+            ConfigManager, "PROFILES_DIR", tmp_path / ".arize" / "profiles"
+        )
+        monkeypatch.setattr(
+            ConfigManager,
+            "ACTIVE_PROFILE_FILE",
+            tmp_path / ".arize" / ".active_profile",
+        )
+        (tmp_path / ".arize" / "profiles").mkdir(parents=True, exist_ok=True)
+
+        fake_creds = _fake_oauth_creds()
+        utm = "utm_source=npmevals&utm_medium=cli&utm_campaign=prompt-first-onboarding"
+
+        with patch(
+            "ax.commands.profiles.perform_oauth_login", return_value=fake_creds
+        ) as mock_login:
+            local_runner = CliRunner()
+            result = local_runner.invoke(
+                app,
+                [
+                    "create",
+                    "utm-oauth",
+                    "--auth-method",
+                    "oauth",
+                    "--utm-params",
+                    utm,
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_login.assert_called_once()
+        assert mock_login.call_args.kwargs.get("utm_params") == utm
+
+    def test_hides_utm_params_from_create_help(self, runner: CliRunner) -> None:
+        result = runner.invoke(app, ["create", "--help"])
+
+        assert result.exit_code == 0, result.output
+        assert "--utm-params" not in result.stdout

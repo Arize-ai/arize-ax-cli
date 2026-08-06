@@ -462,7 +462,6 @@ class TestHelperFunctions:
         data = {
             "transport": {
                 "stream_max_workers": 8,
-                "cache_enabled": True,
             }
         }
 

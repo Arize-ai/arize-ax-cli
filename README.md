@@ -52,7 +52,6 @@
   - [Annotation Configs](#annotation-configs)
   - [Annotation Queues](#annotation-queues)
   - [API Keys](#api-keys)
-  - [Cache](#cache)
   - [Datasets](#datasets)
   - [Evaluators](#evaluators)
     - [Code evaluators](#code-evaluators)
@@ -358,10 +357,6 @@ max_http_payload_size_mb = 8
 [security]
 request_verify = true
 
-[storage]
-directory = "~/.arize"
-cache_enabled = true
-
 [output]
 format = "json"
 ```
@@ -463,14 +458,6 @@ max_http_payload_size_mb = 8
 ```toml
 [security]
 request_verify = true  # Set to false to disable SSL verification (not recommended)
-```
-
-**Storage** (optional)
-
-```toml
-[storage]
-directory = "~/.arize"
-cache_enabled = true
 ```
 
 **Output** (optional)
@@ -858,22 +845,6 @@ ax api-keys revoke <key-id> [--force]
 | --------- | ------------------------------------------------------------------------ |
 | `USER`    | Authenticates as the creating user. Created with `ax api-keys create`.   |
 | `SERVICE` | Backed by a dedicated bot user scoped to specific orgs and spaces. Created with `ax api-keys create-service-key`. |
-
-### Cache
-
-Manage the local cache. The CLI caches downloaded resource data (e.g., dataset examples) locally as Parquet files to avoid redundant API calls. When you fetch a dataset's examples, the results are stored on disk so subsequent requests for the same version load instantly. The cache is automatically invalidated when a resource's `updated_at` timestamp changes, so you always get fresh data when something changes on the server.
-
-Caching is enabled by default and can be toggled in your profile configuration:
-
-```toml
-[storage]
-cache_enabled = true
-```
-
-```bash
-# Clear the cache
-ax cache clear
-```
 
 ### Resource Restrictions
 

@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from enum import StrEnum
-from pathlib import Path
 from typing import Literal
 
 from arize import Region, SDKConfiguration
@@ -330,31 +329,6 @@ class SecurityConfig(BaseModel):
     request_verify: bool | str = Field(default=True)
 
 
-class StorageConfig(BaseModel):
-    """Storage and caching configuration."""
-
-    directory: str = Field(default="~/.arize")
-    cache_enabled: bool = Field(default=True)
-
-    @property
-    def expanded_directory(self) -> Path:
-        """Get expanded directory path.
-
-        Returns:
-            Expanded directory path
-        """
-        return Path(self.directory).expanduser()
-
-    @property
-    def cache_dir(self) -> Path:
-        """Get computed cache directory path.
-
-        Returns:
-            Cache directory path
-        """
-        return self.expanded_directory / "cache"
-
-
 class OutputConfig(BaseModel):
     """Output formatting (CLI-specific)."""
 
@@ -383,7 +357,6 @@ class Config(BaseModel):
     routing: RoutingConfig = Field(default_factory=RoutingConfig)
     transport: TransportConfig = Field(default_factory=TransportConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
-    storage: StorageConfig = Field(default_factory=StorageConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     update: UpdateConfig = Field(default_factory=UpdateConfig)
 

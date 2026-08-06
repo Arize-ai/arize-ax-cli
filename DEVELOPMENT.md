@@ -100,7 +100,6 @@ arize-ax-cli/
 │   │
 │   ├── commands/             # Command implementations
 │   │   ├── __init__.py
-│   │   ├── cache.py          # Cache management commands
 │   │   ├── datasets.py       # Dataset CRUD operations
 │   │   ├── experiments.py    # Experiment CRUD operations
 │   │   ├── profiles.py       # Profile management commands

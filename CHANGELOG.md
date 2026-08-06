@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.29.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.28.1...arize-ax-cli/v0.29.0) (2026-08-06)
+
+
+### 🎁 New Features
+
+* forward hidden --utm-params through profiles create ([#82304](https://github.com/Arize-ai/arize/issues/82304)) ([84840f2](https://github.com/Arize-ai/arize/commit/84840f232cd7dbf0defef8aa6f8b6be9aa1e6670))
+
+
+### 💫 Code Refactoring
+
+* remove CLI cache configuration ([#82168](https://github.com/Arize-ai/arize/issues/82168)) ([2501aa2](https://github.com/Arize-ai/arize/commit/2501aa27e2467b086d395982af603a988469f035))
+
 ## [0.28.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.28.0...arize-ax-cli/v0.28.1) (2026-08-05)
 
 

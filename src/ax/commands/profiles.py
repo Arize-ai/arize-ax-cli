@@ -118,6 +118,10 @@ def create(
             help="Enable verbose logs",
         ),
     ] = False,
+    utm_params: Annotated[
+        str | None,
+        typer.Option("--utm-params", hidden=True),
+    ] = None,
 ) -> None:
     """Create Arize CLI configuration interactively or from flags/file.
 
@@ -224,7 +228,9 @@ def create(
         routing_cfg = RoutingConfig(**routing_flags)
         base_url = routing_cfg.resolve_app_url()
 
-        oauth_creds = perform_oauth_login(base_url=base_url)
+        oauth_creds = perform_oauth_login(
+            base_url=base_url, utm_params=utm_params
+        )
         auth_cfg = AuthConfig(auth_method=AuthMethod.OAUTH, oauth=oauth_creds)
 
         # output_format is `str | None` from typer but OutputConfig.format
@@ -316,7 +322,9 @@ def create(
                 if use_env_vars
                 else config.routing.resolve_app_url()
             )
-            oauth_creds = perform_oauth_login(base_url=base_url)
+            oauth_creds = perform_oauth_login(
+                base_url=base_url, utm_params=utm_params
+            )
             config = config.model_copy(
                 update={
                     "auth": AuthConfig(
@@ -652,13 +660,6 @@ def show_profile(
         if isinstance(val, str) and _is_bool(val):
             val = val.lower() == "true"
         lines.append(kv("  Request Verify", val))
-
-    # Storage section
-    if all_sections or is_customized("storage"):
-        lines.append("")
-        lines.append("[bold]Storage[/bold]")
-        lines.append(kv("  Directory", config.storage.directory))
-        lines.append(kv("  Cache", config.storage.cache_enabled))
 
     console.print(
         Panel(
