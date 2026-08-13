@@ -23,11 +23,12 @@ class TestAnnotationConfigsUpdate:
     """
 
     @staticmethod
-    def _create(space_id: str, *args: str) -> dict[str, Any]:
-        """Run ``annotation-configs create`` and return the parsed config."""
+    def _create(space_id: str, config_type: str, *args: str) -> dict[str, Any]:
+        """Run ``annotation-configs create <type>`` and return the parsed config."""
         result = ax(
             "annotation-configs",
             "create",
+            config_type,
             "--space",
             space_id,
             "--output",
@@ -58,10 +59,9 @@ class TestAnnotationConfigsUpdate:
         name = f"ax-cli-cfg-cont-{uuid.uuid4().hex[:8]}"
         created = self._create(
             test_space_id,
+            "continuous",
             "--name",
             name,
-            "--type",
-            "CONTINUOUS",
             "--min-score",
             "0",
             "--max-score",
@@ -120,10 +120,9 @@ class TestAnnotationConfigsUpdate:
         name = f"ax-cli-cfg-partial-{uuid.uuid4().hex[:8]}"
         created = self._create(
             test_space_id,
+            "continuous",
             "--name",
             name,
-            "--type",
-            "CONTINUOUS",
             "--min-score",
             "2",
             "--max-score",
@@ -162,10 +161,9 @@ class TestAnnotationConfigsUpdate:
         name = f"ax-cli-cfg-cat-{uuid.uuid4().hex[:8]}"
         created = self._create(
             test_space_id,
+            "categorical",
             "--name",
             name,
-            "--type",
-            "CATEGORICAL",
             "--value",
             "good",
             "--value",
@@ -203,9 +201,7 @@ class TestAnnotationConfigsUpdate:
     def test_update_freeform_renames(self, test_space_id: str) -> None:
         """Updating a freeform config renames it and persists server-side."""
         name = f"ax-cli-cfg-free-{uuid.uuid4().hex[:8]}"
-        created = self._create(
-            test_space_id, "--name", name, "--type", "FREEFORM"
-        )
+        created = self._create(test_space_id, "freeform", "--name", name)
         config_id = created["id"]
         new_name = f"{name}-renamed"
         try:

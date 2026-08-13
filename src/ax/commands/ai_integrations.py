@@ -7,10 +7,10 @@ from arize.ai_integrations.types import (
     AiIntegrationAuthType,
     AiIntegrationProvider,
     AiIntegrationScoping,
-    AwsProviderMetadata,
     AwsProviderMetadataKind,
-    GcpProviderMetadata,
+    AwsProviderMetadataRequest,
     GcpProviderMetadataKind,
+    GcpProviderMetadataRequest,
 )
 
 from ax.core.client_factory import make_client
@@ -64,7 +64,7 @@ def _parse_provider_metadata(
     *,
     provider: AiIntegrationProvider,
     provider_metadata: dict[str, Any] | None,
-) -> AwsProviderMetadata | GcpProviderMetadata | None:
+) -> AwsProviderMetadataRequest | GcpProviderMetadataRequest | None:
     if provider_metadata is None:
         return None
 
@@ -76,7 +76,7 @@ def _parse_provider_metadata(
             raise UsageError(
                 f"--provider-metadata.kind must be {aws_kind!r} for AWS_BEDROCK"
             )
-        parsed_aws = AwsProviderMetadata.from_dict(normalized)
+        parsed_aws = AwsProviderMetadataRequest.from_dict(normalized)
         if parsed_aws is None:
             raise UsageError(
                 "--provider-metadata is missing or invalid for AWS_BEDROCK"
@@ -90,7 +90,7 @@ def _parse_provider_metadata(
             raise UsageError(
                 f"--provider-metadata.kind must be {gcp_kind!r} for VERTEX_AI"
             )
-        parsed_gcp = GcpProviderMetadata.from_dict(normalized)
+        parsed_gcp = GcpProviderMetadataRequest.from_dict(normalized)
         if parsed_gcp is None:
             raise UsageError(
                 "--provider-metadata is missing or invalid for VERTEX_AI"

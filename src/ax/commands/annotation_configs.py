@@ -1,12 +1,11 @@
 """Annotation config management commands."""
 
-from typing import Annotated, cast
+from typing import Annotated
 
 import typer
 from arize.annotation_configs.types import (
-    AnnotationConfigType,
     CategoricalAnnotationConfig,
-    CategoricalAnnotationValue,
+    CategoricalAnnotationValueRequest,
     ContinuousAnnotationConfig,
     FreeformAnnotationConfig,
     OptimizationDirection,
@@ -32,6 +31,70 @@ app = typer.Typer(
     no_args_is_help=True,
     context_settings={"help_option_names": ["--help", "-h"]},
 )
+
+# Shared option types for create/update subcommands.
+NameOpt = Annotated[
+    str,
+    typer.Option(
+        "--name",
+        "-n",
+        help="Annotation config name",
+        prompt=True,
+    ),
+]
+NameOrIdArg = Annotated[
+    str, typer.Argument(help="Annotation config name or ID")
+]
+SpaceOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--space",
+        "-s",
+        help="Space name or ID (required if using a name instead of an ID)",
+    ),
+]
+CreateSpaceOpt = Annotated[
+    str,
+    typer.Option(
+        "--space",
+        "-s",
+        help="Space name or ID",
+        prompt=True,
+    ),
+]
+NewNameOpt = Annotated[
+    str | None,
+    typer.Option("--new-name", help="New name for the annotation config"),
+]
+OutputOpt = Annotated[
+    str,
+    typer.Option(
+        "--output",
+        "-o",
+        help="Output format (table, json, csv, parquet) or file path",
+    ),
+]
+VerboseOpt = Annotated[
+    bool,
+    typer.Option("--verbose", "-v", help="Enable verbose logs"),
+]
+
+
+def _emit_config(
+    annotation_config: (
+        ContinuousAnnotationConfig
+        | CategoricalAnnotationConfig
+        | FreeformAnnotationConfig
+    ),
+    output_format: str,
+    output_file: str,
+) -> None:
+    """Render an annotation config using the configured output format."""
+    output_data(
+        annotation_config,
+        format_type=output_format,
+        output_file=output_file,
+    )
 
 
 @app.command("list")
@@ -168,57 +231,32 @@ def get_annotation_config(
         )
 
 
-@app.command("create")
+# ---------------------------------------------------------------------------
+# ax annotation-configs create <type>
+# ---------------------------------------------------------------------------
+
+create_app = typer.Typer(
+    name="create",
+    help="Create an annotation config (choose the subcommand for its type)",
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["--help", "-h"]},
+)
+app.add_typer(create_app)
+
+
+@create_app.command("continuous")
 @handle_errors
-def create_annotation_config(
-    name: Annotated[
-        str,
-        typer.Option(
-            "--name",
-            "-n",
-            help="Annotation config name",
-            prompt=True,
-        ),
-    ],
-    space: Annotated[
-        str,
-        typer.Option(
-            "--space",
-            "-s",
-            help="Space name or ID",
-            prompt=True,
-        ),
-    ],
-    annotation_type: Annotated[
-        AnnotationConfigType,
-        typer.Option(
-            "--type",
-            "-t",
-            help="Annotation config type (CONTINUOUS, CATEGORICAL, FREEFORM)",
-            prompt=True,
-        ),
-    ],
+def create_continuous_annotation_config(
+    name: NameOpt,
+    space: CreateSpaceOpt,
     min_score: Annotated[
-        float | None,
-        typer.Option(
-            "--min-score",
-            help="Minimum score (required for continuous type)",
-        ),
-    ] = None,
+        float,
+        typer.Option("--min-score", help="Minimum score"),
+    ],
     max_score: Annotated[
-        float | None,
-        typer.Option(
-            "--max-score",
-            help="Maximum score (required for continuous type)",
-        ),
-    ] = None,
-    values: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--value",
-            help="Label value for categorical type (repeat for multiple, e.g. --value good --value bad)",
-        ),
-    ] = None,
+        float,
+        typer.Option("--max-score", help="Maximum score"),
+    ],
     optimization_direction: Annotated[
         OptimizationDirection | None,
         typer.Option(
@@ -226,101 +264,112 @@ def create_annotation_config(
             help="Optimization direction (MAXIMIZE, MINIMIZE, or NONE)",
         ),
     ] = None,
-    output: Annotated[
-        str,
-        typer.Option(
-            "--output",
-            "-o",
-            help="Output format (table, json, csv, parquet) or file path",
-        ),
-    ] = "",
-    verbose: Annotated[
-        bool,
-        typer.Option(
-            "--verbose",
-            "-v",
-            help="Enable verbose logs",
-        ),
-    ] = False,
+    output: OutputOpt = "",
+    verbose: VerboseOpt = False,
 ) -> None:
-    """Create a new annotation config.
-
-    Type-specific requirements:
-
-    - CONTINUOUS: --min-score and --max-score are required
-    - CATEGORICAL: --value is required (repeat for multiple labels)
-    - FREEFORM: no additional options required
-    """
+    """Create a CONTINUOUS annotation config."""
     setup_logging(verbose)
     client, config = make_client()
-
     output_format, output_file = parse_output_option(
         output if output else config.output.format
     )
 
-    categorical_values: list[CategoricalAnnotationValue] | None = None
-    if values:
-        categorical_values = [
-            CategoricalAnnotationValue(label=v) for v in values
-        ]
-
-    if annotation_type == AnnotationConfigType.CONTINUOUS and (
-        min_score is None or max_score is None
-    ):
-        raise typer.BadParameter(
-            "--min-score and --max-score are required for continuous annotation configs."
-        )
-    if (
-        annotation_type == AnnotationConfigType.CATEGORICAL
-        and not categorical_values
-    ):
-        raise typer.BadParameter(
-            "--value is required (at least one) for categorical annotation configs."
-        )
-
-    annotation_config: (
-        ContinuousAnnotationConfig
-        | CategoricalAnnotationConfig
-        | FreeformAnnotationConfig
-    )
     try:
         with spinner(
             "Creating annotation config",
             success_msg="Annotation config created successfully",
         ):
-            if annotation_type == AnnotationConfigType.CONTINUOUS:
-                annotation_config = client.annotation_configs.create_continuous(
-                    name=name,
-                    space=space,
-                    minimum_score=cast("float", min_score),
-                    maximum_score=cast("float", max_score),
-                    optimization_direction=optimization_direction,
-                )
-            elif annotation_type == AnnotationConfigType.CATEGORICAL:
-                annotation_config = (
-                    client.annotation_configs.create_categorical(
-                        name=name,
-                        space=space,
-                        values=cast(
-                            "list[CategoricalAnnotationValue]",
-                            categorical_values,
-                        ),
-                        optimization_direction=optimization_direction,
-                    )
-                )
-            else:
-                annotation_config = client.annotation_configs.create_freeform(
-                    name=name,
-                    space=space,
-                )
+            annotation_config = client.annotation_configs.create_continuous(
+                name=name,
+                space=space,
+                minimum_score=min_score,
+                maximum_score=max_score,
+                optimization_direction=optimization_direction,
+            )
     except Exception as e:
         raise APIError(f"Failed to create annotation config: {e}") from e
     else:
-        output_data(
-            annotation_config,
-            format_type=output_format,
-            output_file=output_file,
-        )
+        _emit_config(annotation_config, output_format, output_file)
+
+
+@create_app.command("categorical")
+@handle_errors
+def create_categorical_annotation_config(
+    name: NameOpt,
+    space: CreateSpaceOpt,
+    values: Annotated[
+        list[str],
+        typer.Option(
+            "--value",
+            help="Label value (repeat for multiple, e.g. --value good --value bad)",
+        ),
+    ],
+    optimization_direction: Annotated[
+        OptimizationDirection | None,
+        typer.Option(
+            "--optimization-direction",
+            help="Optimization direction (MAXIMIZE, MINIMIZE, or NONE)",
+        ),
+    ] = None,
+    output: OutputOpt = "",
+    verbose: VerboseOpt = False,
+) -> None:
+    """Create a CATEGORICAL annotation config."""
+    setup_logging(verbose)
+    client, config = make_client()
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    categorical_values = [
+        CategoricalAnnotationValueRequest(label=v) for v in values
+    ]
+
+    try:
+        with spinner(
+            "Creating annotation config",
+            success_msg="Annotation config created successfully",
+        ):
+            annotation_config = client.annotation_configs.create_categorical(
+                name=name,
+                space=space,
+                values=categorical_values,
+                optimization_direction=optimization_direction,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to create annotation config: {e}") from e
+    else:
+        _emit_config(annotation_config, output_format, output_file)
+
+
+@create_app.command("freeform")
+@handle_errors
+def create_freeform_annotation_config(
+    name: NameOpt,
+    space: CreateSpaceOpt,
+    output: OutputOpt = "",
+    verbose: VerboseOpt = False,
+) -> None:
+    """Create a FREEFORM annotation config."""
+    setup_logging(verbose)
+    client, config = make_client()
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Creating annotation config",
+            success_msg="Annotation config created successfully",
+        ):
+            annotation_config = client.annotation_configs.create_freeform(
+                name=name,
+                space=space,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to create annotation config: {e}") from e
+    else:
+        _emit_config(annotation_config, output_format, output_file)
 
 
 # ---------------------------------------------------------------------------
@@ -334,55 +383,6 @@ update_app = typer.Typer(
     context_settings={"help_option_names": ["--help", "-h"]},
 )
 app.add_typer(update_app)
-
-# Shared option types for the update subcommands.
-NameOrIdArg = Annotated[
-    str, typer.Argument(help="Annotation config name or ID")
-]
-SpaceOpt = Annotated[
-    str | None,
-    typer.Option(
-        "--space",
-        "-s",
-        help="Space name or ID (required if using a name instead of an ID)",
-    ),
-]
-NewNameOpt = Annotated[
-    str | None,
-    typer.Option("--new-name", help="New name for the annotation config"),
-]
-OutputOpt = Annotated[
-    str,
-    typer.Option(
-        "--output",
-        "-o",
-        help="Output format (table, json, csv, parquet) or file path",
-    ),
-]
-VerboseOpt = Annotated[
-    bool,
-    typer.Option("--verbose", "-v", help="Enable verbose logs"),
-]
-
-
-def _emit_updated(
-    updated_config: (
-        ContinuousAnnotationConfig
-        | CategoricalAnnotationConfig
-        | FreeformAnnotationConfig
-    ),
-    output: str,
-) -> None:
-    """Render an updated annotation config using the configured output format."""
-    _, config = make_client()
-    output_format, output_file = parse_output_option(
-        output if output else config.output.format
-    )
-    output_data(
-        updated_config,
-        format_type=output_format,
-        output_file=output_file,
-    )
 
 
 @update_app.command("continuous")
@@ -414,7 +414,10 @@ def update_continuous_annotation_config(
     Only the fields you pass are changed; omitted fields are left unchanged.
     """
     setup_logging(verbose)
-    client, _ = make_client()
+    client, config = make_client()
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
 
     try:
         with spinner(
@@ -432,7 +435,7 @@ def update_continuous_annotation_config(
     except Exception as e:
         raise APIError(f"Failed to update annotation config: {e}") from e
     else:
-        _emit_updated(updated_config, output)
+        _emit_config(updated_config, output_format, output_file)
 
 
 @update_app.command("categorical")
@@ -463,12 +466,15 @@ def update_categorical_annotation_config(
     Only the fields you pass are changed; omitted fields are left unchanged.
     """
     setup_logging(verbose)
-    client, _ = make_client()
+    client, config = make_client()
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
 
-    categorical_values: list[CategoricalAnnotationValue] | None = None
+    categorical_values: list[CategoricalAnnotationValueRequest] | None = None
     if values:
         categorical_values = [
-            CategoricalAnnotationValue(label=v) for v in values
+            CategoricalAnnotationValueRequest(label=v) for v in values
         ]
 
     try:
@@ -486,7 +492,7 @@ def update_categorical_annotation_config(
     except Exception as e:
         raise APIError(f"Failed to update annotation config: {e}") from e
     else:
-        _emit_updated(updated_config, output)
+        _emit_config(updated_config, output_format, output_file)
 
 
 @update_app.command("freeform")
@@ -503,7 +509,10 @@ def update_freeform_annotation_config(
     Only the fields you pass are changed; omitted fields are left unchanged.
     """
     setup_logging(verbose)
-    client, _ = make_client()
+    client, config = make_client()
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
 
     try:
         with spinner(
@@ -518,7 +527,7 @@ def update_freeform_annotation_config(
     except Exception as e:
         raise APIError(f"Failed to update annotation config: {e}") from e
     else:
-        _emit_updated(updated_config, output)
+        _emit_config(updated_config, output_format, output_file)
 
 
 @app.command("delete")

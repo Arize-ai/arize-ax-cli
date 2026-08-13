@@ -8,6 +8,7 @@ from ax.config.input_readers import (
     INSERT_VALUE,
     USE_ENV_VAR,
     AdvancedRoutingOpts,
+    read_region,
     read_routing,
 )
 
@@ -90,3 +91,35 @@ class TestReadRoutingSingleEndpoint:
         assert result.otlp_scheme == "${ARIZE_API_SCHEME}"
         # flight_scheme falls back to default when scheme is an env var reference
         assert result.flight_scheme == "grpc+tls"
+
+
+class TestReadRegion:
+    """Tests for read_region(): labeled choices resolve back to zone IDs."""
+
+    @pytest.mark.unit
+    def test_labeled_choice_resolves_to_zone_id(self) -> None:
+        with patch("ax.config.input_readers.questionary") as mock_q:
+            mock_q.select.return_value.ask.return_value = (
+                "us-east-1b  (US East)"
+            )
+            assert read_region() == "us-east-1b"
+
+    @pytest.mark.unit
+    def test_unset_choice_returns_empty_string(self) -> None:
+        with patch("ax.config.input_readers.questionary") as mock_q:
+            mock_q.select.return_value.ask.return_value = (
+                "(default - no region needed for US)"
+            )
+            assert read_region() == ""
+
+    @pytest.mark.unit
+    def test_env_var_choice_returns_reference(self) -> None:
+        with (
+            patch("ax.config.input_readers.questionary") as mock_q,
+            patch(
+                "ax.config.input_readers.prompt",
+                return_value="ARIZE_REGION",
+            ),
+        ):
+            mock_q.select.return_value.ask.return_value = USE_ENV_VAR
+            assert read_region() == "${ARIZE_REGION}"

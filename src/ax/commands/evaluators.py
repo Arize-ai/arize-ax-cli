@@ -3,20 +3,22 @@
 from typing import Annotated
 
 import typer
-from arize._generated.api_client.models.invocation_params import (
-    InvocationParams,
+from arize._generated.api_client.models.invocation_params_request import (
+    InvocationParamsRequest,
 )
-from arize._generated.api_client.models.provider_params import ProviderParams
+from arize._generated.api_client.models.provider_params_request import (
+    ProviderParamsRequest,
+)
 from arize.evaluators.types import (
-    CodeConfig,
-    CustomCodeConfig,
+    CodeConfigRequest,
+    CustomCodeConfigRequest,
     DataGranularity,
-    EvaluatorLlmConfig,
-    ManagedCodeConfig,
+    EvaluatorLlmConfigRequest,
+    ManagedCodeConfigRequest,
     ManagedCodeEvaluator,
     OptimizationDirection,
-    StaticParam,
-    TemplateConfig,
+    StaticParamRequest,
+    TemplateConfigInput,
 )
 
 from ax.core.client_factory import make_client
@@ -77,8 +79,8 @@ def _build_template_config(
     classification_choices_str: str | None = None,
     direction: OptimizationDirection | None = None,
     data_granularity: DataGranularity | None = None,
-) -> TemplateConfig:
-    r"""Build a TemplateConfig from individual CLI option values."""
+) -> TemplateConfigInput:
+    r"""Build a TemplateConfigInput from individual CLI option values."""
     invocation_params = load_json(invocation_params_str)
     if not isinstance(invocation_params, dict):
         raise UsageError("--invocation-params must be a JSON object")
@@ -87,21 +89,23 @@ def _build_template_config(
     if not isinstance(provider_params, dict):
         raise UsageError("--provider-params must be a JSON object")
 
-    typed_invocation_params = InvocationParams.from_dict(invocation_params)
+    typed_invocation_params = InvocationParamsRequest.from_dict(
+        invocation_params
+    )
     if typed_invocation_params is None:
         raise UsageError("--invocation-params is missing or invalid")
 
-    typed_provider_params = ProviderParams.from_dict(provider_params)
+    typed_provider_params = ProviderParamsRequest.from_dict(provider_params)
     if typed_provider_params is None:
         raise UsageError("--provider-params is missing or invalid")
 
-    llm_config = EvaluatorLlmConfig(
+    llm_config = EvaluatorLlmConfigRequest(
         ai_integration_id=ai_integration_id,
         model_name=model_name,
         invocation_parameters=typed_invocation_params,
         provider_parameters=typed_provider_params,
     )
-    return TemplateConfig(
+    return TemplateConfigInput(
         name=template_name,
         template=template,
         include_explanations=include_explanations,
@@ -125,8 +129,8 @@ def _parse_variables(source: str) -> list[str]:
     return parsed  # type: ignore[return-value]
 
 
-def _parse_static_params(source: str | None) -> list[StaticParam] | None:
-    """Parse the --static-params option into a list of StaticParam objects.
+def _parse_static_params(source: str | None) -> list[StaticParamRequest] | None:
+    """Parse the --static-params option into a list of StaticParamRequest objects.
 
     Each item must be an object with ``name``, ``type``, and ``default_value``
     (string for ``STRING``/``REGEX``; array of strings for ``STRING_ARRAY``).
@@ -138,7 +142,7 @@ def _parse_static_params(source: str | None) -> list[StaticParam] | None:
     if not isinstance(parsed, list):
         raise UsageError("--static-params must be a JSON array of objects")
     try:
-        params = [StaticParam.from_dict(item) for item in parsed]
+        params = [StaticParamRequest.from_dict(item) for item in parsed]
     except Exception as exc:
         raise UsageError(f"Failed to parse --static-params: {exc}") from exc
     none_indices = [i for i, p in enumerate(params) if p is None]
@@ -165,9 +169,9 @@ def _build_managed_code_config(
     static_params: str | None,
     query_filter: str | None,
     data_granularity: DataGranularity | None,
-) -> CodeConfig:
-    """Build a CodeConfig wrapping a ManagedCodeConfig from CLI option values."""
-    managed = ManagedCodeConfig(
+) -> CodeConfigRequest:
+    """Build a CodeConfigRequest wrapping a ManagedCodeConfigRequest from CLI option values."""
+    managed = ManagedCodeConfigRequest(
         type=_CODE_TYPE_MANAGED,
         name=code_name,
         managed_evaluator=managed_evaluator,
@@ -176,7 +180,7 @@ def _build_managed_code_config(
         query_filter=query_filter if query_filter else None,
         data_granularity=data_granularity,
     )
-    return CodeConfig(managed)
+    return CodeConfigRequest(managed)
 
 
 def _build_custom_code_config(
@@ -188,9 +192,9 @@ def _build_custom_code_config(
     static_params: str | None,
     query_filter: str | None,
     data_granularity: DataGranularity | None,
-) -> CodeConfig:
-    """Build a CodeConfig wrapping a CustomCodeConfig from CLI option values."""
-    custom = CustomCodeConfig(
+) -> CodeConfigRequest:
+    """Build a CodeConfigRequest wrapping a CustomCodeConfigRequest from CLI option values."""
+    custom = CustomCodeConfigRequest(
         type=_CODE_TYPE_CUSTOM,
         name=code_name,
         code=load_text_source(code, "--code"),
@@ -204,7 +208,7 @@ def _build_custom_code_config(
         query_filter=query_filter if query_filter else None,
         data_granularity=data_granularity,
     )
-    return CodeConfig(custom)
+    return CodeConfigRequest(custom)
 
 
 @app.command("list")

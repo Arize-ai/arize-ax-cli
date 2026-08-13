@@ -8,6 +8,7 @@ from arize.annotation_configs.types import (
     AnnotationConfig,
     CategoricalAnnotationConfig,
     CategoricalAnnotationValue,
+    CategoricalAnnotationValueRequest,
     ContinuousAnnotationConfig,
     FreeformAnnotationConfig,
     ListAnnotationConfigsResponse,
@@ -279,12 +280,11 @@ class TestCreateAnnotationConfig:
             [
                 "annotation-configs",
                 "create",
+                "freeform",
                 "--name",
                 "Quality",
                 "--space",
                 "sp_abc",
-                "--type",
-                "FREEFORM",
                 "--output",
                 "json",
             ],
@@ -301,7 +301,7 @@ class TestCreateAnnotationConfig:
     def test_create_freeform_calls_sdk_correctly(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that create passes the right type and no type-specific args for freeform."""
+        """Test that create freeform passes name and space to the SDK."""
         mock_client.annotation_configs.create_freeform.return_value = (
             _freeform()
         )
@@ -310,12 +310,11 @@ class TestCreateAnnotationConfig:
             [
                 "annotation-configs",
                 "create",
+                "freeform",
                 "--name",
                 "Q",
                 "--space",
                 "sp_abc",
-                "--type",
-                "FREEFORM",
             ],
             mock_config,
             mock_client,
@@ -338,12 +337,11 @@ class TestCreateAnnotationConfig:
             [
                 "annotation-configs",
                 "create",
+                "continuous",
                 "--name",
                 "Score",
                 "--space",
                 "sp_abc",
-                "--type",
-                "CONTINUOUS",
                 "--min-score",
                 "0",
                 "--max-score",
@@ -370,7 +368,7 @@ class TestCreateAnnotationConfig:
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
         """Test that --value 'good' --value 'neutral' --value 'bad' is
-        parsed into CategoricalAnnotationValue list.
+        parsed into CategoricalAnnotationValueRequest list.
         """
         mock_client.annotation_configs.create_categorical.return_value = (
             _categorical(name="Verdict")
@@ -380,12 +378,11 @@ class TestCreateAnnotationConfig:
             [
                 "annotation-configs",
                 "create",
+                "categorical",
                 "--name",
                 "Verdict",
                 "--space",
                 "sp_abc",
-                "--type",
-                "CATEGORICAL",
                 "--value",
                 "good",
                 "--value",
@@ -404,9 +401,9 @@ class TestCreateAnnotationConfig:
             mock_client.annotation_configs.create_categorical.call_args.kwargs
         )
         assert call_kwargs["values"] == [
-            CategoricalAnnotationValue(label="good"),
-            CategoricalAnnotationValue(label="neutral"),
-            CategoricalAnnotationValue(label="bad"),
+            CategoricalAnnotationValueRequest(label="good"),
+            CategoricalAnnotationValueRequest(label="neutral"),
+            CategoricalAnnotationValueRequest(label="bad"),
         ]
 
     def test_create_invalid_optimization_direction_exits_nonzero(
@@ -417,12 +414,15 @@ class TestCreateAnnotationConfig:
             [
                 "annotation-configs",
                 "create",
+                "continuous",
                 "--name",
                 "Score",
                 "--space",
                 "sp_abc",
-                "--type",
-                "CONTINUOUS",
+                "--min-score",
+                "0",
+                "--max-score",
+                "1",
                 "--optimization-direction",
                 "sideways",
             ],
@@ -439,18 +439,16 @@ class TestCreateAnnotationConfig:
             [
                 "annotation-configs",
                 "create",
+                "continuous",
                 "--name",
                 "Score",
                 "--space",
                 "sp_abc",
-                "--type",
-                "continuous",
             ],
             mock_config,
             mock_client,
         )
         assert result.exit_code != 0
-        assert "Invalid value" in result.output
         mock_client.annotation_configs.create_continuous.assert_not_called()
 
     def test_create_categorical_without_values_errors_before_sdk(
@@ -461,19 +459,39 @@ class TestCreateAnnotationConfig:
             [
                 "annotation-configs",
                 "create",
+                "categorical",
                 "--name",
                 "Verdict",
                 "--space",
                 "sp_abc",
-                "--type",
-                "categorical",
             ],
             mock_config,
             mock_client,
         )
         assert result.exit_code != 0
-        assert "Invalid value" in result.output
         mock_client.annotation_configs.create_categorical.assert_not_called()
+
+    def test_create_freeform_with_value_errors_before_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """--value is not valid for freeform creates."""
+        result = _invoke(
+            [
+                "annotation-configs",
+                "create",
+                "freeform",
+                "--name",
+                "Quality",
+                "--space",
+                "sp_abc",
+                "--value",
+                "x",
+            ],
+            mock_config,
+            mock_client,
+        )
+        assert result.exit_code != 0
+        mock_client.annotation_configs.create_freeform.assert_not_called()
 
     def test_create_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -487,17 +505,39 @@ class TestCreateAnnotationConfig:
             [
                 "annotation-configs",
                 "create",
+                "freeform",
                 "--name",
                 "Test",
                 "--space",
                 "sp_abc",
-                "--type",
-                "FREEFORM",
             ],
             mock_config,
             mock_client,
         )
         assert result.exit_code != 0
+
+    def test_create_invalid_output_errors_before_sdk(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Invalid output must not create a config before reporting failure."""
+        result = _invoke(
+            [
+                "annotation-configs",
+                "create",
+                "freeform",
+                "--name",
+                "Test",
+                "--space",
+                "sp_abc",
+                "--output",
+                "invalid",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code != 0
+        mock_client.annotation_configs.create_freeform.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -580,7 +620,7 @@ class TestUpdateAnnotationConfig:
     def test_update_categorical_passes_replacement_values(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that repeated --value options build a CategoricalAnnotationValue list."""
+        """Test that repeated --value options build a CategoricalAnnotationValueRequest list."""
         mock_client.annotation_configs.update_categorical.return_value = (
             _categorical()
         )
@@ -608,8 +648,8 @@ class TestUpdateAnnotationConfig:
             space=None,
             name=None,
             values=[
-                CategoricalAnnotationValue(label="good"),
-                CategoricalAnnotationValue(label="bad"),
+                CategoricalAnnotationValueRequest(label="good"),
+                CategoricalAnnotationValueRequest(label="bad"),
             ],
             optimization_direction=None,
         )

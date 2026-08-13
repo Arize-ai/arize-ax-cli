@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 import typer
 from arize.tasks.types import (
-    RunConfiguration,
+    RunConfigurationRequest,
     RunStatus,
     TaskEvaluatorInput,
     TaskType,
@@ -56,14 +56,14 @@ def _build_evaluators(
 
 def _build_run_configuration(
     parsed: dict[str, Any] | list[dict[str, Any]],
-) -> RunConfiguration:
-    """Parse a dict into a RunConfiguration discriminated-union model."""
+) -> RunConfigurationRequest:
+    """Parse a dict into a RunConfigurationRequest discriminated-union model."""
     if not isinstance(parsed, dict):
         raise typer.BadParameter(
             "--run-configuration must be a JSON object, not an array"
         )
     try:
-        result = RunConfiguration.from_dict(parsed)
+        result = RunConfigurationRequest.from_dict(parsed)
     except Exception as exc:
         raise typer.BadParameter(
             f"Failed to parse run configuration: {exc}"

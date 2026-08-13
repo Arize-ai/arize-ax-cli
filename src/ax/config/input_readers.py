@@ -23,6 +23,13 @@ INSERT_VALUE = "Insert value"
 USE_ENV_VAR = "Use environment variable"
 UNSET_REGION_MSG = "(default - no region needed for US)"
 
+REGION_LABELS: dict[str, str] = {
+    Region.US_EAST_1B.value: "us-east-1b  (US East)",
+    Region.US_CENTRAL_1A.value: "us-central-1a  (US Central)",
+    Region.EU_WEST_1A.value: "eu-west-1a  (EU West)",
+    Region.CA_CENTRAL_1A.value: "ca-central-1a  (Canada)",
+}
+
 
 class AdvancedRoutingOpts(Enum):
     """Options for advanced routing configuration."""
@@ -109,9 +116,10 @@ def read_api_key() -> str:
 
 def read_region() -> str:
     """Read the region from user selection or environment variable."""
+    region_by_label = {label: region for region, label in REGION_LABELS.items()}
     choices = [
         UNSET_REGION_MSG,
-        *Region.list_regions(),
+        *region_by_label,
         USE_ENV_VAR,
     ]
     region_choice = questionary.select(
@@ -127,7 +135,11 @@ def read_region() -> str:
         )
         region = f"${{{region_choice}}}"
     else:
-        region = "" if region_choice == UNSET_REGION_MSG else region_choice
+        region = (
+            ""
+            if region_choice == UNSET_REGION_MSG
+            else region_by_label[region_choice]
+        )
 
     return region
 

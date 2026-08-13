@@ -8,8 +8,8 @@ from arize.ai_integrations.types import (
     AiIntegrationAuthType,
     AiIntegrationProvider,
     AiIntegrationScoping,
-    AwsProviderMetadata,
     AwsProviderMetadataKind,
+    AwsProviderMetadataRequest,
 )
 from typer.testing import CliRunner, Result
 
@@ -355,7 +355,7 @@ class TestCreateAiIntegration:
         )
 
         call_kwargs = mock_client.ai_integrations.create.call_args.kwargs
-        assert call_kwargs["provider_metadata"] == AwsProviderMetadata(
+        assert call_kwargs["provider_metadata"] == AwsProviderMetadataRequest(
             kind=AwsProviderMetadataKind.AWS,
             role_arn="arn:aws:iam::123:role/MyRole",
         )

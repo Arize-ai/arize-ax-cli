@@ -5,10 +5,10 @@ from typing import Annotated, Any
 import typer
 from arize.prompts.types import (
     InputVariableFormat,
-    InvocationParams,
-    LLMMessage,
+    InvocationParamsRequest,
+    LLMMessageRequest,
     LlmProvider,
-    ProviderParams,
+    ProviderParamsRequest,
 )
 
 from ax.core.client_factory import make_client
@@ -36,8 +36,8 @@ app = typer.Typer(
 
 def _build_llm_messages(
     parsed: dict[str, Any] | list[dict[str, Any]],
-) -> list[LLMMessage]:
-    """Parse a JSON document into a list of :class:`LLMMessage`.
+) -> list[LLMMessageRequest]:
+    """Parse a JSON document into a list of :class:`LLMMessageRequest`.
 
     Args:
         parsed: Parsed JSON value (dict or list of dicts).
@@ -54,7 +54,7 @@ def _build_llm_messages(
         )
 
     try:
-        messages = [LLMMessage.from_dict(m) for m in parsed]
+        messages = [LLMMessageRequest.from_dict(m) for m in parsed]
     except Exception as exc:
         raise typer.BadParameter(f"Failed to parse messages: {exc}") from exc
 
@@ -345,7 +345,7 @@ def create_prompt(
     """
     parsed_messages = _build_llm_messages(load_json(messages))
 
-    parsed_invocation_params: InvocationParams | None = None
+    parsed_invocation_params: InvocationParamsRequest | None = None
     if invocation_params is not None:
         _raw_inv = load_json(invocation_params)
         if not isinstance(_raw_inv, dict):
@@ -353,19 +353,21 @@ def create_prompt(
                 "--invocation-params must be a JSON object."
             )
         try:
-            parsed_invocation_params = InvocationParams.from_dict(_raw_inv)
+            parsed_invocation_params = InvocationParamsRequest.from_dict(
+                _raw_inv
+            )
         except Exception as exc:
             raise typer.BadParameter(
                 f"Failed to parse --invocation-params: {exc}"
             ) from exc
 
-    parsed_provider_params: ProviderParams | None = None
+    parsed_provider_params: ProviderParamsRequest | None = None
     if provider_params is not None:
         _raw_prov = load_json(provider_params)
         if not isinstance(_raw_prov, dict):
             raise typer.BadParameter("--provider-params must be a JSON object.")
         try:
-            parsed_provider_params = ProviderParams.from_dict(_raw_prov)
+            parsed_provider_params = ProviderParamsRequest.from_dict(_raw_prov)
         except Exception as exc:
             raise typer.BadParameter(
                 f"Failed to parse --provider-params: {exc}"
@@ -720,7 +722,7 @@ def create_version(
     """
     parsed_messages = _build_llm_messages(load_json(messages))
 
-    parsed_invocation_params: InvocationParams | None = None
+    parsed_invocation_params: InvocationParamsRequest | None = None
     if invocation_params is not None:
         _raw_inv = load_json(invocation_params)
         if not isinstance(_raw_inv, dict):
@@ -728,19 +730,21 @@ def create_version(
                 "--invocation-params must be a JSON object."
             )
         try:
-            parsed_invocation_params = InvocationParams.from_dict(_raw_inv)
+            parsed_invocation_params = InvocationParamsRequest.from_dict(
+                _raw_inv
+            )
         except Exception as exc:
             raise typer.BadParameter(
                 f"Failed to parse --invocation-params: {exc}"
             ) from exc
 
-    parsed_provider_params: ProviderParams | None = None
+    parsed_provider_params: ProviderParamsRequest | None = None
     if provider_params is not None:
         _raw_prov = load_json(provider_params)
         if not isinstance(_raw_prov, dict):
             raise typer.BadParameter("--provider-params must be a JSON object.")
         try:
-            parsed_provider_params = ProviderParams.from_dict(_raw_prov)
+            parsed_provider_params = ProviderParamsRequest.from_dict(_raw_prov)
         except Exception as exc:
             raise typer.BadParameter(
                 f"Failed to parse --provider-params: {exc}"

@@ -96,6 +96,26 @@ class TestRoutingConfig:
         with pytest.raises(ValidationError, match="Invalid region"):
             RoutingConfig(region="INVALID")
 
+    def test_region_alias_us_resolves_to_zone_id(self) -> None:
+        """Test that the "US" alias resolves to the us-east-1b zone ID."""
+        routing = RoutingConfig(region="US")
+        assert routing.region == "us-east-1b"
+
+    def test_region_alias_eu_resolves_to_zone_id(self) -> None:
+        """Test that the "EU" alias resolves to the eu-west-1a zone ID."""
+        routing = RoutingConfig(region="EU")
+        assert routing.region == "eu-west-1a"
+
+    def test_region_alias_is_case_insensitive(self) -> None:
+        """Test that region aliases are matched case-insensitively."""
+        routing = RoutingConfig(region="us")
+        assert routing.region == "us-east-1b"
+
+    def test_region_alias_lookalike_still_raises_error(self) -> None:
+        """Test that a string merely resembling an alias still raises."""
+        with pytest.raises(ValidationError, match="Invalid region"):
+            RoutingConfig(region="USA")
+
     def test_env_var_region_allowed(self) -> None:
         """Test that environment variable reference is allowed for region."""
         routing = RoutingConfig(region="${ARIZE_REGION}")

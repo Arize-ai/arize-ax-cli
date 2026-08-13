@@ -12,13 +12,13 @@ from arize._generated.api_client.models.user_space_role import UserSpaceRole
 from arize.api_keys.types import (
     ApiKeyStatus,
     ApiKeyType,
-    OrganizationRoleAssignment,
+    OrganizationRoleAssignmentRequest,
     OrgBinding,
     ServiceApiKeyCreated,
     SpaceBinding,
-    SpaceRoleAssignment,
+    SpaceRoleAssignmentRequest,
     UserApiKeyCreated,
-    UserRoleAssignment,
+    UserRoleAssignmentRequest,
 )
 
 from ax.core.client_factory import make_client
@@ -268,8 +268,8 @@ _ORG_ROLES = ", ".join(r.value for r in OrganizationRole)
 
 def _build_space_role(
     role_raw: str | dict | None,
-) -> SpaceRoleAssignment | None:
-    """Build a SpaceRoleAssignment from a predefined role name or custom role dict."""
+) -> SpaceRoleAssignmentRequest | None:
+    """Build a SpaceRoleAssignmentRequest from a predefined role name or custom role dict."""
     if role_raw is None:
         return None
     if isinstance(role_raw, str):
@@ -279,7 +279,7 @@ def _build_space_role(
             raise typer.BadParameter(
                 f"Invalid space role {role_raw!r}. Valid values: {_SPACE_ROLES}"
             ) from e
-        return SpaceRoleAssignment.from_dict(
+        return SpaceRoleAssignmentRequest.from_dict(
             {"type": "PREDEFINED", "name": role_raw}
         )
     if isinstance(role_raw, dict):
@@ -290,7 +290,7 @@ def _build_space_role(
                 raise typer.BadParameter(
                     "Custom space role requires a non-empty 'id' field."
                 )
-            return SpaceRoleAssignment.from_dict(
+            return SpaceRoleAssignmentRequest.from_dict(
                 {"type": "CUSTOM", "id": role_id}
             )
         raise typer.BadParameter(
@@ -305,8 +305,8 @@ def _build_space_role(
 
 def _build_org_role(
     role_raw: str | dict | None,
-) -> OrganizationRoleAssignment | None:
-    """Build an OrganizationRoleAssignment from a predefined role name or custom role dict."""
+) -> OrganizationRoleAssignmentRequest | None:
+    """Build an OrganizationRoleAssignmentRequest from a predefined role name or custom role dict."""
     if role_raw is None:
         return None
     if isinstance(role_raw, str):
@@ -316,7 +316,7 @@ def _build_org_role(
             raise typer.BadParameter(
                 f"Invalid org role {role_raw!r}. Valid values: {_ORG_ROLES}"
             ) from e
-        return OrganizationRoleAssignment.from_dict(
+        return OrganizationRoleAssignmentRequest.from_dict(
             {"type": "PREDEFINED", "name": role_raw}
         )
     if isinstance(role_raw, dict):
@@ -327,7 +327,7 @@ def _build_org_role(
                 raise typer.BadParameter(
                     "Custom org role requires a non-empty 'id' field."
                 )
-            return OrganizationRoleAssignment.from_dict(
+            return OrganizationRoleAssignmentRequest.from_dict(
                 {"type": "CUSTOM", "id": role_id}
             )
         raise typer.BadParameter(
@@ -340,11 +340,13 @@ def _build_org_role(
     )
 
 
-def _build_account_role(name: str | None) -> UserRoleAssignment | None:
-    """Wrap a predefined account-role name into a UserRoleAssignment."""
+def _build_account_role(name: str | None) -> UserRoleAssignmentRequest | None:
+    """Wrap a predefined account-role name into a UserRoleAssignmentRequest."""
     if name is None:
         return None
-    return UserRoleAssignment.from_dict({"type": "PREDEFINED", "name": name})
+    return UserRoleAssignmentRequest.from_dict(
+        {"type": "PREDEFINED", "name": name}
+    )
 
 
 def _parse_assignments(assignments_raw: str) -> list[OrgBinding]:

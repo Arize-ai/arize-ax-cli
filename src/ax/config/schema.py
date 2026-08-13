@@ -150,6 +150,13 @@ class AuthConfig(BaseModel):
         return self.auth_method == AuthMethod.OAUTH and self.oauth is None
 
 
+REGION_ALIASES: dict[str, str] = {
+    "US": Region.US_EAST_1B.value,
+    "CA": Region.CA_CENTRAL_1A.value,
+    "EU": Region.EU_WEST_1A.value,
+}
+
+
 class RoutingConfig(BaseModel):
     """Routing strategy (mutually exclusive options)."""
 
@@ -210,11 +217,14 @@ class RoutingConfig(BaseModel):
         if v.startswith("${") and v.endswith("}"):
             return v
 
+        # Resolve friendly aliases (e.g. "US", "EU") to canonical zone IDs
+        v = REGION_ALIASES.get(v.upper(), v)
+
         # Validate as a literal region
         valid_regions = Region.list_regions()
         if v not in valid_regions:
             raise ValueError(
-                f"Invalid region: {v}. Must be empty string or one of: "
+                f"Invalid region: {v}. Must be empty string or one of 'US', 'CA', 'EU', "
                 f"{', '.join(valid_regions)}"
             )
         return v

@@ -139,10 +139,11 @@ class TestBuildRunConfiguration:
 
     @pytest.mark.unit
     def test_valid_dict_parses_to_run_configuration(self) -> None:
-        """Valid dict input is parsed and the RunConfiguration result is returned."""
+        """Valid dict input is parsed and the RunConfigurationRequest result is returned."""
         mock_rc = MagicMock()
         with patch(
-            "ax.commands.tasks.RunConfiguration.from_dict", return_value=mock_rc
+            "ax.commands.tasks.RunConfigurationRequest.from_dict",
+            return_value=mock_rc,
         ):
             result = _build_run_configuration(
                 {"experiment_type": "LLM_GENERATION"}
@@ -151,12 +152,12 @@ class TestBuildRunConfiguration:
 
     @pytest.mark.unit
     def test_from_dict_exception_wraps_as_bad_parameter(self) -> None:
-        """Exception raised by RunConfiguration.from_dict is wrapped as BadParameter."""
+        """Exception raised by RunConfigurationRequest.from_dict is wrapped as BadParameter."""
         import typer
 
         with (
             patch(
-                "ax.commands.tasks.RunConfiguration.from_dict",
+                "ax.commands.tasks.RunConfigurationRequest.from_dict",
                 side_effect=ValueError("unknown discriminator"),
             ),
             pytest.raises(
@@ -167,12 +168,12 @@ class TestBuildRunConfiguration:
 
     @pytest.mark.unit
     def test_from_dict_returns_none_wraps_as_bad_parameter(self) -> None:
-        """None returned by RunConfiguration.from_dict is wrapped as BadParameter."""
+        """None returned by RunConfigurationRequest.from_dict is wrapped as BadParameter."""
         import typer
 
         with (
             patch(
-                "ax.commands.tasks.RunConfiguration.from_dict",
+                "ax.commands.tasks.RunConfigurationRequest.from_dict",
                 return_value=None,
             ),
             pytest.raises(typer.BadParameter, match="result was None"),

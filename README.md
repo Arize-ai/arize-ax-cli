@@ -57,6 +57,7 @@
     - [Code evaluators](#code-evaluators)
   - [Experiments](#experiments)
     - [`ax experiments run` — execute a task locally](#ax-experiments-run--execute-a-task-locally)
+    - [`ax experiments create` — publish pre-computed runs](#ax-experiments-create--publish-pre-computed-runs)
   - [Organizations](#organizations)
   - [Projects](#projects)
   - [Prompts](#prompts)
@@ -276,9 +277,11 @@ API Key: Insert value
 API Key (e.g., ak-123...): [hidden input]
 
 Region:
-> (leave empty for unset)
-  US
-  EU
+> (default - no region needed for US)
+  us-east-1b  (US East, alias: US)
+  us-central-1a  (US Central)
+  eu-west-1a  (EU West, alias: EU)
+  ca-central-1a  (Canada, alias: CA)
   Use environment variable
 
 Default output format:
@@ -671,14 +674,14 @@ ax annotation-configs list [--name <substring>] [--space <space>] [--limit 15] [
 ax annotation-configs get <annotation-config>
 
 # Create a freeform annotation config (free-text feedback)
-ax annotation-configs create --name "Quality" --space <space> --type FREEFORM
+ax annotation-configs create freeform --name "Quality" --space <space>
 
 # Create a continuous annotation config (numeric score range)
-ax annotation-configs create --name "Score" --space <space> --type CONTINUOUS \
+ax annotation-configs create continuous --name "Score" --space <space> \
   --min-score 0 --max-score 1 --optimization-direction MAXIMIZE
 
 # Create a categorical annotation config (discrete labels)
-ax annotation-configs create --name "Verdict" --space <space> --type CATEGORICAL \
+ax annotation-configs create categorical --name "Verdict" --space <space> \
   --value good --value neutral --value bad --optimization-direction MAXIMIZE
 
 # Update an annotation config (pick the subcommand for its type; only the fields you pass change)
@@ -692,11 +695,11 @@ ax annotation-configs delete <annotation-config> [--force]
 
 **Supported annotation config types:**
 
-| Type          | Required options                                                        | Optional options           |
+| Type          | Create options                                                          | Optional options           |
 | ------------- | ----------------------------------------------------------------------- | -------------------------- |
-| `FREEFORM`    | _(none)_                                                                | —                          |
-| `CONTINUOUS`  | `--min-score`, `--max-score`                                            | `--optimization-direction` |
-| `CATEGORICAL` | `--value` (repeat for multiple labels, e.g. `--value good --value bad`) | `--optimization-direction` |
+| `freeform`    | `--name`, `--space`                                                     | —                          |
+| `continuous`  | `--name`, `--space`, `--min-score`, `--max-score`                       | `--optimization-direction` |
+| `categorical` | `--name`, `--space`, `--value` (repeat, e.g. `--value good --value bad`) | `--optimization-direction` |
 
 ### Annotation Queues
 
@@ -1055,14 +1058,17 @@ ax evaluators create-code-evaluator-version <evaluator-id> \
 
 ### Experiments
 
-Run and analyze experiments on your datasets:
+Run and analyze experiments, either against a dataset or standalone:
 
 ```bash
-# List experiments (optionally filtered by dataset)
-ax experiments list [--dataset <dataset>] [--limit 15] [--cursor <cursor>]
+# List experiments (narrowed by dataset, or by space to include standalone ones)
+ax experiments list [--dataset <dataset>] [--space <space>] [--limit 15] [--cursor <cursor>]
 
 # Get a specific experiment
 ax experiments get <experiment>
+
+# Get one by name: pass --dataset to scope the name, or --space for a standalone experiment
+ax experiments get <name> --space <space>
 
 # Export all runs from an experiment
 ax experiments export <experiment> [--output-dir .] [--stdout]
@@ -1075,6 +1081,9 @@ ax experiments run --dataset <dataset> --name "My Experiment" --task task.py --d
 
 # Create a new experiment from a pre-computed data file
 ax experiments create --name "My Experiment" --dataset <dataset> --file runs.csv
+
+# Create a standalone experiment — no dataset, so --space says where it lives
+ax experiments create --name "My Experiment" --space <space> --file runs.csv
 
 # Create an experiment from stdin
 ax experiments create --name "My Experiment" --dataset <dataset> --file -
@@ -1118,7 +1127,26 @@ The function runs once per dataset example. Any JSON-serialisable return type is
 | `--dry-run` | Run locally on the first 10 examples without uploading results |
 | `--verbose`, `-v` | Enable verbose logs |
 
-> **Note:** The data file for `experiments create` must contain `example_id` and `output` columns. Extra columns are passed through as additional fields.
+#### `ax experiments create` — publish pre-computed runs
+
+Pass either `--dataset` to attach the experiment to a dataset, or `--space` to create a
+standalone experiment that has none. One of the two is required.
+
+**`create` options:**
+
+| Option | Description |
+| --- | --- |
+| `--name`, `-n` | Experiment name _(required)_ |
+| `--file`, `-f` | Data file (CSV, JSON, JSONL, Parquet), or `-` for stdin _(required)_ |
+| `--dataset` | Dataset name or ID to attach the experiment to; omit for a standalone experiment |
+| `--space`, `-s` | Space name or ID. Required when `--dataset` is omitted; with `--dataset` it only resolves the dataset by name |
+| `--output`, `-o` | Output format (table, json, csv, parquet) or file path |
+| `--verbose`, `-v` | Enable verbose logs |
+
+> **Note:** The data file must contain an `output` column. It must also contain `example_id`
+> when using `--dataset`, since each run references the dataset example it ran on — a
+> standalone experiment has no examples to reference. Extra columns are passed through as
+> additional fields.
 
 **Export options:**
 

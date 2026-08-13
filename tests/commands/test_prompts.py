@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from arize.prompts.types import (
     InputVariableFormat,
-    LLMMessage,
+    LLMMessageRequest,
     LlmProvider,
     MessageRole,
     ToolCallType,
@@ -385,7 +385,7 @@ class TestCreatePrompt:
         assert call_kwargs["commit_message"] == "Initial"
         msgs = call_kwargs["messages"]
         assert len(msgs) == 1
-        assert isinstance(msgs[0], LLMMessage)
+        assert isinstance(msgs[0], LLMMessageRequest)
         assert msgs[0].role == MessageRole.USER
         assert msgs[0].content == "Hello"
 

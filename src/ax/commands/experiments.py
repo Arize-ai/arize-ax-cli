@@ -111,7 +111,11 @@ def list_experiments(
         typer.Option(
             "--space",
             "-s",
-            help="Space name or ID (required if using dataset name instead of ID)",
+            help=(
+                "Space name or ID. Lists every experiment in the space "
+                "when --dataset is omitted, including standalone ones; "
+                "otherwise resolves --dataset by name"
+            ),
         ),
     ] = None,
     limit: Annotated[
@@ -184,7 +188,10 @@ def get_experiment(
         str | None,
         typer.Option(
             "--dataset",
-            help="Dataset name or ID (required if using experiment name instead of ID)",
+            help=(
+                "Dataset name or ID used to resolve the experiment by "
+                "name; omit for a standalone experiment"
+            ),
         ),
     ] = None,
     space: Annotated[
@@ -192,7 +199,11 @@ def get_experiment(
         typer.Option(
             "--space",
             "-s",
-            help="Space name or ID (required if using dataset name instead of ID)",
+            help=(
+                "Space name or ID. Resolves --dataset by name, or the "
+                "experiment itself when --dataset is omitted (required "
+                "for standalone experiments)"
+            ),
         ),
     ] = None,
     output: Annotated[
@@ -248,7 +259,10 @@ def export_experiment(
         str | None,
         typer.Option(
             "--dataset",
-            help="Dataset name or ID (required if using experiment name instead of ID)",
+            help=(
+                "Dataset name or ID used to resolve the experiment by "
+                "name; omit for a standalone experiment"
+            ),
         ),
     ] = None,
     space: Annotated[
@@ -256,7 +270,11 @@ def export_experiment(
         typer.Option(
             "--space",
             "-s",
-            help="Space name or ID (required if using dataset name instead of ID)",
+            help=(
+                "Space name or ID. Resolves --dataset by name, or the "
+                "experiment itself when --dataset is omitted (required "
+                "for standalone experiments)"
+            ),
         ),
     ] = None,
     output_dir: Annotated[
@@ -341,14 +359,6 @@ def create_experiment(
             prompt=True,
         ),
     ],
-    dataset: Annotated[
-        str,
-        typer.Option(
-            "--dataset",
-            help="Dataset name or ID to attach the experiment to",
-            prompt=True,
-        ),
-    ],
     file: Annotated[
         str,
         typer.Option(
@@ -358,12 +368,25 @@ def create_experiment(
             prompt=True,
         ),
     ],
+    dataset: Annotated[
+        str | None,
+        typer.Option(
+            "--dataset",
+            help=(
+                "Dataset name or ID to attach the experiment to; "
+                "omit to create a standalone experiment in --space"
+            ),
+        ),
+    ] = None,
     space: Annotated[
         str | None,
         typer.Option(
             "--space",
             "-s",
-            help="Space name or ID (required if using dataset name instead of ID)",
+            help=(
+                "Space name or ID. Required when --dataset is omitted; "
+                "with --dataset it only resolves the dataset by name"
+            ),
         ),
     ] = None,
     output: Annotated[
@@ -385,10 +408,24 @@ def create_experiment(
 ) -> None:
     """Create an experiment from a data file.
 
-    The file must contain 'example_id' and 'output' columns.
+    Pass --dataset to attach the experiment to a dataset, or --space to create a
+    standalone experiment that has none.
+
+    The file must contain an 'output' column, plus an 'example_id' column when
+    attaching to a dataset — a standalone experiment has no examples to reference.
     Extra columns are passed through as additional fields.
     """
     setup_logging(verbose)
+
+    # An experiment lives in a space, which it otherwise inherits from its dataset.
+    # Checked before the client and the file so the mistake surfaces immediately.
+    if dataset is None and space is None:
+        raise UsageError(
+            "One of --dataset or --space must be provided: --dataset attaches "
+            "the experiment to a dataset, --space creates a standalone "
+            "experiment in that space."
+        )
+
     client, config = make_client()
 
     output_format, output_file = parse_output_option(
@@ -398,12 +435,16 @@ def create_experiment(
     # Read data file
     df = read_data_file(file)
 
-    required_cols = {"example_id", "output"}
+    # Runs reference dataset examples by example_id, so that column is required
+    # only when attaching to a dataset.
+    required_cols = {"output"} if dataset is None else {"example_id", "output"}
     missing = required_cols - set(df.columns)
     if missing:
+        expected = " and ".join(f"'{col}'" for col in sorted(required_cols))
+        plural = "s" if len(required_cols) > 1 else ""
         raise APIError(
             f"File is missing required columns: {', '.join(sorted(missing))}. "
-            "The file must contain 'example_id' and 'output' columns."
+            f"The file must contain {expected} column{plural}."
         )
 
     try:
@@ -417,8 +458,8 @@ def create_experiment(
                 space=space,
                 experiment_runs=df,
                 task_fields=ExperimentTaskFieldNames(
-                    example_id="example_id",
                     output="output",
+                    example_id="example_id" if dataset is not None else None,
                 ),
                 force_http=True,
             )
@@ -576,7 +617,10 @@ def delete_experiment(
         str | None,
         typer.Option(
             "--dataset",
-            help="Dataset name or ID (required if using experiment name instead of ID)",
+            help=(
+                "Dataset name or ID used to resolve the experiment by "
+                "name; omit for a standalone experiment"
+            ),
         ),
     ] = None,
     space: Annotated[
@@ -584,7 +628,11 @@ def delete_experiment(
         typer.Option(
             "--space",
             "-s",
-            help="Space name or ID (required if using dataset name instead of ID)",
+            help=(
+                "Space name or ID. Resolves --dataset by name, or the "
+                "experiment itself when --dataset is omitted (required "
+                "for standalone experiments)"
+            ),
         ),
     ] = None,
     force: Annotated[
@@ -648,7 +696,10 @@ def annotate_runs(
         str | None,
         typer.Option(
             "--dataset",
-            help="Dataset name or ID (required to resolve experiment by name)",
+            help=(
+                "Dataset name or ID used to resolve the experiment by "
+                "name; omit for a standalone experiment"
+            ),
         ),
     ] = None,
     space: Annotated[
@@ -656,7 +707,11 @@ def annotate_runs(
         typer.Option(
             "--space",
             "-s",
-            help="Space name or ID (required when dataset is a name)",
+            help=(
+                "Space name or ID. Resolves --dataset by name, or the "
+                "experiment itself when --dataset is omitted (required "
+                "for standalone experiments)"
+            ),
         ),
     ] = None,
     verbose: Annotated[
@@ -713,7 +768,10 @@ def list_runs(
         str | None,
         typer.Option(
             "--dataset",
-            help="Dataset name or ID (required to resolve experiment by name)",
+            help=(
+                "Dataset name or ID used to resolve the experiment by "
+                "name; omit for a standalone experiment"
+            ),
         ),
     ] = None,
     space: Annotated[
@@ -721,7 +779,11 @@ def list_runs(
         typer.Option(
             "--space",
             "-s",
-            help="Space name or ID (required when dataset is a name)",
+            help=(
+                "Space name or ID. Resolves --dataset by name, or the "
+                "experiment itself when --dataset is omitted (required "
+                "for standalone experiments)"
+            ),
         ),
     ] = None,
     limit: Annotated[

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.30.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.29.0...arize-ax-cli/v0.30.0) (2026-08-12)
+
+
+### 🎁 New Features
+
+* **experiments:** Make --dataset optional so experiments can be standalone ([#82534](https://github.com/Arize-ai/arize/issues/82534)) ([df1b670](https://github.com/Arize-ai/arize/commit/df1b67005defb008dd0f750f5a51bec740ab5fed))
+
+
+### 💫 Code Refactoring
+
+* **region:** accept US/EU region aliases in ax profiles create/update ([#82753](https://github.com/Arize-ai/arize/issues/82753)) ([a500aea](https://github.com/Arize-ai/arize/commit/a500aea9f2082610341c1effe8b9df68594f5d55))
+* separate annotation and evaluator request schemas - CLI ([#82493](https://github.com/Arize-ai/arize/issues/82493)) ([04b4ad7](https://github.com/Arize-ai/arize/commit/04b4ad7cac4cae7257aa8c2a82e4f2872c9cfdbe))
+* **annotation-configs:** use type subcommands for annotation-configs create ([#83294](https://github.com/Arize-ai/arize/issues/83294)) ([5ae8d32](https://github.com/Arize-ai/arize/commit/5ae8d32253f4bc06ef6af309ce3d5bfb8fec4697))
+
 ## [0.29.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.28.1...arize-ax-cli/v0.29.0) (2026-08-06)
 
 

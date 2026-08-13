@@ -467,6 +467,140 @@ class TestCreateExperiment:
         call_kwargs = mock_client.experiments.create.call_args.kwargs
         assert call_kwargs["space"] is None
 
+    _STANDALONE_RUNS_DF = pd.DataFrame([{"output": "Paris"}])
+
+    def test_create_standalone_with_space_only(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--space without --dataset creates a standalone experiment."""
+        mock_client.experiments.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "exp-1", "name": "my-exp"})
+        )
+
+        with patch(
+            "ax.commands.experiments.read_data_file",
+            return_value=self._STANDALONE_RUNS_DF,
+        ):
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create",
+                    "--name",
+                    "my-exp",
+                    "--file",
+                    "runs.json",
+                    "--space",
+                    "space-abc",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.experiments.create.call_args.kwargs
+        assert call_kwargs["dataset"] is None
+        assert call_kwargs["space"] == "space-abc"
+        # No dataset means no examples to reference, so example_id is left unset
+        # rather than pointing at a column the file doesn't have.
+        assert call_kwargs["task_fields"].example_id is None
+        assert call_kwargs["task_fields"].output == "output"
+
+    def test_create_standalone_does_not_require_example_id_column(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """A file with only 'output' is accepted when there is no dataset."""
+        mock_client.experiments.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "exp-1", "name": "my-exp"})
+        )
+
+        with patch(
+            "ax.commands.experiments.read_data_file",
+            return_value=self._STANDALONE_RUNS_DF,
+        ):
+            result = cli_runner.invoke(
+                app,
+                ["create", "--name", "e", "--file", "f.json", "--space", "s"],
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_client.experiments.create.assert_called_once()
+
+    def test_create_with_dataset_still_requires_example_id_column(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Runs must reference examples when attaching to a dataset."""
+        with patch(
+            "ax.commands.experiments.read_data_file",
+            return_value=self._STANDALONE_RUNS_DF,
+        ):
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create",
+                    "--name",
+                    "e",
+                    "--file",
+                    "f.json",
+                    "--dataset",
+                    "ds",
+                ],
+            )
+
+        # Exit 4 (APIError) is what the missing-column check has always raised;
+        # pinning it here keeps this path's behaviour unchanged.
+        assert result.exit_code == 4, result.output
+        assert "example_id" in result.output
+        mock_client.experiments.create.assert_not_called()
+
+    def test_create_without_dataset_or_space_fails(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """An experiment needs a scope: one of --dataset or --space."""
+        with patch(
+            "ax.commands.experiments.read_data_file",
+            return_value=self._STANDALONE_RUNS_DF,
+        ):
+            result = cli_runner.invoke(
+                app,
+                ["create", "--name", "my-exp", "--file", "runs.json"],
+            )
+
+        assert result.exit_code == 2, result.output
+        assert "--dataset" in result.output
+        assert "--space" in result.output
+        mock_client.experiments.create.assert_not_called()
+
+    def test_create_does_not_prompt_for_dataset(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--dataset is no longer prompted for, so omitting it isn't interactive."""
+        with patch(
+            "ax.commands.experiments.read_data_file",
+            return_value=self._STANDALONE_RUNS_DF,
+        ):
+            result = cli_runner.invoke(
+                app,
+                ["create", "--name", "my-exp", "--file", "runs.json"],
+                input="",
+            )
+
+        # A prompt would have consumed the empty stdin and complained about the
+        # missing value instead of reaching the scope check.
+        assert "Dataset name or ID" not in result.output
+
 
 # ---------------------------------------------------------------------------
 # ax experiments annotate-runs

@@ -149,6 +149,35 @@ class TestFromFile:
         assert saved_configs[0].auth.api_key == "from-flag"
         assert saved_configs[0].routing.region == "eu-west-1a"
 
+    def test_region_flag_alias_resolves_to_zone_id(
+        self, runner: CliRunner, tmp_path: Path
+    ) -> None:
+        """--region US resolves to the canonical us-east-1b zone ID."""
+        saved_configs: list[Config] = []
+
+        def capture_save(config: Config, _profile: str) -> None:
+            saved_configs.append(config)
+
+        with patch("ax.commands.profiles.ConfigManager") as mock_cm:
+            mock_cm.list_profiles.return_value = []
+            mock_cm.exists.return_value = False
+            mock_cm.save.side_effect = capture_save
+
+            result = runner.invoke(
+                app,
+                [
+                    "create",
+                    "us-alias-profile",
+                    "--api-key",
+                    "ak_test",
+                    "--region",
+                    "US",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert saved_configs[0].routing.region == "us-east-1b"
+
 
 # ---------------------------------------------------------------------------
 # Flag tests
