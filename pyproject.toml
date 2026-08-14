@@ -54,7 +54,7 @@ Repository = "https://github.com/Arize-ai/arize-ax-cli"
 ax = "ax.cli:app"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.26.0,<2"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]

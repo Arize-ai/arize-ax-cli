@@ -58,6 +58,7 @@
   - [Experiments](#experiments)
     - [`ax experiments run` — execute a task locally](#ax-experiments-run--execute-a-task-locally)
     - [`ax experiments create` — publish pre-computed runs](#ax-experiments-create--publish-pre-computed-runs)
+  - [Integrations](#integrations)
   - [Organizations](#organizations)
   - [Projects](#projects)
   - [Prompts](#prompts)
@@ -620,6 +621,10 @@ Available for all commands:
 
 ### AI Integrations
 
+> **Note:** `ax ai-integrations` targets the deprecating `/v2/ai-integrations`
+> endpoint. Prefer [`ax integrations`](#integrations), which manages both LLM
+> and agent integrations on the go-forward `/v2/integrations` endpoint.
+
 Configure external LLM providers for use within the Arize platform (for evaluations, online evals, and more):
 
 ```bash
@@ -1155,6 +1160,64 @@ standalone experiment that has none. One of the two is required.
 | `--output-dir`    | Output directory (default: current directory)  |
 | `--stdout`        | Print JSON to stdout instead of saving to file |
 | `--verbose`, `-v` | Enable verbose logs                            |
+
+### Integrations
+
+Manage integrations on the unified polymorphic endpoint. `LLM` integrations
+configure a model provider; `AGENT` integrations connect your own agent
+exposed at an HTTPS endpoint. This supersedes `ax ai-integrations`, which
+manages LLM integrations on the deprecating `/v2/ai-integrations` endpoint.
+
+`create` and `update` are split into per-type subcommands (`create llm` /
+`create agent`, `update llm` / `update agent`) that mirror the SDK's typed
+methods, so `--help` shows only the fields that apply to that type. On
+`update`, only the fields you pass are changed; omitted fields are left
+unchanged.
+
+```bash
+# List integrations of every type (or filter with --type LLM|AGENT)
+ax integrations list [--type AGENT] [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
+
+# Get an integration by ID, or by name (names are unique per type, so pass --type)
+ax integrations get <integration> [--type LLM|AGENT]
+
+# Create an LLM integration (OpenAI example)
+ax integrations create llm --name "OpenAI Prod" --provider OPEN_AI --api-key sk-...
+
+# Create an LLM integration with a custom endpoint
+ax integrations create llm --name "Custom LLM" --provider CUSTOM \
+  --base-url https://my-llm.example.com --headers '{"X-Api-Key": "secret"}'
+
+# Create an AWS Bedrock LLM integration
+ax integrations create llm --name "Bedrock" --provider AWS_BEDROCK \
+  --auth '{"auth_type": "DEFAULT", "role_arn": "arn:aws:iam::123456789:role/MyRole"}'
+
+# Create an agent integration
+ax integrations create agent --name "My Agent" \
+  --endpoint https://agent.example.com/run \
+  --input-schema '{"type": "object"}'
+
+# Update an LLM integration (only the fields you pass change)
+ax integrations update llm <integration> --name "Renamed" --api-key sk-new
+
+# Update an agent integration
+ax integrations update agent <integration> --endpoint https://agent.example.com/v2/run
+
+# Delete an integration
+ax integrations delete <integration> [--type LLM|AGENT] [--force]
+```
+
+**LLM provider requirements:**
+
+| Provider | Value | Required flags |
+| --- | --- | --- |
+| OpenAI | `OPEN_AI` | `--api-key` |
+| Anthropic | `ANTHROPIC` | `--api-key` |
+| Google Gemini | `GEMINI` | `--api-key` |
+| AWS Bedrock | `AWS_BEDROCK` | `--auth` (JSON) |
+| Custom | `CUSTOM` | `--base-url` |
+| Vertex AI | `VERTEX_AI` | `--gcp-project-id`, `--gcp-location`, `--project-access-label` |
+| NVIDIA NIM | `NVIDIA_NIM` | at least one model source (`--model-name` or `--enable-default-models`) |
 
 ### Organizations
 

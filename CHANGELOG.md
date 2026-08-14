@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.31.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.30.0...arize-ax-cli/v0.31.0) (2026-08-14)
+
+
+### 🎁 New Features
+
+* **integrations:** add integrations command group (llm + agent CRUD) ([#82901](https://github.com/Arize-ai/arize/issues/82901)) ([75c6ff2](https://github.com/Arize-ai/arize/commit/75c6ff26aee9484f3a94ff856e8b0731559ea078))
+
+
+### 💫 Code Refactoring
+
+* bump twine to 5.1.1 to support metadata version 2.5 ([#83390](https://github.com/Arize-ai/arize/issues/83390)) ([0e11c71](https://github.com/Arize-ai/arize/commit/0e11c71ea7def334469935cb4cdfdba201087592))
+
 ## [0.30.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.29.0...arize-ax-cli/v0.30.0) (2026-08-12)
 
 
