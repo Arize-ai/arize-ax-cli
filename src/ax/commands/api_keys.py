@@ -12,12 +12,12 @@ from arize._generated.api_client.models.user_space_role import UserSpaceRole
 from arize.api_keys.types import (
     ApiKeyStatus,
     ApiKeyType,
+    CreatedServiceApiKey,
+    CreatedUserApiKey,
     OrganizationRoleAssignmentRequest,
     OrgBinding,
-    ServiceApiKeyCreated,
     SpaceBinding,
     SpaceRoleAssignmentRequest,
-    UserApiKeyCreated,
     UserRoleAssignmentRequest,
 )
 
@@ -52,7 +52,7 @@ _SAVE_KEY_WARNING = "Save this API key now — it will not be shown again."
 def _write_key_to_dotenv_or_revoke(
     client: ArizeClient,
     env_file: str,
-    key_created: UserApiKeyCreated | ServiceApiKeyCreated,
+    key_created: CreatedUserApiKey | CreatedServiceApiKey,
 ) -> None:
     """Write a newly created key to a dotenv file, revoking it on failure.
 

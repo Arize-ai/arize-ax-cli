@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.31.0...arize-ax-cli/v0.31.1) (2026-08-18)
+
+
+### 💫 Code Refactoring
+
+* **api-key:** adopt CreatedUserApiKey / CreatedServiceApiKey ([#83093](https://github.com/Arize-ai/arize/issues/83093)) ([fbbddeb](https://github.com/Arize-ai/arize/commit/fbbddeb9531a6740a3db004b63ec46d7b17e3bb8))
+
 ## [0.31.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.30.0...arize-ax-cli/v0.31.0) (2026-08-14)
 
 

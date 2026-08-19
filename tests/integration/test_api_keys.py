@@ -48,16 +48,16 @@ class TestApiKeysList:
 
     @pytest.mark.integration
     def test_list_filter_by_type(self) -> None:
-        """``--key-type user`` filter returns only user keys."""
-        data = ax_json("api-keys", "list", "--key-type", "user")
+        """``--key-type USER`` filter returns only user keys."""
+        data = ax_json("api-keys", "list", "--key-type", "USER")
         assert "api_keys" in data
         for key in data["api_keys"]:
-            assert key.get("key_type") == "user"
+            assert key.get("key_type") == "USER"
 
     @pytest.mark.integration
     def test_list_filter_active(self) -> None:
-        """``--status active`` filter is accepted and returns active keys."""
-        data = ax_json("api-keys", "list", "--status", "active")
+        """``--status ACTIVE`` filter is accepted and returns active keys."""
+        data = ax_json("api-keys", "list", "--status", "ACTIVE")
         assert "api_keys" in data
 
 
@@ -74,8 +74,6 @@ class TestApiKeysCreateAndRevoke:
             "create",
             "--name",
             unique_name,
-            "--key-type",
-            "user",
             "--output",
             "json",
         )
@@ -88,7 +86,9 @@ class TestApiKeysCreateAndRevoke:
         assert key_id, f"No id in create response: {created}"
 
         try:
-            list_data = ax_json("api-keys", "list", "--key-type", "user")
+            list_data = ax_json(
+                "api-keys", "list", "--key-type", "USER", "--limit", "100"
+            )
             ids = [k.get("id") for k in list_data.get("api_keys", [])]
             assert key_id in ids, (
                 f"Newly created key {key_id!r} not found in list"
@@ -111,8 +111,6 @@ class TestApiKeysCreateAndRevoke:
             "create",
             "--name",
             unique_name,
-            "--key-type",
-            "user",
             "--description",
             description,
             "--output",
@@ -145,8 +143,6 @@ class TestApiKeysCreateAndRevoke:
             "create",
             "--name",
             unique_name,
-            "--key-type",
-            "user",
             "--output",
             "json",
         )
@@ -165,7 +161,7 @@ class TestApiKeysCreateAndRevoke:
             )
             key_id = None  # Revoked — skip cleanup in finally
 
-            active_data = ax_json("api-keys", "list", "--status", "active")
+            active_data = ax_json("api-keys", "list", "--status", "ACTIVE")
             active_ids = [k.get("id") for k in active_data.get("api_keys", [])]
             assert key_id not in active_ids, (
                 "Revoked key still appears in active list"

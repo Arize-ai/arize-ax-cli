@@ -273,8 +273,6 @@ class TestApiKeyFlow:
             "create",
             "--name",
             unique_name,
-            "--key-type",
-            "user",
             "--output",
             "json",
         )
@@ -285,7 +283,9 @@ class TestApiKeyFlow:
         assert key_id
 
         try:
-            list_data = ax_json("api-keys", "list", "--key-type", "user")
+            list_data = ax_json(
+                "api-keys", "list", "--key-type", "USER", "--limit", "100"
+            )
             ids = [k.get("id") for k in list_data.get("api_keys", [])]
             assert key_id in ids
 
@@ -294,6 +294,6 @@ class TestApiKeyFlow:
             assert revoke_result.returncode == 0
 
         # Confirm it no longer appears as active
-        active_data = ax_json("api-keys", "list", "--status", "active")
+        active_data = ax_json("api-keys", "list", "--status", "ACTIVE")
         active_ids = [k.get("id") for k in active_data.get("api_keys", [])]
         assert key_id not in active_ids
