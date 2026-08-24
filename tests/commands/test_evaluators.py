@@ -694,6 +694,7 @@ class TestBuildTemplateConfig:
         assert cfg.classification_choices == {"relevant": 1, "irrelevant": 0}
         assert cfg.direction == OptimizationDirection.MINIMIZE
         assert cfg.data_granularity == "TRACE"
+        assert cfg.use_function_calling is False
 
     @pytest.mark.unit
     def test_classification_choices_json_array_raises_usage_error(self) -> None:

@@ -109,7 +109,7 @@ def _build_template_config(
         name=template_name,
         template=template,
         include_explanations=include_explanations,
-        use_function_calling_if_available=use_function_calling,
+        use_function_calling=use_function_calling,
         llm_config=llm_config,
         classification_choices=_parse_optional_classification_choices(
             classification_choices_str

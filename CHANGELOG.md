@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.31.1...arize-ax-cli/v0.31.2) (2026-08-24)
+
+
+### ❔ Miscellaneous Chores
+
+* **arize-ax: ** bump arize to 8.49.0 and adopt use_function_calling ([#84648](https://github.com/Arize-ai/arize/issues/84648)) ([0c2c8d3](https://github.com/Arize-ai/arize/commit/0c2c8d3034e15e2b770d6551f5b870ae1553f508))
+
 ## [0.31.1](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.31.0...arize-ax-cli/v0.31.1) (2026-08-18)
 
 
