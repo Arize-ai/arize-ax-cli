@@ -37,7 +37,7 @@ def list_resource_restrictions(
         typer.Option(
             "--resource-type",
             "-t",
-            help="Filter by resource type (currently only PROJECT)",
+            help="Filter by resource type. When omitted, all types are returned.",
         ),
     ] = None,
     limit: Annotated[
@@ -76,8 +76,8 @@ def list_resource_restrictions(
     """List resource restrictions you are permitted to manage.
 
     Results are paginated; use `--cursor` with the pagination info from a
-    previous response to fetch the next page. Currently only `PROJECT`
-    resources are supported.
+    previous response to fetch the next page. Use `--resource-type` to filter
+    to a specific type; omit it to return all types.
     """
     setup_logging(verbose)
     client, config = make_client()
@@ -132,8 +132,7 @@ def restrict_resource(
     """Restrict a resource.
 
     Restricting a resource prevents roles bound at higher hierarchy levels
-    (space, org, account) from granting access to it. Currently only PROJECT
-    resources are supported. This operation is idempotent.
+    (space, org, account) from granting access to it. This operation is idempotent.
     """
     setup_logging(verbose)
     client, config = make_client()

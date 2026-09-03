@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.33.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.32.0...arize-ax-cli/v0.33.0) (2026-09-02)
+
+
+### 🎁 New Features
+
+* **dashboards:** add dashboard resource restrictions (needs [#84566](https://github.com/Arize-ai/arize/issues/84566)) ([#84567](https://github.com/Arize-ai/arize/issues/84567)) ([ebd3224](https://github.com/Arize-ai/arize/commit/ebd32248bd2578948f45b165a31111f4c293aef1))
+* **traces:** default to a branch-graph view ([#82776](https://github.com/Arize-ai/arize/issues/82776)) ([798fc79](https://github.com/Arize-ai/arize/commit/798fc7980566c711b621a5e16373b06d351a5296))
+
 ## [0.32.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.31.1...arize-ax-cli/v0.31.2) (2026-08-24)
 
 

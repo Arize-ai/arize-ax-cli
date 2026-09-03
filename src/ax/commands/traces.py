@@ -1,23 +1,31 @@
 """Traces management commands."""
 
 import json
+import shutil
 import sys
+from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from arize import ArizeClient
+from arize._generated.api_client.models.span import Span
+from arize.traces.types import ListTracesResponse, Trace
+from openinference.semconv.trace import SpanAttributes
+from rich.markup import escape
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
 from ax.core.exceptions import APIError, AxError
+from ax.core.output import console as output_console
 from ax.core.output import output_data
 from ax.utils.console import (
     info,
     setup_logging,
     spinner,
     success,
+    text,
     warning,
 )
 from ax.utils.datetime_parse import parse_optional_iso8601
@@ -25,6 +33,236 @@ from ax.utils.export import make_export_dir, print_json_array, write_json_array
 from ax.utils.file_io import (
     parse_output_option,
 )
+
+_KIND_STYLE: dict[str, str] = {
+    "AGENT": "blue",
+    "CHAIN": "blue",
+    "LLM": "magenta",
+    "RETRIEVER": "cyan",
+    "TOOL": "yellow",
+    "EMBEDDING": "green",
+    "RERANKER": "cyan",
+    "GUARDRAIL": "red",
+    "EVALUATOR": "yellow",
+    "PROMPT": "blue",
+}
+_DEFAULT_KIND_STYLE = "white"
+_TRACE_SEPARATOR = "=" * 80
+
+
+def _style_for_kind(kind: str) -> str:
+    """Return the Rich style for an OpenInference span kind."""
+    return _KIND_STYLE.get(kind, _DEFAULT_KIND_STYLE)
+
+
+def _format_duration_milliseconds(span: Span) -> str:
+    """Format a span duration as integer milliseconds."""
+    milliseconds = (span.end_time - span.start_time).total_seconds() * 1000
+    return f"{milliseconds:.0f}ms"
+
+
+def _span_label(span: Span, *, full_span_id: bool) -> str:
+    """Build the Rich-markup label for one span."""
+    span_id = span.context.span_id if full_span_id else span.context.span_id[:7]
+    span_id = escape(span_id)
+    kind = span.kind.value
+    kind_style = _style_for_kind(kind)
+    status = span.status_code.value if span.status_code else "OK"
+    status_symbol = "[red]✗[/red]" if status == "ERROR" else "[green]✓[/green]"
+    return (
+        f"[dim]{span_id}[/dim] ([{kind_style}]{escape(kind)}[/{kind_style}]) "
+        f"{status_symbol} {escape(span.name)} - "
+        f"{_format_duration_milliseconds(span)}"
+    )
+
+
+def _format_cost(value: float) -> str:
+    """Format a summed ``llm.cost.total`` value as a USD amount."""
+    return f"${value:.6f}"
+
+
+def _trace_cost(trace: Trace) -> float | None:
+    """Sum the ``llm.cost.total`` attribute across a trace's spans.
+
+    Returns ``None`` when no span carries a cost attribute, so the caller can
+    omit the field rather than showing a misleading ``$0.000000``.
+    """
+    total = 0.0
+    found = False
+    for span in trace.spans:
+        cost = (span.attributes or {}).get(SpanAttributes.LLM_COST_TOTAL)
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+            total += float(cost)
+            found = True
+    return total if found else None
+
+
+def _format_trace_attribute(value: object) -> str:
+    """Format a trace input or output as a single Rich-safe line."""
+    formatted = (
+        json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+    )
+    return escape(" ".join(formatted.splitlines()))
+
+
+def _append_span_tree_lines(
+    lines: list[str],
+    root: Span,
+    children: dict[str, list[Span]],
+    *,
+    full_span_ids: bool,
+    is_last_root: bool = True,
+) -> None:
+    """Append a span tree in depth-first order."""
+    stack = [(root, "│  ", is_last_root)]
+    visited_span_ids = {root.context.span_id}
+    while stack:
+        span, prefix, is_last = stack.pop()
+        connector = "└─" if is_last else "├─"
+        lines.append(
+            f"{prefix}{connector} "
+            f"{_span_label(span, full_span_id=full_span_ids)}"
+        )
+
+        child_prefix = prefix + ("   " if is_last else "│  ")
+        span_children = sorted(
+            children.get(span.context.span_id, []),
+            key=lambda child: child.start_time,
+        )
+        unvisited_children = []
+        for child in span_children:
+            child_span_id = child.context.span_id
+            if child_span_id in visited_span_ids:
+                continue
+            visited_span_ids.add(child_span_id)
+            unvisited_children.append(child)
+
+        stack.extend(
+            (
+                unvisited_children[index],
+                child_prefix,
+                index == len(unvisited_children) - 1,
+            )
+            for index in range(len(unvisited_children) - 1, -1, -1)
+        )
+
+
+def _trace_lines(trace: Trace, *, full_span_ids: bool = False) -> list[str]:
+    """Build the branch-graph lines for one trace.
+
+    A trace's root span is not guaranteed to be present in ``trace.spans``:
+    the server caps the number of spans returned per trace, and since the
+    root is the oldest span it is the first one dropped once that cap is
+    hit. Any span whose parent was dropped the same way is treated as an
+    additional top-level branch rather than causing a crash.
+    """
+    lines = [f"┌─ Trace: [bold]{escape(trace.trace_id)}[/bold]", "│"]
+
+    spans_by_id = {s.context.span_id: s for s in trace.spans}
+    children: dict[str, list[Span]] = {}
+    for span in trace.spans:
+        if span.parent_id is not None:
+            children.setdefault(span.parent_id, []).append(span)
+
+    roots = sorted(
+        (
+            s
+            for s in trace.spans
+            if s.parent_id is None or s.parent_id not in spans_by_id
+        ),
+        key=lambda s: s.start_time,
+    )
+
+    if not roots:
+        lines.extend(
+            ("│", "│  [yellow]No spans returned for this trace[/yellow]", "└─")
+        )
+        return lines
+
+    display_root = spans_by_id.get(trace.root_span_id) or roots[0]
+    attributes = display_root.attributes or {}
+    input_value = attributes.get(SpanAttributes.INPUT_VALUE)
+    output_value = attributes.get(SpanAttributes.OUTPUT_VALUE)
+
+    meta_parts = []
+    if isinstance(trace.start_time, datetime):
+        meta_parts.append(
+            f"[bold]Start:[/bold] "
+            f"{trace.start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+    trace_cost = _trace_cost(trace)
+    if trace_cost is not None:
+        meta_parts.append(f"[bold]Cost:[/bold] {_format_cost(trace_cost)}")
+    if meta_parts:
+        lines.append(f"│  {'   '.join(meta_parts)}")
+
+    if input_value is not None:
+        lines.append(
+            f"│  [bold]Input:[/bold] {_format_trace_attribute(input_value)}"
+        )
+    if output_value is not None:
+        lines.append(
+            f"│  [bold]Output:[/bold] {_format_trace_attribute(output_value)}"
+        )
+    if meta_parts or input_value is not None or output_value is not None:
+        lines.append("│")
+    lines.append("│  [bold]Spans:[/bold]")
+
+    for index, span_root in enumerate(roots):
+        _append_span_tree_lines(
+            lines,
+            span_root,
+            children,
+            full_span_ids=full_span_ids,
+            is_last_root=index == len(roots) - 1,
+        )
+    if trace.root_span_id not in spans_by_id:
+        lines.extend(
+            ("│", "│  [yellow]Root span not included in this page[/yellow]")
+        )
+    if trace.spans_truncated:
+        lines.extend(("│", "│  [yellow]Spans truncated[/yellow]"))
+    lines.append("└─")
+    return lines
+
+
+_PROSE_LINE_MARKERS = ("[bold]Input:[/bold]", "[bold]Output:[/bold]")
+
+
+def _render_traces_graph(
+    response: ListTracesResponse, *, full_span_ids: bool = False
+) -> None:
+    """Default `ax traces list` view: each trace as a branch graph.
+
+    Rendered at the real terminal width (queried fresh on every call, with a
+    generous fallback for non-interactive output) rather than relying on
+    Rich's own detection, which falls back to a fixed 80 columns whenever it
+    can't confirm a tty and otherwise truncates well short of the visible
+    pane. In verbose mode the Input/Output lines wrap instead of ellipsizing
+    so the full value is visible; everything else (span rows included) stays
+    single-line so the tree structure never reflows.
+    """
+    term_width = shutil.get_terminal_size(fallback=(200, 24)).columns
+    for index, trace in enumerate(response.traces):
+        if index:
+            output_console.print()
+            output_console.print(_TRACE_SEPARATOR)
+            output_console.print()
+        for line in _trace_lines(trace, full_span_ids=full_span_ids):
+            if full_span_ids and any(m in line for m in _PROSE_LINE_MARKERS):
+                output_console.print(line, width=term_width)
+            else:
+                output_console.print(
+                    line, overflow="ellipsis", no_wrap=True, width=term_width
+                )
+
+    pagination = response.pagination
+    if getattr(pagination, "has_more", False):
+        output_console.print(
+            f"[dim]cursor:[/dim] {pagination.next_cursor}  "
+            "[dim]· pass --cursor to fetch the next page[/dim]"
+        )
+
 
 # Create traces subcommand app
 app = typer.Typer(
@@ -37,7 +275,7 @@ app = typer.Typer(
 
 @app.command("list")
 @handle_errors
-def list_spans(
+def list_traces(
     project_id: Annotated[
         str,
         typer.Argument(help="Project name or ID"),
@@ -70,7 +308,8 @@ def list_spans(
         str | None,
         typer.Option(
             "--filter",
-            help='Filter expression (e.g. "status_code = \'ERROR\'", "latency_ms > 1000").',
+            help='Filter expression (e.g. "status_code = \'ERROR\'", "latency_ms > 1000"). '
+            "A trace is returned when any of its spans matches.",
         ),
     ] = None,
     limit: Annotated[
@@ -78,7 +317,7 @@ def list_spans(
         typer.Option(
             "--limit",
             "-l",
-            help="Maximum number of traces to return",
+            help="Maximum number of traces to return (default: 15, max: 50)",
         ),
     ] = 15,
     cursor: Annotated[
@@ -94,7 +333,8 @@ def list_spans(
         typer.Option(
             "--output",
             "-o",
-            help="Output format (table, json, csv, parquet) or file path",
+            help="Output format (table, json, csv, parquet) or file path. "
+            "Defaults to a branch-graph view of each trace's spans.",
         ),
     ] = "",
     verbose: Annotated[
@@ -102,11 +342,16 @@ def list_spans(
         typer.Option(
             "--verbose",
             "-v",
-            help="Enable verbose logs",
+            help="Enable verbose log.",
         ),
     ] = False,
 ) -> None:
-    """List traces in a project."""
+    """List traces in a project.
+
+    Without --output, always renders the branch-graph view — this command
+    does not fall back to the active profile's default output format the
+    way other list commands do.
+    """
     setup_logging(verbose)
     client, config = make_client()
 
@@ -117,31 +362,36 @@ def list_spans(
     start_dt = parse_optional_iso8601(start_time)
     end_dt = parse_optional_iso8601(end_time)
 
-    # Traces are root spans (no parent). Always inject the parent_id filter.
-    trace_filter = "parent_id = null"
-    effective_filter = (
-        f"{trace_filter} AND {filter}" if filter else trace_filter
-    )
-
     try:
-        with spinner("Fetching traces"):
-            response = client.spans.list(
+        fetch_context: AbstractContextManager[Any]
+        if output:
+            fetch_context = spinner("Fetching traces")
+        else:
+            text(f"Resolving project: {project_id}")
+            text(f"Fetching last {limit} trace(s)...")
+            fetch_context = nullcontext()
+        with fetch_context:
+            response = client.traces.list(
                 project=project_id,
                 space=space,
                 start_time=start_dt,
                 end_time=end_dt,
-                filter=effective_filter,
+                filter=filter,
                 limit=limit,
                 cursor=cursor,
             )
     except Exception as e:
         raise APIError(f"Failed to list traces: {e}") from e
     else:
-        output_data(
-            response,
-            format_type=output_format,
-            output_file=output_file,
-        )
+        if output:
+            output_data(
+                response,
+                format_type=output_format,
+                output_file=output_file,
+            )
+        else:
+            text(f"Found {len(response.traces)} trace(s)")
+            _render_traces_graph(response, full_span_ids=verbose)
 
 
 def _build_trace_id_in_filter(trace_ids: list[str]) -> str:

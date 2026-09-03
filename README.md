@@ -52,6 +52,7 @@
   - [Annotation Configs](#annotation-configs)
   - [Annotation Queues](#annotation-queues)
   - [API Keys](#api-keys)
+  - [Resource Restrictions](#resource-restrictions)
   - [Datasets](#datasets)
   - [Evaluators](#evaluators)
     - [Code evaluators](#code-evaluators)
@@ -1740,7 +1741,9 @@ ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 
 ### Traces
 
-Query traces in a project. A trace is a collection of spans representing a full request or conversation; the CLI identifies traces by their root span (`parent_id = null`). The CLI automatically applies `parent_id = null`; any `--filter` you provide is ANDed with it.
+Query traces in a project. A trace is a collection of spans representing a full request or conversation. `ax traces list` calls the `/v2/traces` endpoint, which assembles traces for you: your `--filter` is applied to spans, and a trace is returned when **any** of its spans matches (the matching span is usually a child, not the root). Your `--filter` is passed through to the endpoint exactly as written — the CLI does not add a `parent_id = null` root-span filter of its own.
+
+Without `--output`, `ax traces list` always renders the branch-graph view below, regardless of the `output-format` set in your active profile — that profile default only takes effect once you pass `--output`/`-o` explicitly.
 
 ```bash
 # List traces
@@ -1754,9 +1757,9 @@ ax traces list <project-id> [--start-time <iso8601>] [--end-time <iso8601>] \
 | ----------------- | ----------------------------------------------------------------------- |
 | `--start-time`    | Start of time window, inclusive (ISO 8601, e.g. `2024-01-01T00:00:00Z`; UTC assumed if no offset) |
 | `--end-time`      | End of time window, exclusive (ISO 8601; UTC assumed if no offset). Defaults to now               |
-| `--filter`        | Filter expression (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`)   |
-| `--limit`, `-n`   | Maximum number of traces to return (default: 15)                        |
-| `--cursor`        | Pagination cursor for the next page                                     |
+| `--filter`        | Filter expression applied to spans (e.g. `status_code = 'ERROR'`, `latency_ms > 1000`); a trace is returned when any of its spans matches |
+| `--limit`, `-l`  | Maximum number of traces to return (default: 15, max: 50)                |
+| `--cursor`, `-c`  | Pagination cursor for the next page                                     |
 | `--output`, `-o`  | Output format (`table`, `json`, `csv`, `parquet`) or file path          |
 | `--verbose`, `-v` | Enable verbose logs                                                     |
 
@@ -1948,11 +1951,11 @@ ax spans export proj_abc123 --start-time 2024-01-01T00:00:00Z --end-time 2024-01
 ### Listing Traces and Exporting to Parquet
 
 ```bash
-# List root traces in a project
+# List traces in a project
 ax traces list proj_abc123
 
 # Export slow traces to Parquet for analysis
-ax traces list proj_abc123 --filter "latency_ms > 2000" --limit 500 --output traces_slow.parquet
+ax traces list proj_abc123 --filter "latency_ms > 2000" --limit 50 --output traces_slow.parquet
 
 # List traces in JSON format
 ax traces list proj_abc123 --output json

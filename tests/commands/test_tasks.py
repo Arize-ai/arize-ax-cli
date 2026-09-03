@@ -107,7 +107,7 @@ class TestBuildEvaluators:
         """Valid list input is parsed into TaskEvaluatorInput objects."""
         result = _build_evaluators([{"evaluator_id": "ev-1"}])
         assert len(result) == 1
-        assert result[0].evaluator_id == "ev-1"
+        assert result[0].actual_instance.evaluator_id == "ev-1"
 
     @pytest.mark.unit
     def test_not_a_list_raises(self) -> None:
@@ -420,7 +420,9 @@ class TestCreateTask:
         assert call_kwargs["project"] == "proj-1"
         assert call_kwargs["dataset"] is None
         assert len(call_kwargs["evaluators"]) == 1
-        assert call_kwargs["evaluators"][0].evaluator_id == "ev-1"
+        assert (
+            call_kwargs["evaluators"][0].actual_instance.evaluator_id == "ev-1"
+        )
 
     @pytest.mark.unit
     def test_creates_dataset_task(
@@ -742,7 +744,9 @@ class TestCreateEvaluationSubcmd:
         assert call_kwargs["task_type"] == "TEMPLATE_EVALUATION"
         assert call_kwargs["project"] == "proj-1"
         assert len(call_kwargs["evaluators"]) == 1
-        assert call_kwargs["evaluators"][0].evaluator_id == "ev-1"
+        assert (
+            call_kwargs["evaluators"][0].actual_instance.evaluator_id == "ev-1"
+        )
 
     @pytest.mark.unit
     def test_requires_project_or_dataset(
@@ -979,7 +983,7 @@ class TestUpdateTask:
         call_kw = mock_client.tasks.update.call_args.kwargs
         assert call_kw["task"] == "tid"
         assert len(call_kw["evaluators"]) == 1
-        assert call_kw["evaluators"][0].evaluator_id == "ev-1"
+        assert call_kw["evaluators"][0].actual_instance.evaluator_id == "ev-1"
 
     @pytest.mark.unit
     def test_clear_query_filter_with_empty_string(
