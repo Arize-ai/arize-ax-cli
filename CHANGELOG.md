@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.33.0...arize-ax-cli/v0.34.0) (2026-09-09)
+
+
+### 🎁 New Features
+
+* **evaluators:** Add remote evaluator commands ([#82442](https://github.com/Arize-ai/arize/issues/82442)) ([b825f11](https://github.com/Arize-ai/arize/commit/b825f1175fd0d54d3b025becbeb6965194a24917))
+
 ## [0.33.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.32.0...arize-ax-cli/v0.33.0) (2026-09-02)
 
 

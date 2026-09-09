@@ -14,21 +14,22 @@ class TestEvaluatorCommands:
     """Verify evaluator subcommands are registered with the correct names."""
 
     def test_expected_commands_registered(self) -> None:
-        """Check that all expected subcommands are present."""
+        """Check that all expected subcommands and sub-typer groups are present."""
         names = [cmd.name for cmd in app.registered_commands]
+        group_names = {
+            g.typer_instance.info.name for g in app.registered_groups
+        }
         for expected in (
             "list",
             "get",
-            "create-template-evaluator",
-            "create-code-evaluator",
             "update",
             "delete",
             "list-versions",
             "get-version",
-            "create-template-evaluator-version",
-            "create-code-evaluator-version",
         ):
             assert expected in names
+        for expected_group in ("create-evaluator", "create-evaluator-version"):
+            assert expected_group in group_names
 
 
 class TestListEvaluators:
@@ -322,7 +323,8 @@ class TestTemplateCreateEvaluator:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-template-evaluator",
+                    "create-evaluator",
+                    "template",
                     "--name",
                     "My Evaluator",
                     "--space",
@@ -380,7 +382,8 @@ class TestTemplateCreateEvaluator:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-template-evaluator",
+                    "create-evaluator",
+                    "template",
                     "--name",
                     "My Evaluator",
                     "--space",
@@ -424,7 +427,8 @@ class TestTemplateCreateEvaluator:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-template-evaluator",
+                    "create-evaluator",
+                    "template",
                     "--name",
                     "My Evaluator",
                     "--space",
@@ -488,7 +492,8 @@ class TestTemplateCreateVersion:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-template-evaluator-version",
+                    "create-evaluator-version",
+                    "template",
                     "eval-1",
                     "--commit-message",
                     "v2 update",
@@ -545,7 +550,8 @@ class TestTemplateCreateVersion:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-template-evaluator-version",
+                    "create-evaluator-version",
+                    "template",
                     "eval-1",
                     "--commit-message",
                     "v2",
@@ -725,7 +731,8 @@ class TestBuildTemplateConfig:
         result = CliRunner().invoke(
             app,
             [
-                "create-template-evaluator",
+                "create-evaluator",
+                "template",
                 "--name",
                 "test",
                 "--template-name",
@@ -877,7 +884,8 @@ class TestCodeCreateManagedEvaluator:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-code-evaluator",
+                    "create-evaluator",
+                    "code",
                     "--name",
                     "Regex Check",
                     "--space",
@@ -920,7 +928,8 @@ class TestCodeCreateManagedEvaluator:
         result = cli_runner.invoke(
             app,
             [
-                "create-code-evaluator",
+                "create-evaluator",
+                "code",
                 "--name",
                 "x",
                 "--space",
@@ -963,7 +972,8 @@ class TestCodeCreateCustomEvaluator:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-code-evaluator",
+                    "create-evaluator",
+                    "code",
                     "--name",
                     "Custom Eval",
                     "--space",
@@ -1015,7 +1025,8 @@ class TestCodeCreateCustomEvaluator:
         result = cli_runner.invoke(
             app,
             [
-                "create-code-evaluator",
+                "create-evaluator",
+                "code",
                 "--name",
                 "Custom Eval",
                 "--space",
@@ -1055,7 +1066,8 @@ class TestCodeCreateCustomEvaluator:
         result = cli_runner.invoke(
             app,
             [
-                "create-code-evaluator",
+                "create-evaluator",
+                "code",
                 "--name",
                 "x",
                 "--space",
@@ -1098,7 +1110,8 @@ class TestCodeCreateVersionKinds:
             result = cli_runner.invoke(
                 app,
                 [
-                    "create-code-evaluator-version",
+                    "create-evaluator-version",
+                    "code",
                     "eval-1",
                     "--commit-message",
                     "v2",
@@ -1141,7 +1154,8 @@ class TestCodeCreateVersionKinds:
         result = cli_runner.invoke(
             app,
             [
-                "create-code-evaluator-version",
+                "create-evaluator-version",
+                "code",
                 "eval-1",
                 "--commit-message",
                 "v2",
@@ -1161,3 +1175,176 @@ class TestCodeCreateVersionKinds:
         _, kwargs = mock_client.evaluators.create_code_version.call_args
         code_config = kwargs["code_config"]
         assert code_config.actual_instance.code == "class V2Eval: ...\n"
+
+
+class TestRemoteCreateEvaluator:
+    """Tests for 'ax evaluators create-evaluator remote'."""
+
+    @pytest.mark.unit
+    def test_calls_sdk_with_integration_id(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify create-remote-evaluator forwards integration_id to the SDK."""
+        mock_client.evaluators.create_remote_evaluator.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ev-r1"})
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluator",
+                "remote",
+                "--name",
+                "my-remote",
+                "--space",
+                "space-1",
+                "--integration-id",
+                "integ-1",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.evaluators.create_remote_evaluator.assert_called_once_with(
+            name="my-remote",
+            space="space-1",
+            integration_id="integ-1",
+            commit_message="Initial version",
+            description=None,
+        )
+
+    @pytest.mark.unit
+    def test_forwards_description(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --description is forwarded when provided."""
+        mock_client.evaluators.create_remote_evaluator.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ev-r1"})
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluator",
+                "remote",
+                "--name",
+                "my-remote",
+                "--space",
+                "space-1",
+                "--integration-id",
+                "integ-1",
+                "--description",
+                "Evaluates via remote",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        _, kwargs = mock_client.evaluators.create_remote_evaluator.call_args
+        assert kwargs["description"] == "Evaluates via remote"
+
+    @pytest.mark.unit
+    def test_forwards_commit_message(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --commit-message is forwarded to the SDK."""
+        mock_client.evaluators.create_remote_evaluator.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ev-r1"})
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluator",
+                "remote",
+                "--name",
+                "my-remote",
+                "--space",
+                "space-1",
+                "--integration-id",
+                "integ-1",
+                "--commit-message",
+                "add remote eval",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        _, kwargs = mock_client.evaluators.create_remote_evaluator.call_args
+        assert kwargs["commit_message"] == "add remote eval"
+
+
+class TestRemoteCreateVersion:
+    """Tests for 'ax evaluators create-evaluator-version remote'."""
+
+    @pytest.mark.unit
+    def test_calls_sdk_with_integration_id(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify create-remote-evaluator-version forwards args to the SDK."""
+        mock_client.evaluators.create_remote_version.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ver-r1"})
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluator-version",
+                "remote",
+                "eval-1",
+                "--integration-id",
+                "integ-2",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.evaluators.create_remote_version.assert_called_once_with(
+            evaluator="eval-1",
+            space=None,
+            integration_id="integ-2",
+            commit_message="Update remote config",
+        )
+
+    @pytest.mark.unit
+    def test_forwards_space_and_commit_message(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --space and --commit-message are forwarded."""
+        mock_client.evaluators.create_remote_version.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "ver-r1"})
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluator-version",
+                "remote",
+                "eval-1",
+                "--integration-id",
+                "integ-2",
+                "--space",
+                "space-2",
+                "--commit-message",
+                "switch endpoint",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.evaluators.create_remote_version.assert_called_once_with(
+            evaluator="eval-1",
+            space="space-2",
+            integration_id="integ-2",
+            commit_message="switch endpoint",
+        )

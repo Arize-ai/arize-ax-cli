@@ -353,7 +353,32 @@ def get_evaluator(
         )
 
 
-@app.command("create-template-evaluator")
+# ---------------------------------------------------------------------------
+# ax evaluators create-evaluator <type>
+# ---------------------------------------------------------------------------
+
+create_evaluator_app = typer.Typer(
+    name="create-evaluator",
+    help="Create a new evaluator with an initial version (choose the subcommand for its type)",
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["--help", "-h"]},
+)
+app.add_typer(create_evaluator_app)
+
+# ---------------------------------------------------------------------------
+# ax evaluators create-evaluator-version <type>
+# ---------------------------------------------------------------------------
+
+create_version_app = typer.Typer(
+    name="create-evaluator-version",
+    help="Create a new version of an existing evaluator (choose the subcommand for its type)",
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["--help", "-h"]},
+)
+app.add_typer(create_version_app)
+
+
+@create_evaluator_app.command("template")
 @handle_errors
 def template_create_evaluator(
     name: Annotated[
@@ -535,7 +560,7 @@ def template_create_evaluator(
         )
 
 
-@app.command("create-code-evaluator")
+@create_evaluator_app.command("code")
 @handle_errors
 def code_create_evaluator(
     name: Annotated[
@@ -995,7 +1020,7 @@ def get_version(
         )
 
 
-@app.command("create-template-evaluator-version")
+@create_version_app.command("template")
 @handle_errors
 def template_create_version(
     name_or_id: Annotated[
@@ -1163,7 +1188,7 @@ def template_create_version(
         )
 
 
-@app.command("create-code-evaluator-version")
+@create_version_app.command("code")
 @handle_errors
 def code_create_version(
     name_or_id: Annotated[
@@ -1341,6 +1366,191 @@ def code_create_version(
                 space=space,
                 commit_message=commit_message,
                 code_config=code_config,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to create evaluator version: {e}") from e
+    else:
+        output_data(
+            version,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@create_evaluator_app.command("remote")
+@handle_errors
+def remote_create_evaluator(
+    name: Annotated[
+        str,
+        typer.Option(
+            "--name",
+            "-n",
+            help="Evaluator name (must be unique within the space)",
+            prompt=True,
+        ),
+    ],
+    space: Annotated[
+        str,
+        typer.Option(
+            "--space",
+            "-s",
+            help="Space name or ID to create the evaluator in",
+            prompt=True,
+        ),
+    ],
+    integration_id: Annotated[
+        str,
+        typer.Option(
+            "--integration-id",
+            help=(
+                "Global ID of an existing EVALUATOR integration "
+                "(create one with `ax integrations create --type EVALUATOR`)"
+            ),
+            prompt=True,
+        ),
+    ],
+    commit_message: Annotated[
+        str,
+        typer.Option(
+            "--commit-message",
+            help="Commit message for the initial version",
+        ),
+    ] = "Initial version",
+    description: Annotated[
+        str | None,
+        typer.Option(
+            "--description",
+            help="Optional evaluator description",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Create a new remote evaluator with an initial version.
+
+    Remote evaluators call a customer-hosted HTTP endpoint on each evaluation
+    run. The ``--integration-id`` must reference an existing ``EVALUATOR``
+    integration. Requires the ``enableRemoteEvalTasks`` feature flag.
+    """
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Creating evaluator",
+            success_msg="Evaluator created successfully",
+        ):
+            evaluator = client.evaluators.create_remote_evaluator(
+                name=name,
+                space=space,
+                integration_id=integration_id,
+                commit_message=commit_message,
+                description=description,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to create evaluator: {e}") from e
+    else:
+        output_data(
+            evaluator,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@create_version_app.command("remote")
+@handle_errors
+def remote_create_version(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Evaluator name or ID"),
+    ],
+    integration_id: Annotated[
+        str,
+        typer.Option(
+            "--integration-id",
+            help=(
+                "Global ID of an existing EVALUATOR integration "
+                "(create one with `ax integrations create --type EVALUATOR`)"
+            ),
+            prompt=True,
+        ),
+    ],
+    commit_message: Annotated[
+        str,
+        typer.Option(
+            "--commit-message",
+            help="Commit message describing the changes in this version",
+        ),
+    ] = "Update remote config",
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "-s",
+            help=(
+                "Space name or ID "
+                "(required if using evaluator name instead of ID)"
+            ),
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Create a new remote version of an existing evaluator.
+
+    The ``--integration-id`` references an existing ``EVALUATOR`` integration.
+    The integration is shared across versions; updating it affects all versions
+    that reference it. Requires the ``enableRemoteEvalTasks`` feature flag.
+    """
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Creating evaluator version",
+            success_msg="Evaluator version created successfully",
+        ):
+            version = client.evaluators.create_remote_version(
+                evaluator=name_or_id,
+                space=space,
+                integration_id=integration_id,
+                commit_message=commit_message,
             )
     except Exception as e:
         raise APIError(f"Failed to create evaluator version: {e}") from e

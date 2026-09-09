@@ -56,6 +56,7 @@
   - [Datasets](#datasets)
   - [Evaluators](#evaluators)
     - [Code evaluators](#code-evaluators)
+    - [Remote evaluators](#remote-evaluators)
   - [Experiments](#experiments)
     - [`ax experiments run` — execute a task locally](#ax-experiments-run--execute-a-task-locally)
     - [`ax experiments create` — publish pre-computed runs](#ax-experiments-create--publish-pre-computed-runs)
@@ -939,7 +940,7 @@ ax evaluators get <evaluator>
 ax evaluators get <evaluator> --version-id <version-id>
 
 # Create a new template evaluator
-ax evaluators create-template-evaluator \
+ax evaluators create-evaluator template \
   --name "Response Relevance" \
   --space <space> \
   --commit-message "Initial version" \
@@ -949,7 +950,7 @@ ax evaluators create-template-evaluator \
   --model-name gpt-4o
 
 # Create a classification evaluator (label → numeric score; omit flag for freeform)
-ax evaluators create-template-evaluator \
+ax evaluators create-evaluator template \
   --name "Relevance classifier" \
   --space <space> \
   --commit-message "Initial version" \
@@ -975,7 +976,7 @@ ax evaluators list-versions <evaluator-id> [--limit 15] [--cursor <cursor>]
 ax evaluators get-version <version-id>
 
 # Create a new template version of an existing evaluator
-ax evaluators create-template-evaluator-version <evaluator-id> \
+ax evaluators create-evaluator-version template <evaluator-id> \
   --commit-message "Improved prompt" \
   --template-name relevance \
   --template "Rate the relevance of the response: {{input}} {{output}}" \
@@ -983,7 +984,7 @@ ax evaluators create-template-evaluator-version <evaluator-id> \
   --model-name gpt-4o
 
 # Same optional template fields apply (e.g. classification choices)
-ax evaluators create-template-evaluator-version <evaluator-id> \
+ax evaluators create-evaluator-version template <evaluator-id> \
   --commit-message "Add rails" \
   --template-name relevance \
   --template "Classify: {{output}}" \
@@ -1010,13 +1011,13 @@ ax evaluators create-template-evaluator-version <evaluator-id> \
 
 #### Code evaluators
 
-`create-code-evaluator` and `create-code-evaluator-version` accept `--code-type managed` for
+`create-evaluator code` and `create-evaluator-version code` accept `--code-type managed` for
 built-in checks (regex, JSON parse, keyword matches, exact match) or
 `--code-type custom` for user-supplied Python.
 
 ```bash
 # Managed built-in: regex check
-ax evaluators create-code-evaluator \
+ax evaluators create-evaluator code \
   --name "Regex Check" \
   --space <space> \
   --commit-message "Initial version" \
@@ -1027,7 +1028,7 @@ ax evaluators create-code-evaluator \
   --static-params '[{"name":"pattern","type":"REGEX","default_value":"^yes"}]'
 
 # Custom Python, loading source from a file (use @ prefix)
-ax evaluators create-code-evaluator \
+ax evaluators create-evaluator code \
   --name "Custom Eval" \
   --space <space> \
   --commit-message "Initial version" \
@@ -1037,8 +1038,8 @@ ax evaluators create-code-evaluator \
   --imports @./imports.py \
   --variables '["input","output"]'
 
-# Inline custom code is also supported in create-code-evaluator-version
-ax evaluators create-code-evaluator-version <evaluator-id> \
+# Inline custom code is also supported in create-evaluator-version code
+ax evaluators create-evaluator-version code <evaluator-id> \
   --commit-message "v2" \
   --code-type custom \
   --code-name my_eval \
@@ -1061,6 +1062,34 @@ ax evaluators create-code-evaluator-version <evaluator-id> \
 | `--static-params` | JSON array of static parameters. Each item: `{name, type: STRING\|STRING_ARRAY\|REGEX, default_value: <string or array of strings>}` |
 | `--query-filter` | Optional filter query applied to the chosen granularity |
 | `--data-granularity` | `span`, `trace`, or `session` |
+
+#### Remote evaluators
+
+Remote evaluators call a customer-hosted HTTP endpoint on each evaluation run.
+First create an `EVALUATOR` integration (see [Integrations](#integrations)), then
+reference it when creating the evaluator. Requires the `enableRemoteEvalTasks` feature flag.
+
+```bash
+# Create a remote evaluator backed by an existing EVALUATOR integration
+ax evaluators create-evaluator remote \
+  --name "My Remote Evaluator" \
+  --space <space> \
+  --integration-id <integration-global-id> \
+  --commit-message "Initial version"
+
+# Create a new version pointing at the same (or a different) integration
+ax evaluators create-evaluator-version remote <evaluator-id> \
+  --integration-id <integration-global-id> \
+  --commit-message "Switch endpoint"
+```
+
+**Remote evaluator options:**
+
+| Option | Description |
+| --- | --- |
+| `--integration-id` | Global ID (base64) of an existing `EVALUATOR` integration |
+| `--commit-message` | Commit message for the version (default: `"Initial version"` / `"Update remote config"`) |
+| `--description` | Optional evaluator description (`create-evaluator remote` only) |
 
 ### Experiments
 
