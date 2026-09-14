@@ -882,8 +882,11 @@ ax datasets list [--name <substring>] [--space <space>] [--limit 15] [--cursor <
 # Get dataset metadata
 ax datasets get <dataset>
 
-# Export all examples to a file
-ax datasets export <dataset> [--version-id <version-id>] [--output-dir .] [--stdout]
+# Export one page of examples to a file
+ax datasets export <dataset> [--version-id <version-id>] [--limit <count>] [--cursor <cursor>] [--output-dir .] [--stdout]
+
+# Export all examples through Arrow Flight
+ax datasets export <dataset> --all
 
 # Create a new dataset
 ax datasets create --name "My Dataset" --space <space> --file data.csv
@@ -1892,15 +1895,26 @@ ax datasets list --space sp_abc123 --output json > datasets.json
 
 ### Exporting Dataset Examples
 
+By default, `ax datasets export` writes one REST API page to `examples.json` in a timestamped directory. Use `--limit` to set the maximum page size. Use `--cursor` with the `next_cursor` value from a prior `DatasetsClient.list_examples` response to export a later page. The output contains the examples from that page only.
+
 ```bash
-# Export to a timestamped directory
+# Export the first page with the SDK's default page size
 ax datasets export ds_xyz789
+
+# Export up to 50 examples from the first page
+ax datasets export ds_xyz789 --limit 50
+
+# Export a later page
+ax datasets export ds_xyz789 --limit 50 --cursor <next-cursor>
 
 # Export a specific version
 ax datasets export ds_xyz789 --version-id ver_abc123
 
-# Pipe to jq for processing
-ax datasets export ds_xyz789 --stdout | jq '.[].input'
+# Pipe one page to jq for processing
+ax datasets export ds_xyz789 --limit 50 --stdout | jq '.[].input'
+
+# Export the full dataset through Arrow Flight
+ax datasets export ds_xyz789 --all
 ```
 
 ### Running an Experiment with a Task

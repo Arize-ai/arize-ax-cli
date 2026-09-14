@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.35.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.34.0...arize-ax-cli/v0.35.0) (2026-09-14)
+
+
+### 🎁 New Features
+
+* **datasets:** add page controls to dataset export ([#86153](https://github.com/Arize-ai/arize/issues/86153)) ([0ed45cc](https://github.com/Arize-ai/arize/commit/0ed45cc3ccc82256e24ede8023bf1e2aaa94ca5f))
+
+
+### 🐛 Bug Fixes
+
+* **users:** Remove create-user developer access option ([#85682](https://github.com/Arize-ai/arize/issues/85682)) ([5466323](https://github.com/Arize-ai/arize/commit/54663239608127b2097343aa0d9ce27372e0fbe5))
+
 ## [0.34.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.33.0...arize-ax-cli/v0.34.0) (2026-09-09)
 
 

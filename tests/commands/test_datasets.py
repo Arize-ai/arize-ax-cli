@@ -174,7 +174,7 @@ class TestExportDataset:
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
     ) -> None:
-        """Verify export defaults to all=False (REST)."""
+        """Verify export defaults to one REST page."""
         response = MagicMock()
         response.examples = []
         mock_client.datasets.list_examples.return_value = response
@@ -185,6 +185,81 @@ class TestExportDataset:
             dataset="ds-1",
             space=None,
             dataset_version_id=None,
+            cursor=None,
+            all=False,
+        )
+
+    def test_export_with_limit(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --limit is forwarded as the page size."""
+        response = MagicMock()
+        response.examples = []
+        mock_client.datasets.list_examples.return_value = response
+
+        result = cli_runner.invoke(
+            app, ["export", "ds-1", "--stdout", "--limit", "25"]
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.list_examples.assert_called_once_with(
+            dataset="ds-1",
+            space=None,
+            dataset_version_id=None,
+            limit=25,
+            cursor=None,
+            all=False,
+        )
+
+    def test_export_with_cursor(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify --cursor selects the page to export."""
+        response = MagicMock()
+        response.examples = []
+        mock_client.datasets.list_examples.return_value = response
+
+        result = cli_runner.invoke(
+            app,
+            ["export", "ds-1", "--stdout", "--cursor", "cursor-2"],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.list_examples.assert_called_once_with(
+            dataset="ds-1",
+            space=None,
+            dataset_version_id=None,
+            cursor="cursor-2",
+            all=False,
+        )
+
+    def test_export_does_not_follow_next_cursor(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify export writes one page even when another page is available."""
+        response = MagicMock()
+        response.examples = [
+            MagicMock(model_dump=MagicMock(return_value={"id": "1"}))
+        ]
+        response.pagination.has_more = True
+        response.pagination.next_cursor = "cursor-2"
+        mock_client.datasets.list_examples.return_value = response
+
+        result = cli_runner.invoke(app, ["export", "ds-1", "--stdout"])
+        assert result.exit_code == 0
+        assert json.loads(result.stdout) == [{"id": "1"}]
+        mock_client.datasets.list_examples.assert_called_once_with(
+            dataset="ds-1",
+            space=None,
+            dataset_version_id=None,
+            cursor=None,
             all=False,
         )
 
@@ -205,6 +280,7 @@ class TestExportDataset:
             dataset="ds-1",
             space=None,
             dataset_version_id=None,
+            cursor=None,
             all=True,
         )
 
@@ -228,6 +304,7 @@ class TestExportDataset:
             dataset="ds-1",
             space=None,
             dataset_version_id="v2",
+            cursor=None,
             all=False,
         )
 
@@ -236,23 +313,48 @@ class TestExportDataset:
         cli_runner: CliRunner,
         mock_client: MagicMock,
         patch_config_and_client: tuple[MagicMock, MagicMock],
-        tmp_path: object,
+        tmp_path: Path,
     ) -> None:
-        """Verify export writes to disk when --stdout is not given."""
+        """Verify export writes the returned page to disk."""
         response = MagicMock()
-        response.examples = []
+        example = MagicMock(model_dump=MagicMock(return_value={"id": "1"}))
+        response.examples = [example]
         mock_client.datasets.list_examples.return_value = response
 
         with patch("ax.commands.datasets.make_export_dir") as mock_dir:
-            mock_dir.return_value = tmp_path  # type: ignore[assignment]
-            with patch("ax.commands.datasets.write_json_array") as mock_write:
-                mock_write.return_value = tmp_path / "examples.json"  # type: ignore[operator]
-                result = cli_runner.invoke(
-                    app,
-                    ["export", "ds-1", "--output-dir", str(tmp_path)],
-                )
-                assert result.exit_code == 0
-                mock_write.assert_called_once()
+            mock_dir.return_value = tmp_path
+            result = cli_runner.invoke(
+                app,
+                ["export", "ds-1", "--output-dir", str(tmp_path)],
+            )
+            assert result.exit_code == 0
+            written = json.loads((tmp_path / "examples.json").read_text())
+            assert written == [{"id": "1"}]
+
+    def test_export_limit_rejects_non_positive_values(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--limit 0 or negative must be rejected before any SDK call."""
+        result = cli_runner.invoke(
+            app, ["export", "ds-1", "--stdout", "--limit", "0"]
+        )
+        assert result.exit_code != 0
+        mock_client.datasets.list_examples.assert_not_called()
+
+    def test_export_api_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Verify API failures produce a non-zero exit code."""
+        mock_client.datasets.list_examples.side_effect = RuntimeError("failed")
+
+        result = cli_runner.invoke(app, ["export", "ds-1", "--stdout"])
+        assert result.exit_code != 0
 
 
 class TestCreateDataset:

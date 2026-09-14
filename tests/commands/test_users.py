@@ -228,32 +228,6 @@ class TestCreateUser:
             name=UserRole("MEMBER")
         )
         assert call_kwargs["invite_mode"] == InviteMode("NONE")
-        assert call_kwargs["is_developer"] is True
-
-    def test_create_with_is_developer(
-        self, mock_config: MagicMock, mock_client: MagicMock
-    ) -> None:
-        """--is-developer flag should be forwarded to the SDK."""
-        mock_client.users.create.return_value = _make_user(is_developer=False)
-        _invoke(
-            [
-                "users",
-                "create",
-                "--full-name",
-                "Alice",
-                "--email",
-                "alice@example.com",
-                "--role",
-                "MEMBER",
-                "--invite-mode",
-                "NONE",
-                "--is-not-developer",
-            ],
-            mock_config,
-            mock_client,
-        )
-        call_kwargs = mock_client.users.create.call_args.kwargs
-        assert call_kwargs["is_developer"] is False
 
     def test_create_sdk_error_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock

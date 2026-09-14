@@ -195,16 +195,6 @@ def create_user(
             prompt=True,
         ),
     ],
-    is_not_developer: Annotated[
-        bool,
-        typer.Option(
-            "--is-not-developer",
-            help=(
-                "Disable developer permissions. By default, new users are granted developer "
-                "permissions to use the Arize API."
-            ),
-        ),
-    ] = False,
     output: Annotated[
         str,
         typer.Option(
@@ -251,7 +241,6 @@ def create_user(
                 email=email,
                 role=PredefinedUserRole(name=UserRole(role)),
                 invite_mode=invite_mode_enum,
-                is_developer=not is_not_developer,
             )
     except Exception as e:
         raise APIError(f"Failed to create user: {e}") from e

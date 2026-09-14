@@ -241,6 +241,24 @@ def export_dataset(
             help="Use Arrow Flight for bulk export (streams all examples).",
         ),
     ] = False,
+    limit: Annotated[
+        int | None,
+        typer.Option(
+            "--limit",
+            "-l",
+            min=1,
+            help="Maximum number of examples to export (ignored with --all; "
+            "default is the SDK's page size)",
+        ),
+    ] = None,
+    cursor: Annotated[
+        str | None,
+        typer.Option(
+            "--cursor",
+            "-c",
+            help="Pagination cursor for the page to export (ignored with --all)",
+        ),
+    ] = None,
     verbose: Annotated[
         bool,
         typer.Option(
@@ -252,19 +270,32 @@ def export_dataset(
 ) -> None:
     """Export examples from a dataset to a file.
 
-    Pass --all to use Arrow Flight for bulk export.
+    By default, exports one page through the REST API. Use --limit to
+    control the page size and --cursor to select a later page. Pass
+    --all to use Arrow Flight for a full-dataset export instead.
     """
     setup_logging(verbose)
     client, _ = make_client()
 
     try:
         with spinner("Exporting dataset examples"):
-            response = client.datasets.list_examples(
-                dataset=name_or_id,
-                space=space,
-                dataset_version_id=version_id,
-                all=use_all,
-            )
+            if limit is None:
+                response = client.datasets.list_examples(
+                    dataset=name_or_id,
+                    space=space,
+                    dataset_version_id=version_id,
+                    cursor=cursor,
+                    all=use_all,
+                )
+            else:
+                response = client.datasets.list_examples(
+                    dataset=name_or_id,
+                    space=space,
+                    dataset_version_id=version_id,
+                    limit=limit,
+                    cursor=cursor,
+                    all=use_all,
+                )
     except Exception as e:
         raise APIError(f"Failed to export dataset: {e}") from e
 
