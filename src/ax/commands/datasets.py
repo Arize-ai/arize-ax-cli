@@ -3,22 +3,35 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     import pandas as pd
+    from arize import ArizeClient
+    from pydantic import BaseModel
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
-from ax.core.exceptions import APIError, AxError
+from ax.core.exceptions import APIError, AxError, BatchUploadError
 from ax.core.output import output_data
 from ax.utils.annotations import parse_annotations
+from ax.utils.batching import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_MAX_RETRIES,
+    chunk_examples,
+    http_status,
+    send_batches,
+)
 from ax.utils.console import (
     confirm,
     info,
     new_line,
+    progress_bar,
     setup_logging,
     spinner,
     success,
@@ -30,6 +43,8 @@ from ax.utils.file_io import (
     parse_output_option,
     read_data_file,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_examples_structure(examples: list[dict[str, object]]) -> None:
@@ -52,6 +67,189 @@ def _validate_examples_structure(examples: list[dict[str, object]]) -> None:
             raise typer.BadParameter(
                 f"Example at index {i} is empty; each example must have at least one field."
             )
+
+
+def _warn_retry(
+    batch_number: int,
+    attempt: int,
+    delay: float,
+    exc: Exception,
+) -> None:
+    """Report that a batch is being retried, and why."""
+    status = http_status(exc)
+    if status == 429:
+        reason = "was rate limited"
+    elif status is not None:
+        reason = f"failed with HTTP {status}"
+    else:
+        reason = "failed to reach the API"
+    warning(
+        f"Batch {batch_number} {reason}; "
+        f"retrying in {delay:.1f}s (attempt {attempt})"
+    )
+
+
+def _merge_batch_responses(responses: list[BaseModel]) -> BaseModel:
+    """Return the final batch response, widened to cover every batch.
+
+    Each call reports only the example IDs from its own batch, so the IDs
+    from earlier batches are folded into the response that gets printed.
+    That keeps ``--output json`` a faithful record of the whole upload
+    rather than of its last slice.
+    """
+    last = responses[-1]
+    if len(responses) == 1:
+        return last
+
+    merged_ids: list[str] = []
+    for response in responses:
+        ids = getattr(response, "example_ids", None)
+        if isinstance(ids, list):
+            merged_ids.extend(ids)
+    if merged_ids:
+        try:
+            last.example_ids = merged_ids  # type: ignore[attr-defined]
+        except Exception:
+            # Cosmetic only - never fail a completed upload over this.
+            logger.debug("Could not merge example IDs across batches")
+    return last
+
+
+def _report_partial_upload(
+    exc: BatchUploadError,
+    *,
+    resume_hint: str,
+) -> None:
+    """Tell the user how far a failed upload got before it stopped.
+
+    Once an ``ApiException`` is found in the cause chain, the shared error
+    formatter renders the API's own failure and drops the ``AxError``
+    message wrapping it. The partial-progress count is the one thing the
+    user cannot recover from the API error alone, so it is reported here,
+    on its own line, before the error propagates.
+    """
+    if exc.uploaded <= 0:
+        return
+    remaining = exc.total - exc.uploaded
+    warning(
+        f"{exc.uploaded} of {exc.total} example(s) were uploaded before the "
+        "upload failed."
+    )
+    text_dimmed(f"  Add the remaining {remaining} with: {resume_hint}")
+
+
+def _batch_sender(
+    client: ArizeClient,
+    *,
+    dataset: str,
+    space: str | None,
+    version_id: str = "",
+) -> Callable[[list[dict[str, object]]], BaseModel]:
+    """Build a callable that appends a single batch to ``dataset``.
+
+    After the first batch, the sender pins itself to the dataset ID and
+    version the API resolved. That keeps every batch of one upload inside a
+    single dataset version, and spares the SDK a dataset-name lookup on each
+    subsequent call.
+    """
+    target = {"dataset": dataset, "version": version_id}
+
+    def send(batch: list[dict[str, object]]) -> BaseModel:
+        response = client.datasets.append_examples(
+            dataset=target["dataset"],
+            space=space,
+            dataset_version_id=target["version"],
+            examples=batch,
+        )
+        resolved_id = getattr(response, "id", None)
+        if isinstance(resolved_id, str) and resolved_id:
+            target["dataset"] = resolved_id
+        resolved_version = getattr(response, "dataset_version_id", None)
+        if isinstance(resolved_version, str) and resolved_version:
+            target["version"] = resolved_version
+        return response
+
+    return send
+
+
+def _upload_batches(
+    batches: list[list[dict[str, object]]],
+    send: Callable[[list[dict[str, object]]], BaseModel],
+    *,
+    description: str,
+    max_retries: int,
+) -> list[BaseModel]:
+    """Send every batch, showing a progress bar when there is more than one."""
+    total = sum(len(batch) for batch in batches)
+    if len(batches) <= 1:
+        return send_batches(
+            batches,
+            send,
+            max_retries=max_retries,
+            on_retry=_warn_retry,
+        )
+
+    with progress_bar(total, description) as progress:
+        task = progress.add_task(description, total=total)
+        return send_batches(
+            batches,
+            send,
+            max_retries=max_retries,
+            on_progress=lambda rows: progress.update(task, advance=rows),
+            on_retry=_warn_retry,
+        )
+
+
+def _append_remaining_batches(
+    client: ArizeClient,
+    batches: list[list[dict[str, object]]],
+    *,
+    dataset: object,
+    name: str,
+    space: str,
+    created: int,
+    total: int,
+    max_retries: int,
+) -> None:
+    """Append the batches that did not fit into the initial create call.
+
+    Raises:
+        APIError: If the dataset was created but some examples could not be
+            uploaded. The message names the dataset and how many examples
+            landed, so the upload can be resumed instead of restarted.
+    """
+    dataset_id = getattr(dataset, "id", None)
+    target = dataset_id if isinstance(dataset_id, str) and dataset_id else name
+    send = _batch_sender(client, dataset=target, space=space)
+
+    try:
+        _upload_batches(
+            batches,
+            send,
+            description="Uploading examples",
+            max_retries=max_retries,
+        )
+    except BatchUploadError as e:
+        landed = created + e.uploaded
+        warning(
+            f"Dataset '{name}' ({target}) was created, but only {landed} of "
+            f"{total} example(s) were uploaded."
+        )
+        text_dimmed(
+            f"  Add the remaining {total - landed} with: "
+            f"ax datasets append {target}"
+        )
+        text_dimmed(
+            "  Appending to the existing dataset avoids creating it again."
+        )
+        raise APIError(f"Failed to upload examples: {e}") from e
+    except Exception as e:
+        raise APIError(
+            f"Dataset '{name}' ({target}) was created, but appending the "
+            f"remaining examples failed: {e}"
+        ) from e
+
+    success(f"Uploaded {total} example(s) in {len(batches) + 1} batches")
 
 
 # Create datasets subcommand app
@@ -347,6 +545,25 @@ def create_dataset(
             help='JSON array of examples, e.g. \'[{"question": "...", "answer": "..."}]\'',
         ),
     ] = None,
+    batch_size: Annotated[
+        int,
+        typer.Option(
+            "--batch-size",
+            "-b",
+            min=0,
+            help="Examples per API call. Use 0 to send the whole payload in "
+            "a single call.",
+        ),
+    ] = DEFAULT_BATCH_SIZE,
+    max_retries: Annotated[
+        int,
+        typer.Option(
+            "--max-retries",
+            min=0,
+            help="Retries per batch on rate limits (429) and transient "
+            "server errors (5xx).",
+        ),
+    ] = DEFAULT_MAX_RETRIES,
     output: Annotated[
         str,
         typer.Option(
@@ -364,7 +581,13 @@ def create_dataset(
         ),
     ] = False,
 ) -> None:
-    """Create a new dataset from a data file or inline JSON."""
+    """Create a new dataset from a data file or inline JSON.
+
+    Payloads larger than --batch-size are uploaded incrementally: the first
+    batch creates the dataset and the rest are appended to it, each retried
+    with exponential backoff on rate limits and transient server errors.
+    Smaller payloads are sent in a single call, unchanged.
+    """
     setup_logging(verbose)
 
     if json_data and file:
@@ -397,6 +620,27 @@ def create_dataset(
             raise typer.BadParameter("Provide examples via --json or --file.")
         examples = read_data_file(file)
 
+    # Only split a payload that actually needs splitting. A payload that
+    # fits in one batch is forwarded to the SDK exactly as it arrived --
+    # a DataFrame stays a DataFrame, so the SDK keeps its own choice of
+    # upload transport for bulk files.
+    records: list[dict[str, object]] = (
+        examples
+        if isinstance(examples, list)
+        else examples.to_dict(orient="records")  # type: ignore[assignment]
+    )
+    batches = chunk_examples(records, batch_size=batch_size)
+    first_batch: list[dict[str, object]] | pd.DataFrame = (
+        examples if len(batches) <= 1 else batches[0]
+    )
+    remaining = batches[1:]
+
+    if remaining:
+        info(
+            f"Creating dataset from {len(records)} examples "
+            f"in {len(batches)} batches"
+        )
+
     try:
         # Create dataset
         with spinner(
@@ -406,20 +650,32 @@ def create_dataset(
             dataset = client.datasets.create(
                 name=name,
                 space=space,
-                examples=examples,
+                examples=first_batch,
             )
     except Exception as e:
         raise APIError(f"Failed to create dataset: {e}") from e
-    else:
-        output_data(
-            dataset,
-            format_type=output_format,
-            output_file=output_file,
+
+    if remaining:
+        _append_remaining_batches(
+            client,
+            remaining,
+            dataset=dataset,
+            name=name,
+            space=space,
+            created=len(batches[0]),
+            total=len(records),
+            max_retries=max_retries,
         )
-        new_line()
-        text_dimmed(
-            "You can export the examples using the 'ax datasets export' command."
-        )
+
+    output_data(
+        dataset,
+        format_type=output_format,
+        output_file=output_file,
+    )
+    new_line()
+    text_dimmed(
+        "You can export the examples using the 'ax datasets export' command."
+    )
 
 
 @app.command("append")
@@ -459,6 +715,25 @@ def append_examples(
             help="Dataset version ID (default: latest version)",
         ),
     ] = None,
+    batch_size: Annotated[
+        int,
+        typer.Option(
+            "--batch-size",
+            "-b",
+            min=0,
+            help="Examples per API call. Use 0 to send the whole payload in "
+            "a single call.",
+        ),
+    ] = DEFAULT_BATCH_SIZE,
+    max_retries: Annotated[
+        int,
+        typer.Option(
+            "--max-retries",
+            min=0,
+            help="Retries per batch on rate limits (429) and transient "
+            "server errors (5xx).",
+        ),
+    ] = DEFAULT_MAX_RETRIES,
     output: Annotated[
         str,
         typer.Option(
@@ -480,6 +755,12 @@ def append_examples(
 
     Provide examples via --json (inline JSON array) or --file (CSV/JSON/JSONL/Parquet).
     Exactly one input source is required.
+
+    Large payloads are split into batches of --batch-size examples (and are
+    split further if a batch would exceed the maximum request size), because
+    sending hundreds of wide examples in one request is rejected by the API.
+    Each batch is retried with exponential backoff when the API reports a
+    rate limit or a transient server error.
     """
     setup_logging(verbose)
 
@@ -514,22 +795,48 @@ def append_examples(
         _validate_examples_structure(records)
         examples = records
 
+    total = len(examples)
+    batches = chunk_examples(examples, batch_size=batch_size)
+
+    send = _batch_sender(
+        client,
+        dataset=name_or_id,
+        space=space,
+        version_id=version_id or "",
+    )
+
     try:
-        with spinner(
-            "Appending examples",
-            success_msg=f"Appended {len(examples)} example(s)",
-        ):
-            dataset = client.datasets.append_examples(
-                dataset=name_or_id,
-                space=space,
-                dataset_version_id=version_id or "",
-                examples=examples,
+        if len(batches) <= 1:
+            with spinner(
+                "Appending examples",
+                success_msg=f"Appended {total} example(s)",
+            ):
+                responses = _upload_batches(
+                    batches,
+                    send,
+                    description="Appending examples",
+                    max_retries=max_retries,
+                )
+        else:
+            info(f"Appending {total} examples in {len(batches)} batches")
+            responses = _upload_batches(
+                batches,
+                send,
+                description="Appending examples",
+                max_retries=max_retries,
             )
+            success(f"Appended {total} example(s) in {len(batches)} batches")
+    except BatchUploadError as e:
+        _report_partial_upload(
+            e,
+            resume_hint=f"ax datasets append {name_or_id}",
+        )
+        raise APIError(f"Failed to append examples: {e}") from e
     except Exception as e:
         raise APIError(f"Failed to append examples: {e}") from e
     else:
         output_data(
-            dataset,
+            _merge_batch_responses(responses),
             format_type=output_format,
             output_file=output_file,
         )

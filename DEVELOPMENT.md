@@ -21,6 +21,7 @@ This guide explains the architecture, code structure, and conventions of the Ari
     - [`error_formatter.py`](#error_formatterpy)
   - [`src/ax/utils/`](#srcaxutils)
     - [`console.py`](#consolepy)
+    - [`batching.py`](#batchingpy)
     - [`file_io.py`](#file_iopy)
   - [`src/ax/ascii_art.py`](#srcaxascii_artpy)
 - [Adding New Features](#adding-new-features)
@@ -397,6 +398,22 @@ with spinner("Loading data") as status:
     # Long operation
     status.update("Still loading...")
 ```
+
+#### `batching.py`
+Batched uploads with retry and backoff, used by the dataset write commands:
+```python
+from ax.utils.batching import chunk_examples, send_batches
+
+# Split by row count *and* serialized size (batch_size=0 disables splitting)
+batches = chunk_examples(examples, batch_size=50)
+
+# Send each batch, retrying only transient failures (429, 5xx, transport)
+responses = send_batches(batches, send_one_batch, max_retries=3)
+```
+Failures raise `BatchUploadError`, which records how many examples were
+uploaded before the failure so the command can tell the user where to resume.
+The module has no console output — callers pass `on_progress` / `on_retry`
+callbacks to drive their own UI.
 
 #### `file_io.py`
 File I/O operations:

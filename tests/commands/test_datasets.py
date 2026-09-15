@@ -1234,3 +1234,540 @@ class TestDeleteDatasetExamples:
             ],
         )
         assert result.exit_code != 0
+
+
+def _api_error(status: int):
+    """Build an SDK ApiException carrying an HTTP status."""
+    from arize import ApiException
+
+    exc = ApiException(status=status, reason="test")
+    exc.headers = None
+    return exc
+
+
+def _append_response(ids: list[str] | None = None, version: str = "v1"):
+    """Build a stand-in for the SDK's append_examples response."""
+    return MagicMock(
+        id="ds-1",
+        dataset_version_id=version,
+        example_ids=list(ids or []),
+        model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"}),
+    )
+
+
+def _examples(count: int) -> list[dict[str, object]]:
+    """Build `count` distinct examples."""
+    return [{"q": f"question-{n}", "a": f"answer-{n}"} for n in range(count)]
+
+
+@pytest.fixture
+def _no_sleep():
+    """Skip backoff waits so retry tests stay fast."""
+    with patch("ax.utils.batching.time.sleep") as sleep:
+        yield sleep
+
+
+class TestAppendBatching:
+    """Tests for batched uploads in 'ax datasets append'."""
+
+    def test_large_payload_is_split_into_batches(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """120 examples go out as 50 + 50 + 20 instead of one oversized call."""
+        mock_client.datasets.append_examples.return_value = _append_response()
+        examples = _examples(120)
+
+        result = cli_runner.invoke(
+            app, ["append", "ds-1", "--json", json.dumps(examples)]
+        )
+
+        assert result.exit_code == 0
+        sizes = [
+            len(call.kwargs["examples"])
+            for call in mock_client.datasets.append_examples.call_args_list
+        ]
+        assert sizes == [50, 50, 20]
+
+    def test_every_example_is_sent_exactly_once(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Splitting must not drop, duplicate, or reorder rows."""
+        mock_client.datasets.append_examples.return_value = _append_response()
+        examples = _examples(120)
+
+        result = cli_runner.invoke(
+            app, ["append", "ds-1", "--json", json.dumps(examples)]
+        )
+
+        assert result.exit_code == 0
+        sent = [
+            row
+            for call in mock_client.datasets.append_examples.call_args_list
+            for row in call.kwargs["examples"]
+        ]
+        assert sent == examples
+
+    def test_custom_batch_size_is_honored(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--batch-size controls how many examples go per call."""
+        mock_client.datasets.append_examples.return_value = _append_response()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "append",
+                "ds-1",
+                "--json",
+                json.dumps(_examples(25)),
+                "--batch-size",
+                "10",
+            ],
+        )
+
+        assert result.exit_code == 0
+        sizes = [
+            len(call.kwargs["examples"])
+            for call in mock_client.datasets.append_examples.call_args_list
+        ]
+        assert sizes == [10, 10, 5]
+
+    def test_batch_size_zero_sends_one_call(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--batch-size 0 is the escape hatch back to a single request."""
+        mock_client.datasets.append_examples.return_value = _append_response()
+        examples = _examples(120)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "append",
+                "ds-1",
+                "--json",
+                json.dumps(examples),
+                "--batch-size",
+                "0",
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_client.datasets.append_examples.assert_called_once()
+        assert (
+            mock_client.datasets.append_examples.call_args.kwargs["examples"]
+            == examples
+        )
+
+    def test_later_batches_pin_to_the_resolved_dataset_and_version(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """All batches land in one version, addressed by ID after the first."""
+        mock_client.datasets.append_examples.return_value = _append_response(
+            version="ver-7"
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "append",
+                "my-dataset",
+                "--space",
+                "sp-1",
+                "--json",
+                json.dumps(_examples(120)),
+            ],
+        )
+
+        assert result.exit_code == 0
+        calls = mock_client.datasets.append_examples.call_args_list
+        assert calls[0].kwargs["dataset"] == "my-dataset"
+        assert calls[0].kwargs["dataset_version_id"] == ""
+        for call in calls[1:]:
+            assert call.kwargs["dataset"] == "ds-1"
+            assert call.kwargs["dataset_version_id"] == "ver-7"
+
+    def test_explicit_version_is_used_for_every_batch(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--version-id still targets the version the user asked for."""
+        mock_client.datasets.append_examples.return_value = _append_response(
+            version="v2"
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "append",
+                "ds-1",
+                "--json",
+                json.dumps(_examples(120)),
+                "--version-id",
+                "v2",
+            ],
+        )
+
+        assert result.exit_code == 0
+        versions = {
+            call.kwargs["dataset_version_id"]
+            for call in mock_client.datasets.append_examples.call_args_list
+        }
+        assert versions == {"v2"}
+
+    def test_rate_limited_batch_is_retried(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        _no_sleep: MagicMock,
+    ) -> None:
+        """A 429 is waited out rather than surfaced to the user."""
+        mock_client.datasets.append_examples.side_effect = [
+            _api_error(429),
+            _append_response(),
+        ]
+
+        result = cli_runner.invoke(
+            app, ["append", "ds-1", "--json", json.dumps(_examples(3))]
+        )
+
+        assert result.exit_code == 0
+        assert mock_client.datasets.append_examples.call_count == 2
+        assert _no_sleep.call_count == 1
+
+    def test_transient_server_error_is_retried(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        _no_sleep: MagicMock,
+    ) -> None:
+        """A 503 gets another go before the command gives up."""
+        mock_client.datasets.append_examples.side_effect = [
+            _api_error(503),
+            _append_response(),
+        ]
+
+        result = cli_runner.invoke(
+            app, ["append", "ds-1", "--json", json.dumps(_examples(3))]
+        )
+
+        assert result.exit_code == 0
+        assert mock_client.datasets.append_examples.call_count == 2
+
+    def test_rejected_payload_is_not_retried(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        _no_sleep: MagicMock,
+    ) -> None:
+        """A 400 means the payload is wrong; resending it only wastes time."""
+        mock_client.datasets.append_examples.side_effect = _api_error(400)
+
+        result = cli_runner.invoke(
+            app, ["append", "ds-1", "--json", json.dumps(_examples(3))]
+        )
+
+        assert result.exit_code != 0
+        assert mock_client.datasets.append_examples.call_count == 1
+
+    def test_exhausted_retries_exit_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        _no_sleep: MagicMock,
+    ) -> None:
+        """Persistent rate limiting fails the command instead of hanging."""
+        mock_client.datasets.append_examples.side_effect = _api_error(429)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "append",
+                "ds-1",
+                "--json",
+                json.dumps(_examples(3)),
+                "--max-retries",
+                "2",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert mock_client.datasets.append_examples.call_count == 3
+
+    def test_partial_failure_reports_what_landed(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        _no_sleep: MagicMock,
+    ) -> None:
+        """A mid-upload failure must say how much got through, and exit non-zero."""
+        mock_client.datasets.append_examples.side_effect = [
+            _append_response(),
+            _api_error(500),
+        ]
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "append",
+                "ds-1",
+                "--json",
+                json.dumps(_examples(120)),
+                "--max-retries",
+                "0",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "50 of 120" in result.output
+
+    def test_example_ids_from_every_batch_are_reported(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """The printed response covers the whole upload, not just its last batch."""
+        mock_client.datasets.append_examples.side_effect = [
+            _append_response(["a", "b"]),
+            _append_response(["c", "d"]),
+            _append_response(["e"]),
+        ]
+
+        with patch("ax.commands.datasets.output_data") as output:
+            result = cli_runner.invoke(
+                app,
+                [
+                    "append",
+                    "ds-1",
+                    "--json",
+                    json.dumps(_examples(25)),
+                    "--batch-size",
+                    "10",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert output.call_args.args[0].example_ids == ["a", "b", "c", "d", "e"]
+
+    def test_batching_flags_are_documented(
+        self,
+        cli_runner: CliRunner,
+    ) -> None:
+        """Both knobs show up in --help."""
+        result = cli_runner.invoke(app, ["append", "--help"])
+        assert "--batch-size" in result.output
+        assert "--max-retries" in result.output
+
+
+class TestCreateBatching:
+    """Tests for batched uploads in 'ax datasets create'."""
+
+    def test_small_payload_is_created_in_one_call(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Payloads that fit stay on the original single-request path."""
+        mock_client.datasets.create.return_value = MagicMock(
+            id="ds-1",
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"}),
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "test",
+                "--space",
+                "sp-1",
+                "--json",
+                json.dumps(_examples(10)),
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_client.datasets.create.assert_called_once()
+        mock_client.datasets.append_examples.assert_not_called()
+
+    def test_large_payload_creates_then_appends_the_rest(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """The first batch creates the dataset; the rest are appended to it."""
+        mock_client.datasets.create.return_value = MagicMock(
+            id="ds-new",
+            model_dump=MagicMock(return_value={"id": "ds-new", "name": "test"}),
+        )
+        mock_client.datasets.append_examples.return_value = _append_response()
+        examples = _examples(120)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "test",
+                "--space",
+                "sp-1",
+                "--json",
+                json.dumps(examples),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert (
+            mock_client.datasets.create.call_args.kwargs["examples"]
+            == examples[:50]
+        )
+        appended = [
+            row
+            for call in mock_client.datasets.append_examples.call_args_list
+            for row in call.kwargs["examples"]
+        ]
+        assert appended == examples[50:]
+        assert (
+            mock_client.datasets.append_examples.call_args_list[0].kwargs[
+                "dataset"
+            ]
+            == "ds-new"
+        )
+
+    def test_batch_size_zero_creates_in_one_call(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--batch-size 0 restores the original whole-payload behaviour."""
+        mock_client.datasets.create.return_value = MagicMock(
+            id="ds-1",
+            model_dump=MagicMock(return_value={"id": "ds-1", "name": "test"}),
+        )
+        examples = _examples(120)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "test",
+                "--space",
+                "sp-1",
+                "--json",
+                json.dumps(examples),
+                "--batch-size",
+                "0",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert (
+            mock_client.datasets.create.call_args.kwargs["examples"] == examples
+        )
+        mock_client.datasets.append_examples.assert_not_called()
+
+    def test_file_payload_is_batched(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        tmp_path: Path,
+    ) -> None:
+        """A large CSV is split the same way inline JSON is."""
+        mock_client.datasets.create.return_value = MagicMock(
+            id="ds-new",
+            model_dump=MagicMock(return_value={"id": "ds-new", "name": "test"}),
+        )
+        mock_client.datasets.append_examples.return_value = _append_response()
+        csv_file = tmp_path / "big.csv"
+        csv_file.write_text(
+            "question,answer\n" + "".join(f"q{n},a{n}\n" for n in range(120))
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "test",
+                "--space",
+                "sp-1",
+                "--file",
+                str(csv_file),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert (
+            len(mock_client.datasets.create.call_args.kwargs["examples"]) == 50
+        )
+        assert mock_client.datasets.append_examples.call_count == 2
+
+    def test_failed_append_points_at_the_created_dataset(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        _no_sleep: MagicMock,
+    ) -> None:
+        """A half-uploaded dataset must be resumable, not silently wrong."""
+        mock_client.datasets.create.return_value = MagicMock(
+            id="ds-new",
+            model_dump=MagicMock(return_value={"id": "ds-new", "name": "test"}),
+        )
+        mock_client.datasets.append_examples.side_effect = _api_error(500)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create",
+                "--name",
+                "test",
+                "--space",
+                "sp-1",
+                "--json",
+                json.dumps(_examples(120)),
+                "--max-retries",
+                "0",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "ds-new" in result.output
+        assert "50 of 120" in result.output
+        assert "ax datasets append" in result.output
+
+    def test_batching_flags_are_documented(
+        self,
+        cli_runner: CliRunner,
+    ) -> None:
+        """Both knobs show up in --help."""
+        result = cli_runner.invoke(app, ["create", "--help"])
+        assert "--batch-size" in result.output
+        assert "--max-retries" in result.output
