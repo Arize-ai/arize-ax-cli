@@ -920,6 +920,40 @@ ax datasets update <dataset> --new-name "New Name" [--space <space>]
 ax datasets delete <dataset> [--force]
 ```
 
+**Large uploads:**
+
+`create` and `append` upload in batches so that large payloads don't fail as a
+single oversized request. Batches are retried with exponential backoff when the
+API reports a rate limit (429) or a transient server error (5xx); a rejected
+payload (4xx) fails immediately rather than being resent.
+
+```bash
+# Upload 25 examples per request instead of the default 50
+ax datasets append <dataset> --file large_dataset.json --batch-size 25
+
+# Allow more retries on a busy or rate-limited workspace
+ax datasets append <dataset> --file large_dataset.json --max-retries 5
+
+# Opt out of batching and send the whole payload in one request
+ax datasets append <dataset> --file large_dataset.json --batch-size 0
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--batch-size` / `-b` | `50` | Examples per API call. Use `0` for a single request. |
+| `--max-retries` | `3` | Retries per batch on 429 and transient 5xx errors. |
+
+Batches are also split further when a batch would exceed the maximum request
+size, so payloads with long string fields are handled correctly even at a low
+example count. If an upload fails partway through, the command exits non-zero
+and reports how many examples landed, so it can be resumed with
+`ax datasets append` instead of restarted.
+
+> **Note:** retries make delivery *at least once*. A 429 is a clean rejection
+> and is always safe to retry, but a 5xx or a dropped connection can arrive
+> after the server already applied the write, so a retry can duplicate rows.
+> Use `--max-retries 0` if duplicates are worse than a failed upload.
+
 **Supported data file formats:**
 
 - CSV (`.csv`)

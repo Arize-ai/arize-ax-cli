@@ -4,6 +4,7 @@ import logging
 import sys
 from collections.abc import Generator
 from contextlib import contextmanager
+from typing import Any, Protocol
 
 import typer
 from arize.logging import configure_logging
@@ -18,6 +19,21 @@ from rich.progress import (
 )
 
 console = Console(stderr=True)
+
+
+class ProgressReporter(Protocol):
+    """The slice of ``rich.progress.Progress`` that callers actually use.
+
+    Typing the yield of :func:`progress_bar` against this protocol lets both
+    the real ``Progress`` and the non-TTY stand-in satisfy one contract, so
+    callers get attribute checking instead of an opaque ``object``.
+    """
+
+    def add_task(self, *args: Any, **kwargs: Any) -> int:  # noqa: ANN401, D102
+        ...
+
+    def update(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401, D102
+        ...
 
 
 def setup_logging(verbose: bool) -> None:
@@ -193,7 +209,7 @@ def spinner(
 def progress_bar(
     total: int,
     description: str,
-) -> Generator[object, None, None]:
+) -> Generator[ProgressReporter, None, None]:
     """Create progress bar with percentage for operations with known total.
 
     Context manager that yields a Rich Progress object for manual updates.
@@ -225,10 +241,10 @@ def progress_bar(
 
         # Create a dummy progress object that does nothing
         class DummyProgress:
-            def add_task(self, *args: object, **kwargs: object) -> int:
+            def add_task(self, *args: Any, **kwargs: Any) -> int:  # noqa: ANN401
                 return 0
 
-            def update(self, *args: object, **kwargs: object) -> None:
+            def update(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
                 pass
 
         yield DummyProgress()
