@@ -14,6 +14,14 @@ count and real serialized size, then sends each batch through a retry loop
 that backs off on transient failures only. It is deliberately free of
 console output so it stays easy to unit test; callers pass ``on_progress``
 and ``on_retry`` callbacks to drive their own UI.
+
+Delivery is **at least once** for the ambiguous failures. A 429 is a clean
+rejection and is always safe to retry, but a 5xx or a dropped connection
+can arrive after the server already applied the write, so retrying a
+non-idempotent call such as an example insert can duplicate rows. Retrying
+is still the better default -- the alternative is abandoning an upload that
+would have succeeded on the next attempt -- but a caller that cannot
+tolerate duplicates should pass ``max_retries=0``.
 """
 
 from __future__ import annotations

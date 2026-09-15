@@ -949,6 +949,11 @@ example count. If an upload fails partway through, the command exits non-zero
 and reports how many examples landed, so it can be resumed with
 `ax datasets append` instead of restarted.
 
+> **Note:** retries make delivery *at least once*. A 429 is a clean rejection
+> and is always safe to retry, but a 5xx or a dropped connection can arrive
+> after the server already applied the write, so a retry can duplicate rows.
+> Use `--max-retries 0` if duplicates are worse than a failed upload.
+
 **Supported data file formats:**
 
 - CSV (`.csv`)
