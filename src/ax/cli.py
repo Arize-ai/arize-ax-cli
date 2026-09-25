@@ -74,8 +74,14 @@ def main(
 
     invoked = ctx.invoked_subcommand
 
+    # `instrument` hands the terminal to a coding agent, and its no-terminal
+    # path prints a two-line message that an agent relays to the user. An
+    # upgrade notice appended to either is noise at best; appended to the
+    # relayed message it is what gets passed on instead of the instruction.
+    _NO_UPGRADE_NOTICE = ("upgrade", "instrument")
+
     def _after_command() -> None:
-        if invoked == "upgrade":
+        if invoked in _NO_UPGRADE_NOTICE:
             return
         if upgrade_thread is not None:
             from ax.utils.upgrade_check import PYPI_TIMEOUT

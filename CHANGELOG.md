@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.35.0...arize-ax-cli/v0.36.0) (2026-09-23)
+
+
+### 🎁 New Features
+
+* Add `ax instrument` onboarding command ([#87084](https://github.com/Arize-ai/arize/issues/87084)) ([e9cb309](https://github.com/Arize-ai/arize/commit/e9cb3096815e9ecd7c212cde9c286a7819b88413))
+
+
+### 📚 Documentation
+
+* **roles:** document that role-binding user_id is a service key's bot user ([#85760](https://github.com/Arize-ai/arize/issues/85760)) ([8e8ccc8](https://github.com/Arize-ai/arize/commit/8e8ccc82c19f281a9f7f18d6ee02d8d6951256a2))
+
 ## [0.35.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.34.0...arize-ax-cli/v0.35.0) (2026-09-14)
 
 

@@ -22,6 +22,7 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
     "arize==8.53.0",
+    "cryptography>=44.0.0, <45",
     "filelock>=3.12.0, <4",  # For concurrent-safe token refresh in OAuth profiles
     "pydantic>=2.0.0, <3",
     "questionary>=2.0.0, <3",
@@ -29,6 +30,7 @@ dependencies = [
     "rich>=13.0.0, <14",
     "shellingham>=1.5.0, <2",  # For shell detection in completion
     "tomli-w>=1.0.0, <2",  # For TOML writing
+    "truststore>=0.10.0, <1",  # For Windows and macOS certificate stores
     "typer>=0.12.0, <1",
     "packaging>=21.0",
 ]
@@ -52,6 +54,12 @@ Repository = "https://github.com/Arize-ai/arize-ax-cli"
 
 [project.scripts]
 ax = "ax.cli:app"
+# Second name for the same app so `uvx arize-ax-cli <command>` resolves. uvx
+# derives the executable name from the package name, and without this it errors
+# with "An executable named `arize-ax-cli` is not provided by package
+# `arize-ax-cli`". `ax instrument` is the reason this matters: it is the entry
+# point for someone who has nothing installed yet.
+arize-ax-cli = "ax.cli:app"
 
 [build-system]
 requires = ["hatchling>=1.26.0,<2"]

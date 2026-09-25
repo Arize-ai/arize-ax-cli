@@ -3,6 +3,7 @@
 import ssl
 import urllib.request
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlparse
 
 from ax.core.exceptions import FileIOError
@@ -13,6 +14,40 @@ def unverified_ssl_context() -> ssl.SSLContext:
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def verified_ssl_context() -> ssl.SSLContext:
+    """Return an SSLContext trusting both the platform store and certifi.
+
+    The two sources are additive on purpose, because either can be the only one
+    that works:
+
+    * truststore makes the Windows and macOS certificate stores available to
+      Python, where a corporate root can be installed.
+    * certifi provides the public roots required by standalone Python builds.
+
+    Loading both means a download works whether the certificate chains to a
+    public root or an internal one.
+    """
+    try:
+        import truststore
+
+        ctx = cast(
+            "ssl.SSLContext",
+            truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT),
+        )
+    except ImportError:
+        ctx = ssl.create_default_context()
+    try:
+        import certifi
+
+        ctx.load_verify_locations(cafile=certifi.where())
+    # Swallowed deliberately: certifi is an addition to whatever the platform
+    # already trusts, so failing to load it must not stop a download that the
+    # platform store alone can verify.
+    except Exception:  # noqa: S110
+        pass
     return ctx
 
 
@@ -43,7 +78,7 @@ def download_url(
             f"URL scheme must be http or https, got {parsed.scheme!r}"
         )
     try:
-        context = unverified_ssl_context() if not verify else None
+        context = verified_ssl_context() if verify else unverified_ssl_context()
         with urllib.request.urlopen(  # noqa: S310
             url, timeout=timeout, context=context
         ) as response:

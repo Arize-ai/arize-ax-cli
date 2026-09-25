@@ -43,7 +43,7 @@ def list_role_bindings(
         str | None,
         typer.Option(
             "--user-id",
-            help="Filter by user ID (global ID)",
+            help="Filter by user ID (global ID). For a service key, pass its bot user's ID",
         ),
     ] = None,
     limit: Annotated[
@@ -112,7 +112,7 @@ def create_role_binding(
         str,
         typer.Option(
             "--user-id",
-            help="Global ID of the user to bind the role to",
+            help="Global ID of the user to bind the role to. For a service key, use its bot user's ID",
             prompt=True,
         ),
     ],
