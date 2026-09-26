@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.36.0...arize-ax-cli/v0.37.0) (2026-09-25)
+
+
+### 🎁 New Features
+
+* **ax-cli:** bump arize to 8.56.0 for Fireworks and Together AI providers ([#88420](https://github.com/Arize-ai/arize/issues/88420)) ([1d416c6](https://github.com/Arize-ai/arize/commit/1d416c6256941bfa1139ec8913aa980acfd6f3ac))
+
 ## [0.36.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.35.0...arize-ax-cli/v0.36.0) (2026-09-23)
 
 
