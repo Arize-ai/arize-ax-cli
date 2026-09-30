@@ -9,9 +9,12 @@ from arize.integrations.types import (
     CreateAwsBedrockAuth,
     CreateAwsBedrockConfig,
     CreateCustomConfig,
+    CreateFireworksConfig,
+    CreateLiteLlmConfig,
     CreateLlmConfig,
     CreateNvidiaNimConfig,
     CreateOpenAiConfig,
+    CreateTogetherAiConfig,
     CreateVertexAiConfig,
     IntegrationScoping,
     IntegrationType,
@@ -425,6 +428,134 @@ class TestCreateLlmIntegration:
                 provider="NVIDIA_NIM",
                 base_url="https://nim.example.com",
                 is_default_models_enabled=True,
+            )
+        )
+
+    def test_create_llm_litellm_requires_base_url_and_api_key(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that LITELLM builds the config from the endpoint and key."""
+        mock_client.integrations.create_llm.return_value = _make_integration()
+
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "my-litellm",
+                "--provider",
+                "LITELLM",
+                "--base-url",
+                "https://litellm.example.com",
+                "--api-key",
+                "sk-litellm-x",
+                "--model-name",
+                "gpt-4o",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        config = mock_client.integrations.create_llm.call_args.kwargs["config"]
+        assert config == CreateLlmConfig(
+            actual_instance=CreateLiteLlmConfig(
+                provider="LITELLM",
+                base_url="https://litellm.example.com",
+                api_key="sk-litellm-x",
+                model_names=["gpt-4o"],
+            )
+        )
+
+    def test_create_llm_litellm_rejects_missing_base_url(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that LITELLM without --base-url exits with a usage error."""
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "my-litellm",
+                "--provider",
+                "LITELLM",
+                "--api-key",
+                "sk-litellm-x",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code != 0
+        assert "--base-url" in result.output
+        mock_client.integrations.create_llm.assert_not_called()
+
+    def test_create_llm_fireworks_requires_api_key(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that FIREWORKS builds the config from the API key."""
+        mock_client.integrations.create_llm.return_value = _make_integration()
+
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "my-fireworks",
+                "--provider",
+                "FIREWORKS",
+                "--api-key",
+                "fw-key-x",
+                "--enable-default-models",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        config = mock_client.integrations.create_llm.call_args.kwargs["config"]
+        assert config == CreateLlmConfig(
+            actual_instance=CreateFireworksConfig(
+                provider="FIREWORKS",
+                api_key="fw-key-x",
+                is_default_models_enabled=True,
+            )
+        )
+
+    def test_create_llm_together_ai_requires_api_key(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that TOGETHER_AI builds the config from the API key."""
+        mock_client.integrations.create_llm.return_value = _make_integration()
+
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "my-together-ai",
+                "--provider",
+                "TOGETHER_AI",
+                "--api-key",
+                "together-key-x",
+                "--model-name",
+                "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        config = mock_client.integrations.create_llm.call_args.kwargs["config"]
+        assert config == CreateLlmConfig(
+            actual_instance=CreateTogetherAiConfig(
+                provider="TOGETHER_AI",
+                api_key="together-key-x",
+                model_names=["meta-llama/Llama-3.3-70B-Instruct-Turbo"],
             )
         )
 

@@ -243,10 +243,7 @@ def create_prompt(
         LlmProvider,
         typer.Option(
             "--provider",
-            help=(
-                "LLM provider "
-                "(OPEN_AI, AZURE_OPEN_AI, AWS_BEDROCK, VERTEX_AI, ANTHROPIC, CUSTOM)"
-            ),
+            help="LLM provider",
         ),
     ],
     input_variable_format: Annotated[
@@ -626,10 +623,7 @@ def create_version(
         LlmProvider,
         typer.Option(
             "--provider",
-            help=(
-                "LLM provider "
-                "(OPEN_AI, AZURE_OPEN_AI, AWS_BEDROCK, VERTEX_AI, ANTHROPIC, CUSTOM)"
-            ),
+            help="LLM provider",
         ),
     ],
     input_variable_format: Annotated[

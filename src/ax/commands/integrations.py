@@ -11,10 +11,13 @@ from arize.integrations.types import (
     CreateAwsBedrockAuth,
     CreateAwsBedrockConfig,
     CreateCustomConfig,
+    CreateFireworksConfig,
     CreateGeminiConfig,
+    CreateLiteLlmConfig,
     CreateLlmConfig,
     CreateNvidiaNimConfig,
     CreateOpenAiConfig,
+    CreateTogetherAiConfig,
     CreateVertexAiConfig,
     IntegrationScoping,
     IntegrationType,
@@ -357,6 +360,9 @@ def _build_create_llm_config(
         | CreateCustomConfig
         | CreateVertexAiConfig
         | CreateNvidiaNimConfig
+        | CreateLiteLlmConfig
+        | CreateFireworksConfig
+        | CreateTogetherAiConfig
     )
 
     try:
@@ -421,6 +427,33 @@ def _build_create_llm_config(
                 **fc,
                 **dm,
             )
+        elif provider is LlmIntegrationProvider.LITELLM:
+            inner = CreateLiteLlmConfig(
+                provider=provider_value,
+                base_url=_require_provider_flag(
+                    base_url, "--base-url", provider
+                ),
+                api_key=_require_provider_flag(api_key, "--api-key", provider),
+                headers=headers,
+                model_names=model_names,
+                **fc,
+            )
+        elif provider is LlmIntegrationProvider.FIREWORKS:
+            inner = CreateFireworksConfig(
+                provider=provider_value,
+                api_key=_require_provider_flag(api_key, "--api-key", provider),
+                model_names=model_names,
+                **fc,
+                **dm,
+            )
+        elif provider is LlmIntegrationProvider.TOGETHER_AI:
+            inner = CreateTogetherAiConfig(
+                provider=provider_value,
+                api_key=_require_provider_flag(api_key, "--api-key", provider),
+                model_names=model_names,
+                **fc,
+                **dm,
+            )
         else:
             # Fail loudly rather than silently misroute a provider variant
             # added to the SDK enum after this command was written.
@@ -448,10 +481,7 @@ def create_llm_integration(
         LlmIntegrationProvider,
         typer.Option(
             "--provider",
-            help=(
-                "Model provider: OPEN_AI, ANTHROPIC, GEMINI, AWS_BEDROCK, "
-                "CUSTOM, VERTEX_AI, NVIDIA_NIM"
-            ),
+            help="Model provider",
         ),
     ],
     api_key: Annotated[
@@ -460,7 +490,8 @@ def create_llm_integration(
             "--api-key",
             help=(
                 "API key (write-only). Required for OPEN_AI, ANTHROPIC, "
-                "GEMINI; optional for CUSTOM and NVIDIA_NIM"
+                "GEMINI, LITELLM, FIREWORKS, TOGETHER_AI; optional for "
+                "CUSTOM and NVIDIA_NIM"
             ),
         ),
     ] = None,
@@ -469,8 +500,8 @@ def create_llm_integration(
         typer.Option(
             "--base-url",
             help=(
-                "Endpoint URL (HTTPS). Required for CUSTOM; optional for "
-                "NVIDIA_NIM"
+                "Endpoint URL (HTTPS). Required for CUSTOM and LITELLM; "
+                "optional for NVIDIA_NIM"
             ),
         ),
     ] = None,
@@ -480,7 +511,8 @@ def create_llm_integration(
             "--model-name",
             help=(
                 "Custom model name (repeat for multiple). "
-                "AWS_BEDROCK, CUSTOM, and NVIDIA_NIM only"
+                "AWS_BEDROCK, CUSTOM, NVIDIA_NIM, LITELLM, FIREWORKS, and "
+                "TOGETHER_AI only"
             ),
         ),
     ] = None,
@@ -490,7 +522,8 @@ def create_llm_integration(
             "--enable-default-models/--no-enable-default-models",
             help=(
                 "Enable Arize's default model catalog. "
-                "AWS_BEDROCK, CUSTOM, and NVIDIA_NIM only"
+                "AWS_BEDROCK, CUSTOM, NVIDIA_NIM, FIREWORKS, and TOGETHER_AI "
+                "only"
             ),
         ),
     ] = None,
@@ -547,6 +580,8 @@ def create_llm_integration(
     - VERTEX_AI: --gcp-project-id, --gcp-location, --project-access-label
     - NVIDIA_NIM: none (needs at least one model source: --model-name or
       --enable-default-models)
+    - LITELLM: --base-url, --api-key
+    - FIREWORKS / TOGETHER_AI: --api-key
     """
     parsed_headers = _parse_headers(headers) if headers is not None else None
     parsed_auth = _parse_bedrock_auth(auth) if auth is not None else None

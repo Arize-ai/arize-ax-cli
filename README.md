@@ -642,12 +642,13 @@ ax ai-integrations create --name "OpenAI Prod" --provider OPEN_AI \
 
 # Create an integration with custom headers
 ax ai-integrations create --name "Custom LLM" --provider CUSTOM \
-  --base-url https://my-llm.example.com \
-  --headers-json '{"X-API-Key": "secret"}'
+  --base-url https://my-llm.example.com --model-name my-model \
+  --headers '{"X-API-Key": "secret"}'
 
 # Create an AWS Bedrock integration
 ax ai-integrations create --name "Bedrock" --provider AWS_BEDROCK \
-  --provider-metadata-json '{"role_arn": "arn:aws:iam::123456789:role/MyRole"}'
+  --provider-metadata '{"role_arn": "arn:aws:iam::123456789:role/MyRole"}' \
+  --enable-default-models
 
 # Update an integration
 ax ai-integrations update <integration> --name "Renamed" --api-key <new-key>
@@ -658,16 +659,21 @@ ax ai-integrations delete <integration> [--force]
 
 **Supported providers:**
 
-| Provider      | Value         | Notes                                        |
-| ------------- | ------------- | -------------------------------------------- |
-| OpenAI        | `OPEN_AI`       |                                              |
-| Azure OpenAI  | `AZURE_OPEN_AI` | Use `--base-url` for the deployment endpoint |
-| AWS Bedrock   | `AWS_BEDROCK`   | Requires `--provider-metadata-json`          |
-| Vertex AI     | `VERTEX_AI`     | Requires `--provider-metadata-json`          |
-| Anthropic     | `ANTHROPIC`     |                                              |
-| NVIDIA NIM    | `NVIDIA_NIM`    |                                              |
-| Google Gemini | `GEMINI`        |                                              |
-| Custom        | `CUSTOM`        | Use `--base-url` for a custom endpoint       |
+Every provider except LiteLLM, Fireworks AI and Together AI needs a model source: `--enable-default-models` and/or one or more `--model-name` flags. Without one, the server rejects the create.
+
+| Provider      | Value           | Notes                                                        |
+| ------------- | --------------- | ------------------------------------------------------------ |
+| OpenAI        | `OPEN_AI`       |                                                              |
+| Azure OpenAI  | `AZURE_OPEN_AI` | Use `--base-url` for the deployment endpoint                 |
+| AWS Bedrock   | `AWS_BEDROCK`   | Requires `--provider-metadata`                               |
+| Vertex AI     | `VERTEX_AI`     | Requires `--provider-metadata`                               |
+| Anthropic     | `ANTHROPIC`     |                                                              |
+| NVIDIA NIM    | `NVIDIA_NIM`    | `--base-url` optional; defaults to NVIDIA's hosted endpoint  |
+| Google Gemini | `GEMINI`        |                                                              |
+| Custom        | `CUSTOM`        | Use `--base-url` for a custom endpoint                       |
+| LiteLLM       | `LITELLM`       | Requires `--base-url` and `--api-key`                        |
+| Fireworks AI  | `FIREWORKS`     | API key only; no `--base-url`                                |
+| Together AI   | `TOGETHER_AI`   | API key only; no `--base-url`                                |
 
 ### Annotation Configs
 

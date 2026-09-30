@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.38.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.37.0...arize-ax-cli/v0.38.0) (2026-09-30)
+
+
+### 🎁 New Features
+
+* **ax:** litellm, fireworks and together ai in the typed integrations create command ([#88582](https://github.com/Arize-ai/arize/issues/88582)) ([2d12d56](https://github.com/Arize-ai/arize/commit/2d12d560b0ddff79bc5dbb54bcc8e92785bf06d8))
+
+
+### 🐛 Bug Fixes
+
+* **ax-cli:** drop duplicated provider lists from --provider help ([#88622](https://github.com/Arize-ai/arize/issues/88622)) ([fbc21ab](https://github.com/Arize-ai/arize/commit/fbc21abb498afa848060095d013eeef5c04adf59))
+
 ## [0.37.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.36.0...arize-ax-cli/v0.37.0) (2026-09-25)
 
 

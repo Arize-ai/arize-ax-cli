@@ -251,10 +251,7 @@ def create_ai_integration(
         AiIntegrationProvider,
         typer.Option(
             "--provider",
-            help=(
-                "LLM provider: OPEN_AI, AZURE_OPEN_AI, AWS_BEDROCK, "
-                "VERTEX_AI, ANTHROPIC, CUSTOM, NVIDIA_NIM, GEMINI"
-            ),
+            help="LLM provider",
         ),
     ],
     api_key: Annotated[
@@ -425,10 +422,7 @@ def update_ai_integration(
         AiIntegrationProvider | None,
         typer.Option(
             "--provider",
-            help=(
-                "Updated LLM provider: OPEN_AI, AZURE_OPEN_AI, AWS_BEDROCK, "
-                "VERTEX_AI, ANTHROPIC, CUSTOM, NVIDIA_NIM, GEMINI"
-            ),
+            help="Updated LLM provider",
         ),
     ] = None,
     api_key: Annotated[
