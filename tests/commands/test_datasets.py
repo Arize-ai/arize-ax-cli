@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from rich.text import Text
 from typer.testing import CliRunner
 
 from ax.commands.datasets import (
@@ -168,6 +169,55 @@ class TestGetDataset:
 class TestExportDataset:
     """Tests for the 'ax datasets export' command."""
 
+    def test_export_with_filter(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Forward the filter when exporting a REST page."""
+        response = MagicMock()
+        response.examples = []
+        mock_client.datasets.list_examples.return_value = response
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "export",
+                "ds-1",
+                "--stdout",
+                "--filter",
+                "annotation.Correctness.label = 'Correct'",
+                "--limit",
+                "25",
+            ],
+        )
+        assert result.exit_code == 0
+        mock_client.datasets.list_examples.assert_called_once_with(
+            dataset="ds-1",
+            space=None,
+            dataset_version_id=None,
+            filter="annotation.Correctness.label = 'Correct'",
+            limit=25,
+            cursor=None,
+            all=False,
+        )
+
+    def test_export_rejects_filter_with_all(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Report a usage error before calling the SDK."""
+        result = cli_runner.invoke(
+            app, ["export", "ds-1", "--filter", "input = 'x'", "--all"]
+        )
+        assert result.exit_code != 0
+        plain_output = Text.from_ansi(result.output).plain
+        assert "--filter is not supported with --all" in plain_output
+        mock_client.datasets.list_examples.assert_not_called()
+
     def test_export_defaults_to_rest(
         self,
         cli_runner: CliRunner,
@@ -185,6 +235,7 @@ class TestExportDataset:
             dataset="ds-1",
             space=None,
             dataset_version_id=None,
+            filter=None,
             cursor=None,
             all=False,
         )
@@ -208,6 +259,7 @@ class TestExportDataset:
             dataset="ds-1",
             space=None,
             dataset_version_id=None,
+            filter=None,
             limit=25,
             cursor=None,
             all=False,
@@ -233,6 +285,7 @@ class TestExportDataset:
             dataset="ds-1",
             space=None,
             dataset_version_id=None,
+            filter=None,
             cursor="cursor-2",
             all=False,
         )
@@ -259,6 +312,7 @@ class TestExportDataset:
             dataset="ds-1",
             space=None,
             dataset_version_id=None,
+            filter=None,
             cursor=None,
             all=False,
         )
@@ -280,6 +334,7 @@ class TestExportDataset:
             dataset="ds-1",
             space=None,
             dataset_version_id=None,
+            filter=None,
             cursor=None,
             all=True,
         )
@@ -304,6 +359,7 @@ class TestExportDataset:
             dataset="ds-1",
             space=None,
             dataset_version_id="v2",
+            filter=None,
             cursor=None,
             all=False,
         )

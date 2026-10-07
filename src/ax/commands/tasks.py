@@ -1,5 +1,6 @@
 """Task management commands."""
 
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 import typer
@@ -847,7 +848,7 @@ def trigger_run(
         typer.Option(
             "--data-end-time",
             help="ISO 8601 end of the data window; UTC assumed if no offset "
-            "(evaluation tasks only, defaults to now)",
+            "(evaluation tasks only; defaults to now when --data-start-time is set)",
         ),
     ] = None,
     max_spans: Annotated[
@@ -989,6 +990,10 @@ def trigger_run(
 
     data_start_dt = parse_optional_iso8601(data_start_time)
     data_end_dt = parse_optional_iso8601(data_end_time)
+    # The server requires both ends of the window for project tasks (#89048),
+    # so supply the documented "now" default when only the start is given.
+    if data_start_dt is not None and data_end_dt is None and not experiment_ids:
+        data_end_dt = datetime.now(timezone.utc)
 
     client, config = make_client()
 

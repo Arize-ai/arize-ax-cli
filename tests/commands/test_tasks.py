@@ -1176,6 +1176,83 @@ class TestTriggerRun:
         )
 
     @pytest.mark.unit
+    def test_end_time_defaults_to_now_when_start_given(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--data-start-time alone sends a UTC 'now' end, which the server requires."""
+        mock_client.tasks.trigger_run.return_value = _make_run()
+        before = datetime.now(timezone.utc)
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "trigger-run",
+                "task-1",
+                "--data-start-time",
+                "2026-03-01T00:00:00",
+            ],
+        )
+        assert result.exit_code == 0
+        end = mock_client.tasks.trigger_run.call_args.kwargs["data_end_time"]
+        assert end.tzinfo is not None
+        assert before <= end <= datetime.now(timezone.utc)
+
+    @pytest.mark.unit
+    def test_explicit_end_time_kept(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """An explicit --data-end-time is passed through unchanged."""
+        mock_client.tasks.trigger_run.return_value = _make_run()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "trigger-run",
+                "task-1",
+                "--data-start-time",
+                "2026-03-01T00:00:00",
+                "--data-end-time",
+                "2026-03-02T00:00:00",
+            ],
+        )
+        assert result.exit_code == 0
+        end = mock_client.tasks.trigger_run.call_args.kwargs["data_end_time"]
+        assert end == datetime(2026, 3, 2, tzinfo=timezone.utc)
+
+    @pytest.mark.unit
+    def test_end_time_not_defaulted_for_experiment_runs(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Experiment triggers ignore the window, so no end time is added."""
+        mock_client.tasks.trigger_run.return_value = _make_run()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "trigger-run",
+                "task-1",
+                "--experiment-ids",
+                "exp-1",
+                "--data-start-time",
+                "2026-03-01T00:00:00",
+            ],
+        )
+        assert result.exit_code == 0
+        assert (
+            mock_client.tasks.trigger_run.call_args.kwargs["data_end_time"]
+            is None
+        )
+
+    @pytest.mark.unit
     def test_wait_polls_until_terminal(
         self,
         cli_runner: CliRunner,

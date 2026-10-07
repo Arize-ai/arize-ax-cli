@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.39.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.38.0...arize-ax-cli/v0.39.0) (2026-10-07)
+
+
+### 🎁 New Features
+
+* **experiments:** add --filter to experiments list-runs ([#88744](https://github.com/Arize-ai/arize/issues/88744)) ([4bb8b64](https://github.com/Arize-ai/arize/commit/4bb8b64ab486cc5beb5f9083a56e059c6356878c))
+* **datasets:** add --filter to ax datasets export CLI ([#88741](https://github.com/Arize-ai/arize/issues/88741)) ([426b834](https://github.com/Arize-ai/arize/commit/426b8343ffb69672e782672f7b906143d46776d4))
+* **webhooks:** add ax webhooks commands ([#88576](https://github.com/Arize-ai/arize/issues/88576)) ([9d32121](https://github.com/Arize-ai/arize/commit/9d32121776d69482efc63ee7c207c29a0582bac0))
+
+
+### 🐛 Bug Fixes
+
+* **experiments:** default --data-end-time to now ([#89049](https://github.com/Arize-ai/arize/issues/89049)) ([5e71f7b](https://github.com/Arize-ai/arize/commit/5e71f7b843897e0ec38c8e614bccc2f99196bb7e))
+* **evaluators:** document single-brace {variable} placeholders for evaluator templates ([#89039](https://github.com/Arize-ai/arize/issues/89039)) ([ebf0bde](https://github.com/Arize-ai/arize/commit/ebf0bdeff00f4b943eb58251773d5da02491df66))
+* **spans:** require arize 8.58.0 so DECISION spans can be exported ([#89951](https://github.com/Arize-ai/arize/issues/89951)) ([8a980e2](https://github.com/Arize-ai/arize/commit/8a980e27c3061d7583f16318e8e50a1793da7b01))
+
 ## [0.38.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.37.0...arize-ax-cli/v0.38.0) (2026-09-30)
 
 

@@ -259,6 +259,19 @@ def export_dataset(
             help="Pagination cursor for the page to export (ignored with --all)",
         ),
     ] = None,
+    filter: Annotated[
+        str | None,
+        typer.Option(
+            "--filter",
+            help=(
+                "SQL-like filter over example columns, id, and "
+                "annotation.<name>.*. Supports comparisons and AND/OR "
+                "(e.g. \"input = 'What is 2+2?' AND "
+                "annotation.Correctness.label = 'Correct'\"). Not supported "
+                "with --all"
+            ),
+        ),
+    ] = None,
     verbose: Annotated[
         bool,
         typer.Option(
@@ -273,7 +286,17 @@ def export_dataset(
     By default, exports one page through the REST API. Use --limit to
     control the page size and --cursor to select a later page. Pass
     --all to use Arrow Flight for a full-dataset export instead.
+
+    Use ``--filter`` to narrow examples server-side with a SQL-like
+    expression over example columns, ``id``, and ``annotation.<name>.*``.
+    Equality, comparison, ``AND``, and ``OR`` operators are supported.
+    For example: ``--filter "input = 'What is 2+2?' AND
+    annotation.Correctness.label = 'Correct'"``.
     """
+    filter = filter if filter and filter.strip() else None
+    if filter and use_all:
+        raise typer.BadParameter("--filter is not supported with --all")
+
     setup_logging(verbose)
     client, _ = make_client()
 
@@ -284,6 +307,7 @@ def export_dataset(
                     dataset=name_or_id,
                     space=space,
                     dataset_version_id=version_id,
+                    filter=filter,
                     cursor=cursor,
                     all=use_all,
                 )
@@ -292,6 +316,7 @@ def export_dataset(
                     dataset=name_or_id,
                     space=space,
                     dataset_version_id=version_id,
+                    filter=filter,
                     limit=limit,
                     cursor=cursor,
                     all=use_all,

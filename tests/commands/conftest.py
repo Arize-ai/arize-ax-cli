@@ -52,6 +52,7 @@ _MAKE_CLIENT_MODULES = (
     "ax.commands.spaces",
     "ax.commands.users",
     "ax.commands.organizations",
+    "ax.commands.webhooks",
 )
 
 

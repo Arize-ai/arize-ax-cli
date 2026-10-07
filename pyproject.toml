@@ -21,7 +21,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "arize==8.56.0",
+    "arize>=8.58.0, <9",
     "cryptography>=44.0.0, <45",
     "filelock>=3.12.0, <4",  # For concurrent-safe token refresh in OAuth profiles
     "pydantic>=2.0.0, <3",

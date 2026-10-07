@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
+from arize import ApiException
 from typer.testing import CliRunner
 
 from ax.commands.experiments import app
@@ -309,6 +311,7 @@ class TestListRuns:
             experiment="exp-1",
             dataset=None,
             space=None,
+            filter=None,
             limit=15,
             all=False,
         )
@@ -340,6 +343,7 @@ class TestListRuns:
             experiment="my-exp",
             dataset="ds-1",
             space="space-abc",
+            filter=None,
             limit=15,
             all=False,
         )
@@ -387,6 +391,65 @@ class TestListRuns:
         cli_runner.invoke(app, ["list-runs", "exp-1"])
         call_kwargs = mock_client.experiments.list_runs.call_args.kwargs
         assert call_kwargs["all"] is False
+
+    def test_filter_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--filter is forwarded to the SDK as ``filter``."""
+        mock_client.experiments.list_runs.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"experiment_runs": []})
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "list-runs",
+                "exp-1",
+                "--filter",
+                "eval.correctness.label = 'correct'",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.experiments.list_runs.call_args.kwargs
+        assert call_kwargs["filter"] == "eval.correctness.label = 'correct'"
+
+    def test_filter_omitted_passes_none(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Omitting --filter passes filter=None to the SDK."""
+        mock_client.experiments.list_runs.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"experiment_runs": []})
+        )
+
+        result = cli_runner.invoke(app, ["list-runs", "exp-1"])
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.experiments.list_runs.call_args.kwargs
+        assert call_kwargs["filter"] is None
+
+    @pytest.mark.parametrize("status", [400, 422])
+    def test_invalid_filter_clean_error(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+        status: int,
+    ) -> None:
+        """A server-rejected filter (400/422) exits non-zero with a clean error."""
+        mock_client.experiments.list_runs.side_effect = ApiException(
+            status=status, reason="Bad Request"
+        )
+        result = cli_runner.invoke(
+            app, ["list-runs", "exp-1", "--filter", "not valid ((("]
+        )
+        assert result.exit_code != 0
+        assert "Traceback" not in result.output
+        assert str(status) in result.output
 
 
 class TestCreateExperiment:

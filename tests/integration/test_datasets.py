@@ -219,6 +219,71 @@ class TestDatasetsCRUD:
             )
 
 
+class TestDatasetsExport:
+    """ax datasets export — filtered export against the live API."""
+
+    @pytest.mark.integration
+    def test_export_with_combined_filter(self, test_space_id: str) -> None:
+        """``--filter`` returns only examples matching every condition."""
+        name = f"ax-cli-export-filter-{uuid.uuid4().hex[:8]}"
+        examples = json.dumps(
+            [
+                {"input": "What is 2+2?", "category": "math"},
+                {"input": "What is 3+3?", "category": "math"},
+                {"input": "What is 2+2?", "category": "wordplay"},
+            ]
+        )
+        create_result = ax(
+            "datasets",
+            "create",
+            "--name",
+            name,
+            "--space",
+            test_space_id,
+            "--json",
+            examples,
+            "--output",
+            "json",
+        )
+        assert create_result.returncode == 0, (
+            f"Dataset create failed:\n{create_result.stderr}"
+        )
+        created: dict[str, Any] = json.loads(create_result.stdout)
+        dataset_id = created.get("id") or created.get("dataset_id")
+        assert dataset_id
+
+        try:
+            result = ax(
+                "datasets",
+                "export",
+                dataset_id,
+                "--space",
+                test_space_id,
+                "--filter",
+                "input = 'What is 2+2?' AND category = 'math'",
+                "--stdout",
+            )
+            assert result.returncode == 0, (
+                f"Filtered export failed:\n{result.stderr}"
+            )
+            exported: list[dict[str, Any]] = json.loads(result.stdout)
+            assert len(exported) == 1
+            assert exported[0]["input"] == "What is 2+2?"
+            assert exported[0]["category"] == "math"
+        finally:
+            delete_result = ax(
+                "datasets",
+                "delete",
+                dataset_id,
+                "--space",
+                test_space_id,
+                "--force",
+            )
+            assert delete_result.returncode == 0, (
+                f"Dataset delete failed:\n{delete_result.stderr}"
+            )
+
+
 class TestDatasetsAnnotateExamples:
     """ax datasets annotate-examples — annotate examples in a dataset."""
 

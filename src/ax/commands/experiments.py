@@ -794,6 +794,19 @@ def list_runs(
             help="Maximum number of runs to return",
         ),
     ] = 15,
+    filter: Annotated[
+        str | None,
+        typer.Option(
+            "--filter",
+            "-f",
+            help=(
+                "SQL-like filter expression (same language as span search) "
+                "over id, output, example_id, custom run columns, "
+                "eval.<name>.score/label/explanation/metadata.*, and "
+                "annotation.<name>.*"
+            ),
+        ),
+    ] = None,
     output: Annotated[
         str,
         typer.Option(
@@ -813,6 +826,15 @@ def list_runs(
 ) -> None:
     """List runs for an experiment (paginated table view).
 
+    Use ``--filter`` to narrow runs server-side with a SQL-like filter
+    expression (the same language as span search). Supported fields:
+    ``id``, ``output``, ``example_id``, custom run columns,
+    ``eval.<name>.score``, ``eval.<name>.label``, ``eval.<name>.explanation``,
+    ``eval.<name>.metadata.*``, and ``annotation.<name>.*``. Combine
+    conditions with ``AND`` or ``OR``. Examples:
+    ``--filter "eval.correctness.label = 'correct'"`` and
+    ``--filter "eval.correctness.label = 'correct' AND eval.correctness.score >= 0.8"``.
+
     For bulk export of all runs, use ``ax experiments export`` instead.
     """
     setup_logging(verbose)
@@ -828,6 +850,7 @@ def list_runs(
                 experiment=name_or_id,
                 dataset=dataset,
                 space=space,
+                filter=filter,
                 limit=limit,
                 all=False,
             )

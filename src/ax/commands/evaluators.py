@@ -418,7 +418,7 @@ def template_create_evaluator(
         str,
         typer.Option(
             "--template",
-            help="Prompt template string with {{variable}} placeholders",
+            help="Prompt template string with {variable} placeholders",
             prompt=True,
         ),
     ],
@@ -1046,7 +1046,7 @@ def template_create_version(
         str,
         typer.Option(
             "--template",
-            help="Prompt template string with {{variable}} placeholders",
+            help="Prompt template string with {variable} placeholders",
             prompt=True,
         ),
     ],

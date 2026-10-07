@@ -71,6 +71,7 @@
   - [Tasks](#tasks)
   - [Traces](#traces)
   - [Users](#users)
+  - [Webhooks](#webhooks)
 - [Usage Examples](#usage-examples)
   - [Creating a Dataset from a CSV File](#creating-a-dataset-from-a-csv-file)
   - [Creating a Dataset from stdin](#creating-a-dataset-from-stdin)
@@ -81,6 +82,7 @@
   - [Exporting Spans by Trace ID](#exporting-spans-by-trace-id)
   - [Exporting Spans](#exporting-spans)
   - [Listing Traces and Exporting to Parquet](#listing-traces-and-exporting-to-parquet)
+  - [Subscribing a Webhook to Evaluator Versions](#subscribing-a-webhook-to-evaluator-versions)
   - [Pagination](#pagination)
   - [Working with Multiple Environments](#working-with-multiple-environments)
   - [Filtering Spans by Status](#filtering-spans-by-status)
@@ -116,6 +118,7 @@ Official command-line interface for [Arize AI](https://arize.com) - manage your 
 - **API Key Management**: Create, refresh, and revoke API keys
 - **AI Integrations**: Configure external LLM providers (OpenAI, Anthropic, AWS Bedrock, and more)
 - **Prompt Management**: Create and version prompts with label management
+- **Webhook Management**: Create webhooks and subscribe them to prompt and evaluator events
 - **Role Management**: Create, update, and delete custom roles with granular permissions
 - **User Management**: Invite users, manage account-level roles, and control organization/space memberships
 - **Agent Skills**: Install Arize context skills for AI coding agents (Claude Code, Cursor, Codex, Windsurf)
@@ -889,7 +892,7 @@ ax datasets list [--name <substring>] [--space <space>] [--limit 15] [--cursor <
 ax datasets get <dataset>
 
 # Export one page of examples to a file
-ax datasets export <dataset> [--version-id <version-id>] [--limit <count>] [--cursor <cursor>] [--output-dir .] [--stdout]
+ax datasets export <dataset> [--version-id <version-id>] [--filter <expression>] [--limit <count>] [--cursor <cursor>] [--output-dir .] [--stdout]
 
 # Export all examples through Arrow Flight
 ax datasets export <dataset> --all
@@ -954,7 +957,7 @@ ax evaluators create-evaluator template \
   --space <space> \
   --commit-message "Initial version" \
   --template-name relevance \
-  --template "Is this response relevant to the query? {{input}} {{output}}" \
+  --template "Is this response relevant to the query? {input} {output}" \
   --ai-integration-id <integration-id> \
   --model-name gpt-4o
 
@@ -964,7 +967,7 @@ ax evaluators create-evaluator template \
   --space <space> \
   --commit-message "Initial version" \
   --template-name relevance \
-  --template "Classify: {{output}}" \
+  --template "Classify: {output}" \
   --ai-integration-id <integration-id> \
   --model-name gpt-4o \
   --classification-choices '{"relevant":1,"irrelevant":0}' \
@@ -988,7 +991,7 @@ ax evaluators get-version <version-id>
 ax evaluators create-evaluator-version template <evaluator-id> \
   --commit-message "Improved prompt" \
   --template-name relevance \
-  --template "Rate the relevance of the response: {{input}} {{output}}" \
+  --template "Rate the relevance of the response: {input} {output}" \
   --ai-integration-id <integration-id> \
   --model-name gpt-4o
 
@@ -996,7 +999,7 @@ ax evaluators create-evaluator-version template <evaluator-id> \
 ax evaluators create-evaluator-version template <evaluator-id> \
   --commit-message "Add rails" \
   --template-name relevance \
-  --template "Classify: {{output}}" \
+  --template "Classify: {output}" \
   --ai-integration-id <integration-id> \
   --model-name gpt-4o \
   --classification-choices '{"relevant":1,"irrelevant":0}'
@@ -1007,7 +1010,7 @@ ax evaluators create-evaluator-version template <evaluator-id> \
 | Option | Description |
 | --- | --- |
 | `--template-name` | Eval column name (alphanumeric, spaces, hyphens, underscores) |
-| `--template` | Prompt template with `{{variable}}` placeholders referencing span attributes |
+| `--template` | Prompt template with `{variable}` placeholders referencing span attributes |
 | `--ai-integration-id` | AI integration global ID (base64) |
 | `--model-name` | Model name (e.g. `gpt-4o`, `claude-3-5-sonnet`) |
 | `--include-explanations` | Include reasoning explanation alongside the score (default: on) |
@@ -1134,6 +1137,12 @@ ax experiments create --name "My Experiment" --dataset <dataset> --file -
 
 # List runs for an experiment (paginated)
 ax experiments list-runs <experiment> [--limit 30] [--cursor <cursor>]
+
+# Filter runs server-side with a SQL-like expression (same language as span search).
+# Supports id, output, example_id, custom run columns,
+# eval.<name>.score/label/explanation/metadata.*, and annotation.<name>.*
+ax experiments list-runs <experiment> --filter "eval.correctness.label = 'correct'"
+ax experiments list-runs <experiment> --filter "eval.correctness.label = 'correct' AND eval.correctness.score >= 0.8"
 
 # Delete an experiment
 ax experiments delete <experiment> [--force]
@@ -1763,7 +1772,7 @@ ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 | Option | Description |
 | --- | --- |
 | `--data-start-time` | ISO 8601 start of the data window; UTC assumed if no offset (evaluation tasks only) |
-| `--data-end-time` | ISO 8601 end of the data window; UTC assumed if no offset (defaults to now; evaluation tasks only) |
+| `--data-end-time` | ISO 8601 end of the data window; UTC assumed if no offset (defaults to now when `--data-start-time` is set; evaluation tasks only) |
 | `--max-spans` | Maximum spans to evaluate (default: 10 000; evaluation tasks only) |
 | `--override-evaluations` | Re-evaluate data that already has labels (evaluation tasks only) |
 | `--experiment-ids` | Comma-separated experiment IDs; dataset-based evaluation tasks only |
@@ -1859,6 +1868,64 @@ ax users reset-password <user-id>
 
 > **Note:** `ax users delete` accepts `--id` and/or `--email` flags (both accept comma-separated values or repeated flags). Emails are resolved to user IDs before deletion. Each deletion is attempted independently; the results table reports the outcome (`deleted`, `failed`, `not_found`) per user. Deletion cascades to all organization memberships, space memberships, API keys, and role bindings.
 
+### Webhooks
+
+Deliver prompt and evaluator events to an HTTPS endpoint. A webhook belongs to an organization; a subscription sends one event from one prompt or evaluator to one webhook. `<webhook>` and `--organization` accept a name or an ID; a webhook name needs `--organization` to resolve.
+
+> **Security note:** For `HMAC_SHA256` webhooks the signing secret is returned once, on `create`. Store it securely immediately — it cannot be retrieved again. `--auth-token` and `--header` values are write-only and never returned.
+
+```bash
+# List webhooks
+ax webhooks list [--organization <org>] [--name <substring>] [--limit 15] [--cursor <cursor>]
+
+# Get a webhook by name or ID
+ax webhooks get <webhook> [--organization <org>]
+
+# Create a BEARER webhook (default auth type); --auth-token is the full Authorization header value
+ax webhooks create --organization <org> --name "Deploy hook" --url https://example.com/hook \
+  [--auth-token "Bearer <token>"] [--description "..."] [--timeout-ms 30000] \
+  [--header X-Env=prod --header X-Team=evals]
+
+# Create an HMAC_SHA256 webhook; the signing secret is printed once
+ax webhooks create --organization <org> --name "Signed hook" --url https://example.com/hook \
+  --auth-type HMAC_SHA256
+
+# Update a webhook (only the options you pass are sent; at least one required)
+ax webhooks update <webhook> [--organization <org>] [--name "..."] [--description "..."] \
+  [--url <url>] [--auth-token "..."] [--timeout-ms <ms>] [--header KEY=VALUE ... | --clear-headers]
+
+# Send a test event and report the endpoint's status code (BEARER webhooks only);
+# exits 1 when the endpoint does not answer 2xx
+ax webhooks test <webhook> [--organization <org>]
+
+# List delivery attempts, most recent first
+ax webhooks deliveries <webhook> [--organization <org>] [--limit 15] [--cursor <cursor>]
+
+# Delete a webhook
+ax webhooks delete <webhook> [--organization <org>] [--force]
+
+# List subscriptions, all of them or those on one prompt or evaluator
+ax webhooks subscriptions list [--source-type PROMPT|EVALUATOR --source-id <id>] \
+  [--limit 15] [--cursor <cursor>]
+
+# Subscribe a webhook to one event on a prompt or evaluator (repeat per event)
+ax webhooks subscriptions create --webhook <webhook> [--organization <org>] \
+  --source-type PROMPT|EVALUATOR --source-id <id> --event <event>
+
+# Get or delete a subscription by ID
+ax webhooks subscriptions get <subscription-id>
+ax webhooks subscriptions delete <subscription-id> [--force]
+```
+
+**Events:**
+
+| Source      | `--event` values                                                          |
+| ----------- | ------------------------------------------------------------------------- |
+| `PROMPT`    | `PROMPT_VERSION_CREATED`, `PROMPT_VERSION_LABELED`, `PROMPT_VERSION_UNLABELED` |
+| `EVALUATOR` | `EVALUATOR_VERSION_CREATED`                                               |
+
+> **Note:** `--header` replaces the whole header map on `update`; headers not repeated are removed, and `--clear-headers` removes them all. `--auth-type` cannot be changed after creation and an HMAC signing secret cannot be rotated; create a new webhook instead.
+
 ## Usage Examples
 
 ### Creating a Dataset from a CSV File
@@ -1901,7 +1968,7 @@ ax datasets list --space sp_abc123 --output json > datasets.json
 
 ### Exporting Dataset Examples
 
-By default, `ax datasets export` writes one REST API page to `examples.json` in a timestamped directory. Use `--limit` to set the maximum page size. Use `--cursor` with the `next_cursor` value from a prior `DatasetsClient.list_examples` response to export a later page. The output contains the examples from that page only.
+By default, `ax datasets export` writes one REST API page to `examples.json` in a timestamped directory. Use `--filter` with a SQL-like expression over example fields, including annotation fields, to narrow the results. Use `--limit` to set the maximum page size. Use `--cursor` with the `next_cursor` value from a prior `DatasetsClient.list_examples` response to export a later page; keep the same filter when paging. The output contains the examples from that page only. `--filter` cannot be used with `--all`.
 
 ```bash
 # Export the first page with the SDK's default page size
@@ -1909,6 +1976,9 @@ ax datasets export ds_xyz789
 
 # Export up to 50 examples from the first page
 ax datasets export ds_xyz789 --limit 50
+
+# Export examples with a matching annotation
+ax datasets export ds_xyz789 --filter "annotation.Correctness.label = 'Correct'" --limit 50
 
 # Export a later page
 ax datasets export ds_xyz789 --limit 50 --cursor <next-cursor>
@@ -2008,6 +2078,25 @@ ax traces list proj_abc123 --filter "latency_ms > 2000" --limit 50 --output trac
 
 # List traces in JSON format
 ax traces list proj_abc123 --output json
+```
+
+### Subscribing a Webhook to Evaluator Versions
+
+```bash
+# 1. Create the webhook. Use --auth-type HMAC_SHA256 instead to get a signing
+#    secret (printed once); HMAC webhooks skip step 3, since test events are BEARER-only.
+ax webhooks create --organization my-org --name "Evaluator hook" \
+  --url https://example.com/hooks/arize --auth-token "Bearer <token>"
+
+# 2. Deliver every new version of an evaluator to it
+ax webhooks subscriptions create --webhook "Evaluator hook" --organization my-org \
+  --source-type EVALUATOR --source-id <evaluator-id> --event EVALUATOR_VERSION_CREATED
+
+# 3. Check the endpoint responds
+ax webhooks test "Evaluator hook" --organization my-org
+
+# 4. Read the delivery attempts once a new evaluator version exists
+ax webhooks deliveries "Evaluator hook" --organization my-org --output json
 ```
 
 ### Pagination
