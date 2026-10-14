@@ -25,6 +25,26 @@ class APIError(AxError):
     exit_code = 4
 
 
+class BatchUploadError(APIError):
+    """A batched upload failed, possibly after uploading part of the payload.
+
+    Carries how much of the payload landed before the failure so commands can
+    tell the user exactly where to resume instead of leaving them to guess.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        uploaded: int = 0,
+        total: int = 0,
+    ) -> None:
+        """Record the failure message alongside the partial-upload counts."""
+        super().__init__(message)
+        self.uploaded = uploaded
+        self.total = total
+
+
 class FileIOError(AxError):
     """File I/O operation failed."""
 
