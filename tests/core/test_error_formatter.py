@@ -1,11 +1,16 @@
 """Tests for the pydantic ValidationError parsing path in error_formatter."""
 
+import io
+import json
 from typing import Annotated
 
 import pytest
+from arize._generated.api_client import ApiClient
 from pydantic import BaseModel, Field
+from rich.console import Console
 
 from ax.core.error_formatter import (
+    format_error_message,
     parse_exception,
     parse_pydantic_validation_error,
 )
@@ -168,3 +173,66 @@ class TestParseExceptionIntegration:
             ) from inner
         except ConfigError as outer:
             assert parse_exception(outer) is None
+
+
+def _make_response_validation_error(kind: str) -> Exception:
+    """Return the ValidationError the SDK raises when parsing a response."""
+    span = {
+        "name": "span",
+        "context": {"trace_id": "t1", "span_id": "s1"},
+        "kind": kind,
+        "start_time": "2026-01-01T00:00:00Z",
+        "end_time": "2026-01-01T00:00:01Z",
+    }
+    try:
+        ApiClient().deserialize(
+            json.dumps({"spans": [span]}),
+            "ListSpansResponse",
+            "application/json",
+        )
+    except Exception as e:
+        return e
+    raise AssertionError("expected a ValidationError")
+
+
+class TestResponseValidationError:
+    """Response parse failures are not reported as 422 input errors."""
+
+    def test_not_reported_as_422(self) -> None:
+        """A server value the SDK rejects is not shown as an input error."""
+        parsed = parse_pydantic_validation_error(
+            _make_response_validation_error("tool")
+        )
+        assert parsed is not None
+        assert parsed.status is None
+        assert parsed.detail is not None
+        assert "Server response could not be parsed" in parsed.detail
+        assert "kind = 'tool'" in parsed.detail
+        assert "not a problem with your input" in parsed.detail
+
+    def test_formatted_message_has_no_422(self) -> None:
+        """The clean error output omits the 422 status and suggestion."""
+        parsed = parse_pydantic_validation_error(
+            _make_response_validation_error("tool")
+        )
+        assert parsed is not None
+        message = format_error_message(parsed)
+        assert "422" not in message
+        assert "Check the error details" not in message
+
+    def test_server_values_are_markup_escaped(self) -> None:
+        """Server-sent values cannot inject Rich markup in either mode."""
+        parsed = parse_pydantic_validation_error(
+            _make_response_validation_error("[/bold] x")
+        )
+        assert parsed is not None
+        for verbose in (False, True):
+            Console(file=io.StringIO()).print(
+                format_error_message(parsed, verbose=verbose)
+            )
+
+    def test_request_errors_still_422(self) -> None:
+        """Errors raised outside response parsing keep the 422 status."""
+        parsed = parse_pydantic_validation_error(_make_validation_error())
+        assert parsed is not None
+        assert parsed.status == 422

@@ -7,10 +7,12 @@ information from RFC 9457 Problem Details and provides helpful suggestions.
 
 import re
 import sys
+import traceback
 from dataclasses import dataclass
 
 from arize import ApiException, Problem
 from pydantic import ValidationError as PydanticValidationError
+from rich.markup import escape
 
 from ax.core.exceptions import ConfigError
 
@@ -176,6 +178,17 @@ def parse_pydantic_validation_error(exception: Exception) -> ParsedError | None:
             # ValidationError too.
             return None
         if isinstance(current, PydanticValidationError):
+            if _is_response_validation_error(current):
+                return ParsedError(
+                    title="Response Parse Error",
+                    detail=(
+                        "Server response could not be parsed: "
+                        f"{escape(_format_response_errors(current))}. "
+                        "This is a CLI/SDK compatibility issue, not a "
+                        "problem with your input."
+                    ),
+                    body=escape(str(current)),
+                )
             return ParsedError(
                 status=422,
                 reason="Validation Error",
@@ -185,6 +198,31 @@ def parse_pydantic_validation_error(exception: Exception) -> ParsedError | None:
         current = getattr(current, "__cause__", None)
 
     return None
+
+
+def _is_response_validation_error(exc: PydanticValidationError) -> bool:
+    """Return True if *exc* was raised while parsing a server response.
+
+    The generated SDK parses every response in ``ApiClient.deserialize``,
+    so a ValidationError raised under that frame means the server answered
+    successfully but the SDK rejected a value (e.g. ``kind: 'tool'``).
+    """
+    return any(
+        frame.f_code.co_name == "deserialize"
+        and frame.f_code.co_filename.replace("\\", "/").endswith(
+            "_generated/api_client/api_client.py"
+        )
+        for frame, _ in traceback.walk_tb(exc.__traceback__)
+    )
+
+
+def _format_response_errors(exc: PydanticValidationError) -> str:
+    """Summarize failing response fields with the value the server sent."""
+    return "; ".join(
+        f"{'.'.join(str(loc) for loc in err['loc'])} = {err['input']!r:.60}"
+        f" ({err['msg']})"
+        for err in exc.errors(include_url=False)
+    )
 
 
 def format_validation_error(exc: PydanticValidationError) -> str:
