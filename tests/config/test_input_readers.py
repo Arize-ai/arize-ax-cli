@@ -6,10 +6,12 @@ import pytest
 
 from ax.config.input_readers import (
     INSERT_VALUE,
+    NO_VALUE,
     USE_ENV_VAR,
     AdvancedRoutingOpts,
     read_region,
     read_routing,
+    read_security,
 )
 
 
@@ -99,18 +101,16 @@ class TestReadRegion:
     @pytest.mark.unit
     def test_labeled_choice_resolves_to_zone_id(self) -> None:
         with patch("ax.config.input_readers.questionary") as mock_q:
-            mock_q.select.return_value.ask.return_value = (
-                "us-east-1b  (US East)"
-            )
-            assert read_region() == "us-east-1b"
+            mock_q.select.return_value.ask.return_value = "EU (Europe)"
+            assert read_region() == "eu-west-1a"
 
     @pytest.mark.unit
-    def test_unset_choice_returns_empty_string(self) -> None:
+    def test_us_choice_returns_canonical_region(self) -> None:
         with patch("ax.config.input_readers.questionary") as mock_q:
             mock_q.select.return_value.ask.return_value = (
-                "(default - no region needed for US)"
+                "US (United States, default)"
             )
-            assert read_region() == ""
+            assert read_region() == "us-central-1a"
 
     @pytest.mark.unit
     def test_env_var_choice_returns_reference(self) -> None:
@@ -123,3 +123,110 @@ class TestReadRegion:
         ):
             mock_q.select.return_value.ask.return_value = USE_ENV_VAR
             assert read_region() == "${ARIZE_REGION}"
+
+    @pytest.mark.unit
+    def test_public_region_choices(self) -> None:
+        with patch("ax.config.input_readers.questionary") as mock_q:
+            mock_q.select.return_value.ask.return_value = (
+                "US (United States, default)"
+            )
+            assert read_region() == "us-central-1a"
+            mock_q.select.assert_called_once_with(
+                "Region:",
+                choices=[
+                    "US (United States, default)",
+                    "EU (Europe)",
+                    "CA (Canada)",
+                    USE_ENV_VAR,
+                ],
+                default="US (United States, default)",
+            )
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("US (United States, default)", "us-central-1a"),
+        ("EU (Europe)", "eu-west-1a"),
+        ("CA (Canada)", "ca-central-1a"),
+    ],
+)
+def test_region_label_maps_to_canonical_value(label: str, value: str) -> None:
+    with patch("ax.config.input_readers.questionary") as questionary:
+        questionary.select.return_value.ask.return_value = label
+        assert read_region() == value
+
+
+class TestReadSecurity:
+    """Tests for read_security() prompts.
+
+    questionary.select side_effect sequence:
+      1. TLS certificate verification
+      2. custom CA bundle
+      3. client certificate
+    """
+
+    @pytest.mark.unit
+    def test_defaults_leave_tls_fields_empty(self) -> None:
+        with (
+            patch("ax.config.input_readers.questionary.select") as mock_select,
+            patch("ax.config.input_readers.prompt") as mock_prompt,
+        ):
+            mock_select.return_value.ask.side_effect = [
+                "Enabled",
+                NO_VALUE,
+                NO_VALUE,
+            ]
+            result = read_security()
+
+        mock_prompt.assert_not_called()
+        assert result.request_verify is True
+        assert result.ssl_ca_cert == ""
+        assert result.client_cert == ""
+        assert result.client_key == ""
+
+    @pytest.mark.unit
+    def test_inserted_paths_are_saved(self) -> None:
+        with (
+            patch("ax.config.input_readers.questionary.select") as mock_select,
+            patch("ax.config.input_readers.prompt") as mock_prompt,
+        ):
+            mock_select.return_value.ask.side_effect = [
+                "Enabled",
+                INSERT_VALUE,
+                INSERT_VALUE,
+            ]
+            mock_prompt.side_effect = ["/ca.pem", "/c.crt", "/c.key"]
+            result = read_security()
+
+        assert result.ssl_ca_cert == "/ca.pem"
+        assert result.client_cert == "/c.crt"
+        assert result.client_key == "/c.key"
+
+    @pytest.mark.unit
+    def test_env_var_choice_saves_references(self) -> None:
+        with (
+            patch("ax.config.input_readers.questionary.select") as mock_select,
+            patch("ax.config.input_readers.prompt") as mock_prompt,
+        ):
+            mock_select.return_value.ask.side_effect = [
+                "Enabled",
+                USE_ENV_VAR,
+                USE_ENV_VAR,
+            ]
+            mock_prompt.side_effect = [
+                "ARIZE_SSL_CA_CERT",
+                "ARIZE_CLIENT_CERT",
+                "ARIZE_CLIENT_KEY",
+            ]
+            result = read_security()
+
+        assert result.ssl_ca_cert == "${ARIZE_SSL_CA_CERT}"
+        assert result.client_cert == "${ARIZE_CLIENT_CERT}"
+        assert result.client_key == "${ARIZE_CLIENT_KEY}"
+        defaults = [c.kwargs["default"] for c in mock_prompt.call_args_list]
+        assert defaults == [
+            "ARIZE_SSL_CA_CERT",
+            "ARIZE_CLIENT_CERT",
+            "ARIZE_CLIENT_KEY",
+        ]

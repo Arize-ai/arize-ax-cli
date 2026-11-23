@@ -2,11 +2,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+import requests
 import tomli_w
+import tomllib
 
 from ax.auth.bearer import get_active_bearer
 from ax.auth.oauth_client import TokenResponse
 from ax.config.schema import AuthConfig, OAuthCredentials
+from ax.config.tls import TLSSettings
+from ax.core.exceptions import ConfigError, MfaRequiredError
 
 
 def _fresh_oauth() -> OAuthCredentials:
@@ -44,6 +49,57 @@ def _write_profile(p: Path, oauth: OAuthCredentials) -> None:
 
 
 class TestGetActiveBearer:
+    def test_mfa_refresh_clears_tokens_and_preserves_profile(
+        self, tmp_path: Path
+    ):
+        profile_path = tmp_path / "p.toml"
+        oauth = _expiring_oauth()
+        _write_profile(profile_path, oauth)
+        with profile_path.open("rb") as f:
+            data = tomllib.load(f)
+        data["profile"] = {"name": "test-profile"}
+        data["api"] = {"base_url": "https://api.arize.com"}
+        with profile_path.open("wb") as f:
+            tomli_w.dump(data, f)
+        with patch("ax.auth.bearer.OAuthClient") as client:
+            client.return_value.refresh.side_effect = MfaRequiredError(
+                "Run 'ax auth login' to sign in again."
+            )
+            with pytest.raises(MfaRequiredError, match="ax auth login"):
+                get_active_bearer(
+                    AuthConfig(oauth=oauth),
+                    profile_path=profile_path,
+                    base_url="https://app.arize.com",
+                )
+        with profile_path.open("rb") as f:
+            saved = tomllib.load(f)
+        assert saved["profile"] == data["profile"]
+        assert saved["api"] == data["api"]
+        assert saved["auth"] == {"auth_method": "oauth"}
+        with pytest.raises(ConfigError, match="ax auth login"):
+            get_active_bearer(
+                AuthConfig(**saved["auth"]),
+                profile_path=profile_path,
+                base_url="https://app.arize.com",
+            )
+
+    def test_temporary_refresh_failure_keeps_tokens(self, tmp_path: Path):
+        profile_path = tmp_path / "p.toml"
+        oauth = _expiring_oauth()
+        _write_profile(profile_path, oauth)
+        before = profile_path.read_bytes()
+        with patch("ax.auth.bearer.OAuthClient") as client:
+            client.return_value.refresh.side_effect = requests.HTTPError(
+                "HTTP 503"
+            )
+            with pytest.raises(requests.HTTPError):
+                get_active_bearer(
+                    AuthConfig(oauth=oauth),
+                    profile_path=profile_path,
+                    base_url="https://app.arize.com",
+                )
+        assert profile_path.read_bytes() == before
+
     def test_api_key_returns_api_key(self, tmp_path: Path):
         cfg = AuthConfig(api_key="ak-abc")
         assert (
@@ -126,3 +182,24 @@ class TestGetActiveBearer:
         # Should have picked up the fresh token from disk, NOT called refresh
         assert bearer == fresh.access_token
         ClientCls.return_value.refresh.assert_not_called()
+
+
+class TestRefreshPresentsClientCertificate:
+    def test_refresh_client_uses_given_tls(self, tmp_path: Path):
+        profile_path = tmp_path / "p.toml"
+        _write_profile(profile_path, _expiring_oauth())
+        tls = TLSSettings(verify="/ca.pem", cert=("/c.crt", "/c.key"))
+
+        with patch("ax.auth.bearer.OAuthClient") as ClientCls:
+            ClientCls.return_value.refresh.return_value = TokenResponse(
+                access_token="arz_at_new",
+                refresh_token="arz_rt_new",
+                expires_in=3600,
+            )
+            get_active_bearer(
+                AuthConfig(oauth=_expiring_oauth()),
+                profile_path=profile_path,
+                base_url="https://app.arize.com",
+                tls=tls,
+            )
+        assert ClientCls.call_args.kwargs["tls"] == tls

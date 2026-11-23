@@ -1,8 +1,9 @@
 """Configuration schema using Pydantic models."""
 
+import os
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from arize import Region, SDKConfiguration
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -150,13 +151,6 @@ class AuthConfig(BaseModel):
         return self.auth_method == AuthMethod.OAUTH and self.oauth is None
 
 
-REGION_ALIASES: dict[str, str] = {
-    "US": Region.US_EAST_1B.value,
-    "CA": Region.CA_CENTRAL_1A.value,
-    "EU": Region.EU_WEST_1A.value,
-}
-
-
 class RoutingConfig(BaseModel):
     """Routing strategy (mutually exclusive options)."""
 
@@ -217,17 +211,13 @@ class RoutingConfig(BaseModel):
         if v.startswith("${") and v.endswith("}"):
             return v
 
-        # Resolve friendly aliases (e.g. "US", "EU") to canonical zone IDs
-        v = REGION_ALIASES.get(v.upper(), v)
-
-        # Validate as a literal region
-        valid_regions = Region.list_regions()
-        if v not in valid_regions:
+        try:
+            return Region(v).value
+        except ValueError as e:
             raise ValueError(
-                f"Invalid region: {v}. Must be empty string or one of 'US', 'CA', 'EU', "
-                f"{', '.join(valid_regions)}"
-            )
-        return v
+                f"Invalid region: {v}. Use US, EU, or CA, or their "
+                "GCP identifiers: us-central-1a, eu-west-1a, ca-central-1a."
+            ) from e
 
     @model_validator(mode="after")
     def validate_mutually_exclusive(self) -> "RoutingConfig":
@@ -250,32 +240,6 @@ class RoutingConfig(BaseModel):
                 "or base_domain"
             )
         return self
-
-    def resolve_app_url(self) -> str:
-        """Derive the Arize app (OAuth login) URL from this routing config.
-
-        Precedence (first match wins):
-          1. ``single_host`` (on-prem / testing override) — uses app_scheme +
-             single_host, appending ``:single_port`` when a port is set
-          2. ``base_domain`` (Private Connect) — "https://app.<base_domain>"
-          3. ``region`` (e.g., "eu-prod") — "https://app.<region>.arize.com"
-          4. Explicit ``app_host`` + ``app_scheme`` fields — default "https://app.arize.com"
-        """
-        if self.single_host:
-            # single_port is part of the single-endpoint override: on-prem
-            # deployments serve the app (and thus OAuth) on this host:port.
-            # Dropping it here makes the browser flow fall back to the scheme
-            # default (80/443) even though the user configured e.g. :4040.
-            if self.single_port:
-                return (
-                    f"{self.app_scheme}://{self.single_host}:{self.single_port}"
-                )
-            return f"{self.app_scheme}://{self.single_host}"
-        if self.base_domain:
-            return f"https://app.{self.base_domain}"
-        if self.region:
-            return f"https://app.{self.region}.arize.com"
-        return f"{self.app_scheme}://{self.app_host}"
 
     # @model_validator(mode="after")
     # def apply_overrides(self) -> "RoutingConfig":
@@ -337,6 +301,18 @@ class SecurityConfig(BaseModel):
     """Security settings."""
 
     request_verify: bool | str = Field(default=True)
+    ssl_ca_cert: str = Field(
+        default="",
+        description="Path to a CA bundle used to verify Arize servers",
+    )
+    client_cert: str = Field(
+        default="",
+        description="Path to the PEM client certificate for mutual TLS",
+    )
+    client_key: str = Field(
+        default="",
+        description="Path to the unencrypted PEM key for client_cert",
+    )
 
 
 class OutputConfig(BaseModel):
@@ -407,6 +383,17 @@ class Config(BaseModel):
             int(self.routing.flight_port) if self.routing.flight_port else 0
         )
 
+        # Unset fields are left out so the SDK still reads its own env vars.
+        tls_kwargs: dict[str, Any] = {}
+        if self.security.ssl_ca_cert.strip():
+            # The SDK expands ~ in client_cert/client_key but not in ssl_ca_cert.
+            tls_kwargs["ssl_ca_cert"] = os.path.expanduser(
+                self.security.ssl_ca_cert.strip()
+            )
+        if self.security.client_cert or self.security.client_key:
+            tls_kwargs["client_cert"] = self.security.client_cert
+            tls_kwargs["client_key"] = self.security.client_key
+
         return SDKConfiguration(
             api_key=effective,
             region=region,
@@ -428,4 +415,5 @@ class Config(BaseModel):
             ),
             request_verify=self.request_verify,
             default_headers=cli_default_headers(),
+            **tls_kwargs,
         )

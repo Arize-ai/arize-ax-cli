@@ -1,6 +1,6 @@
 """Evaluator management commands."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from arize._generated.api_client.models.invocation_params_request import (
@@ -14,6 +14,7 @@ from arize.evaluators.types import (
     CustomCodeConfigRequest,
     DataGranularity,
     EvaluatorLlmConfigRequest,
+    EvaluatorType,
     ManagedCodeConfigRequest,
     ManagedCodeEvaluator,
     OptimizationDirection,
@@ -211,6 +212,70 @@ def _build_custom_code_config(
     return CodeConfigRequest(custom)
 
 
+def _build_decision_judge_config(
+    ai_integration_id: str,
+    model_name: str,
+    state_template: str,
+    questions: str,
+) -> dict[str, Any]:
+    """Build a Decision Judge config dict from CLI option values."""
+    try:
+        parsed_questions = load_json(questions.removeprefix("@"))
+    except typer.BadParameter as exc:
+        raise UsageError(f"--questions: {exc.message}") from exc
+    if not isinstance(parsed_questions, list) or not parsed_questions:
+        raise UsageError("--questions must be a non-empty JSON array")
+    if not all(isinstance(q, dict) for q in parsed_questions):
+        raise UsageError("--questions entries must be JSON objects")
+    return {
+        "ai_integration_id": ai_integration_id,
+        "model_name": model_name,
+        "state_template": load_text_source(state_template, "--state-template"),
+        "questions": parsed_questions,
+    }
+
+
+_DjAiIntegrationIdOpt = Annotated[
+    str,
+    typer.Option(
+        "--ai-integration-id",
+        help=(
+            "Global ID of an AI integration whose provider supports Decision "
+            "Judge (find one with `ax integrations list --type LLM "
+            "--provider <provider>`)"
+        ),
+    ),
+]
+_DjModelNameOpt = Annotated[
+    str,
+    typer.Option(
+        "--model-name",
+        help="Decision Judge model of the integration's provider (e.g. gpt-6-luna)",
+    ),
+]
+_DjStateTemplateOpt = Annotated[
+    str,
+    typer.Option(
+        "--state-template",
+        help=(
+            "State sent to the model, with {variable} placeholders filled "
+            "from span attributes. Inline text or @path/to/file"
+        ),
+    ),
+]
+_DjQuestionsOpt = Annotated[
+    str,
+    typer.Option(
+        "--questions",
+        help=(
+            "JSON array of 1-64 questions, inline or a path / @path to a "
+            "JSON file. Each question has name, type (BOOLEAN, CHOICE or "
+            "SCORE), instructions, and criteria matching the type"
+        ),
+    ),
+]
+
+
 @app.command("list")
 @handle_errors
 def list_evaluators(
@@ -228,6 +293,19 @@ def list_evaluators(
             "--space",
             "-s",
             help="Space name or ID",
+        ),
+    ] = None,
+    evaluator_type: Annotated[
+        EvaluatorType | None,
+        typer.Option(
+            "--type",
+            "-t",
+            help=(
+                "Filter by evaluator type: TEMPLATE, CODE, HARNESS, REMOTE, "
+                "or DECISION_JUDGE. DECISION_JUDGE evaluators are listed "
+                "only when this is set"
+            ),
+            case_sensitive=False,
         ),
     ] = None,
     limit: Annotated[
@@ -276,11 +354,53 @@ def list_evaluators(
             response = client.evaluators.list(
                 name=name,
                 space=space,
+                evaluator_type=evaluator_type,
                 limit=limit,
                 cursor=cursor,
             )
     except Exception as e:
         raise APIError(f"Failed to list evaluators: {e}") from e
+    else:
+        output_data(
+            response,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@app.command("list-templates")
+@handle_errors
+def list_templates(
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """List the built-in LLM-as-a-judge evaluator templates."""
+    setup_logging(verbose)
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner("Fetching evaluator templates"):
+            response = client.evaluators.list_templates()
+    except Exception as e:
+        raise APIError(f"Failed to list evaluator templates: {e}") from e
     else:
         output_data(
             response,
@@ -1444,7 +1564,7 @@ def remote_create_evaluator(
 
     Remote evaluators call a customer-hosted HTTP endpoint on each evaluation
     run. The ``--integration-id`` must reference an existing ``EVALUATOR``
-    integration. Requires the ``enableRemoteEvalTasks`` feature flag.
+    integration. Requires an Enterprise account.
     """
     setup_logging(verbose)
     client, config = make_client()
@@ -1532,7 +1652,7 @@ def remote_create_version(
 
     The ``--integration-id`` references an existing ``EVALUATOR`` integration.
     The integration is shared across versions; updating it affects all versions
-    that reference it. Requires the ``enableRemoteEvalTasks`` feature flag.
+    that reference it. Requires an Enterprise account.
     """
     setup_logging(verbose)
     client, config = make_client()
@@ -1551,6 +1671,182 @@ def remote_create_version(
                 space=space,
                 integration_id=integration_id,
                 commit_message=commit_message,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to create evaluator version: {e}") from e
+    else:
+        output_data(
+            version,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@create_evaluator_app.command("decision-judge")
+@handle_errors
+def decision_judge_create_evaluator(
+    name: Annotated[
+        str,
+        typer.Option(
+            "--name",
+            "-n",
+            help="Evaluator name (must be unique within the space)",
+        ),
+    ],
+    space: Annotated[
+        str,
+        typer.Option(
+            "--space",
+            "--space-id",
+            "-s",
+            help="Space name or ID to create the evaluator in",
+        ),
+    ],
+    ai_integration_id: _DjAiIntegrationIdOpt,
+    model_name: _DjModelNameOpt,
+    state_template: _DjStateTemplateOpt,
+    questions: _DjQuestionsOpt,
+    commit_message: Annotated[
+        str,
+        typer.Option(
+            "--commit-message",
+            help="Commit message for the initial version",
+        ),
+    ] = "Initial version",
+    description: Annotated[
+        str | None,
+        typer.Option(
+            "--description",
+            help="Optional evaluator description",
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Create a new Decision Judge evaluator with an initial version.
+
+    A Decision Judge evaluator asks typed questions about each span and writes
+    one result per question. It runs on spans only and must be enabled for the
+    account.
+    """
+    setup_logging(verbose)
+    config_dict = _build_decision_judge_config(
+        ai_integration_id, model_name, state_template, questions
+    )
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Creating evaluator",
+            success_msg="Evaluator created successfully",
+        ):
+            evaluator = client.evaluators.create_decision_judge_evaluator(
+                name=name,
+                space=space,
+                commit_message=commit_message,
+                decision_judge_config=config_dict,
+                description=description,
+            )
+    except Exception as e:
+        raise APIError(f"Failed to create evaluator: {e}") from e
+    else:
+        output_data(
+            evaluator,
+            format_type=output_format,
+            output_file=output_file,
+        )
+
+
+@create_version_app.command("decision-judge")
+@handle_errors
+def decision_judge_create_version(
+    name_or_id: Annotated[
+        str,
+        typer.Argument(help="Evaluator name or ID"),
+    ],
+    ai_integration_id: _DjAiIntegrationIdOpt,
+    model_name: _DjModelNameOpt,
+    state_template: _DjStateTemplateOpt,
+    questions: _DjQuestionsOpt,
+    commit_message: Annotated[
+        str,
+        typer.Option(
+            "--commit-message",
+            help="Commit message describing the changes in this version",
+        ),
+    ] = "Update decision judge config",
+    space: Annotated[
+        str | None,
+        typer.Option(
+            "--space",
+            "--space-id",
+            "-s",
+            help=(
+                "Space name or ID "
+                "(required if using evaluator name instead of ID)"
+            ),
+        ),
+    ] = None,
+    output: Annotated[
+        str,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output format (table, json, csv, parquet) or file path",
+        ),
+    ] = "",
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help="Enable verbose logs",
+        ),
+    ] = False,
+) -> None:
+    """Create a new Decision Judge version of an existing evaluator.
+
+    The new version replaces the whole configuration, including every
+    question, so pass all the questions the version should ask.
+    """
+    setup_logging(verbose)
+    config_dict = _build_decision_judge_config(
+        ai_integration_id, model_name, state_template, questions
+    )
+    client, config = make_client()
+
+    output_format, output_file = parse_output_option(
+        output if output else config.output.format
+    )
+
+    try:
+        with spinner(
+            "Creating evaluator version",
+            success_msg="Evaluator version created successfully",
+        ):
+            version = client.evaluators.create_decision_judge_version(
+                evaluator=name_or_id,
+                space=space,
+                commit_message=commit_message,
+                decision_judge_config=config_dict,
             )
     except Exception as e:
         raise APIError(f"Failed to create evaluator version: {e}") from e

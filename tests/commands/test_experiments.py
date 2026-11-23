@@ -498,6 +498,38 @@ class TestCreateExperiment:
         assert call_kwargs["space"] == "space-abc"
         assert call_kwargs["dataset"] == "ds-1"
 
+    def test_create_lets_sdk_choose_transport(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Create does not force REST, so large uploads can go via Flight."""
+        mock_client.experiments.create.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"id": "exp-1", "name": "my-exp"})
+        )
+
+        with patch(
+            "ax.commands.experiments.read_data_file",
+            return_value=self._RUNS_DF,
+        ):
+            result = cli_runner.invoke(
+                app,
+                [
+                    "create",
+                    "--name",
+                    "my-exp",
+                    "--dataset",
+                    "ds-1",
+                    "--file",
+                    "runs.json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.experiments.create.call_args.kwargs
+        assert not call_kwargs.get("force_http", False)
+
     def test_create_without_space_passes_none(
         self,
         cli_runner: CliRunner,

@@ -6,14 +6,22 @@ from urllib.parse import parse_qsl, urlencode
 
 import requests
 import typer
+from pydantic import ValidationError
 from rich import print as rprint
 
 from ax.auth import OAUTH_CLIENT_ID
 from ax.auth.oauth_client import OAuthClient
 from ax.auth.oauth_flow import LoopbackServer, generate_pkce_pair, random_state
-from ax.config.manager import ConfigManager
-from ax.config.schema import AuthConfig, AuthMethod, OAuthCredentials
+from ax.config.manager import ConfigManager, resolve_oauth_app_url
+from ax.config.schema import (
+    AuthConfig,
+    AuthMethod,
+    OAuthCredentials,
+    SecurityConfig,
+)
+from ax.config.tls import TLSSettings, resolve_tls
 from ax.core.decorators import handle_errors
+from ax.core.exceptions import ConfigError, RoutingConfigError
 
 app = typer.Typer(
     name="auth",
@@ -43,6 +51,7 @@ def perform_oauth_login(
     base_url: str,
     login_timeout_seconds: float = _LOGIN_TIMEOUT_SECONDS,
     utm_params: str | None = None,
+    tls: TLSSettings | None = None,
 ) -> OAuthCredentials:
     """Open the browser, complete PKCE flow, return fresh OAuthCredentials.
 
@@ -52,6 +61,7 @@ def perform_oauth_login(
         base_url: The Arize app URL to authenticate against (e.g. "https://app.arize.com").
         login_timeout_seconds: Seconds to wait for the browser callback before timing out.
         utm_params: URL-style UTM query parameters to include in the login request.
+        tls: TLS settings for the token exchange (CA bundle, client certificate).
 
     Returns:
         Fresh OAuthCredentials with access_token, refresh_token, expires_at, user_email.
@@ -88,7 +98,7 @@ def perform_oauth_login(
 
     result = server.wait(timeout=login_timeout_seconds)
 
-    client = OAuthClient(base_url=base_url, client_id=OAUTH_CLIENT_ID)
+    client = OAuthClient(base_url=base_url, client_id=OAUTH_CLIENT_ID, tls=tls)
     try:
         resp = client.exchange_code(
             code=result.code, code_verifier=verifier, redirect_uri=redirect_uri
@@ -152,10 +162,11 @@ def login_cmd(
             )
             raise typer.Exit(code=0)
 
-    resolved_base_url = cfg.routing.resolve_app_url()
+    resolved_base_url = resolve_oauth_app_url(cfg.routing)
     oauth_creds = perform_oauth_login(
         base_url=resolved_base_url,
         utm_params=utm_params,
+        tls=resolve_tls(cfg.security),
     )
     new_auth = AuthConfig(auth_method=AuthMethod.OAUTH, oauth=oauth_creds)
     new_cfg = cfg.model_copy(update={"auth": new_auth})
@@ -169,11 +180,13 @@ def login_cmd(
 @app.command("logout")
 @handle_errors
 def logout_cmd() -> None:
-    """Revoke both tokens and clear OAuth credentials on the active profile."""
-    cfg = ConfigManager.load(expand_env_vars=False)
-    profile_name = cfg.profile.name
+    """Clear local OAuth credentials and attempt to revoke both tokens."""
+    profile_name = ConfigManager.get_active_profile()
+    auth, routing, security = ConfigManager.clear_oauth_credentials(
+        profile_name
+    )
 
-    if not cfg.auth.uses_oauth:
+    if not auth.uses_oauth:
         rprint(
             f"[red]error:[/red] active profile '{profile_name}' is configured "
             "for API-key authentication. Logout only applies to OAuth profiles. "
@@ -182,30 +195,37 @@ def logout_cmd() -> None:
         )
         raise typer.Exit(code=1)
 
-    if cfg.auth.oauth is None:
+    if auth.oauth is None:
         rprint(
             f"[yellow]Profile '{profile_name}' is already logged out.[/yellow]"
         )
         raise typer.Exit(code=0)
 
-    resolved_base_url = cfg.routing.resolve_app_url()
     # Revoke BOTH tokens server-side. Revoking only the refresh token would
     # leave the access token usable until its 1h TTL elapses — a stolen copy
     # of the [auth.oauth] block would still pass apiproxy's validator, since
     # only the refresh-token jti would be in oauth_revoked_jtis. Revoke is
     # best-effort: a network failure shouldn't block local clearing of the
     # profile (the user's intent is "end this session locally").
-    client = OAuthClient(base_url=resolved_base_url, client_id=OAUTH_CLIENT_ID)
-    client.revoke(token=cfg.auth.oauth.access_token)
-    client.revoke(token=cfg.auth.oauth.refresh_token)
+    try:
+        resolved_base_url = resolve_oauth_app_url(routing)
+        tls = resolve_tls(SecurityConfig.model_validate(security))
+    except RoutingConfigError:
+        rprint(
+            "[yellow]Remote tokens were not revoked because profile routing "
+            "could not be resolved. Local credentials are cleared.[/yellow]"
+        )
+    except (ConfigError, ValidationError) as e:
+        rprint(
+            "[yellow]Remote tokens were not revoked because the client "
+            f"certificate settings are invalid: {e}. Local credentials are "
+            "cleared.[/yellow]"
+        )
+    else:
+        client = OAuthClient(
+            base_url=resolved_base_url, client_id=OAUTH_CLIENT_ID, tls=tls
+        )
+        client.revoke(token=auth.oauth.access_token)
+        client.revoke(token=auth.oauth.refresh_token)
 
-    # Clear OAuth credentials but keep the rest of the profile (routing,
-    # output, auth_method) so `ax auth login` can re-authenticate without
-    # re-prompting for routing. model_copy preserves auth_method="oauth".
-    cleared_auth = cfg.auth.model_copy(update={"oauth": None})
-    cleared_cfg = cfg.model_copy(update={"auth": cleared_auth})
-    ConfigManager.save(cleared_cfg, profile_name)
-    rprint(
-        f"[green]✓[/green] Logged out of profile '{profile_name}'. "
-        f"Run [cyan]ax auth login[/cyan] to sign in again."
-    )
+    rprint(f"[green]✓[/green] Logged out of profile '{profile_name}'.")

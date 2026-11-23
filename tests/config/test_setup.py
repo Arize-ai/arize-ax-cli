@@ -228,6 +228,54 @@ class TestCreateConfigFromEnvVars:
         assert config.security.request_verify == "${ARIZE_REQUEST_VERIFY}"
 
 
+class TestClientCertificateSettings:
+    """Client certificate and CA settings follow the request_verify path."""
+
+    @patch("ax.config.setup.read_output_format")
+    def test_env_vars_become_references(self, mock_read_format: object) -> None:
+        mock_read_format.return_value = "table"  # type: ignore[attr-defined]
+        env_vars = {
+            "api_key": "ARIZE_API_KEY",
+            "ssl_ca_cert": "ARIZE_SSL_CA_CERT",
+            "client_cert": "ARIZE_CLIENT_CERT",
+            "client_key": "ARIZE_CLIENT_KEY",
+        }
+        config = create_config_from_env_vars(
+            "default", env_vars, _api_key_auth()
+        )
+
+        assert config.security.ssl_ca_cert == "${ARIZE_SSL_CA_CERT}"
+        assert config.security.client_cert == "${ARIZE_CLIENT_CERT}"
+        assert config.security.client_key == "${ARIZE_CLIENT_KEY}"
+
+    def test_flags_set_security_fields(self) -> None:
+        config = create_config_from_flags(
+            "p",
+            {
+                "api_key": "k",
+                "client_cert": "/c.crt",
+                "client_key": "/c.key",
+                "ssl_ca_cert": "/ca.pem",
+            },
+        )
+        assert config.security.client_cert == "/c.crt"
+        assert config.security.client_key == "/c.key"
+        assert config.security.ssl_ca_cert == "/ca.pem"
+
+    def test_merge_keeps_unset_security_fields(self) -> None:
+        existing = create_config_from_flags(
+            "p",
+            {"api_key": "k", "request_verify": False, "ssl_ca_cert": "/ca"},
+        )
+        merged = merge_config_with_flags(
+            existing, {"client_cert": "/c.crt", "client_key": "/c.key"}
+        )
+        assert merged.security.request_verify is False
+        assert merged.security.ssl_ca_cert == "/ca"
+        assert merged.security.client_cert == "/c.crt"
+        assert merged.security.client_key == "/c.key"
+
+
 class TestEnvVarMapping:
     """Tests for ENV_VAR_MAPPING constant."""
 
@@ -251,8 +299,17 @@ class TestEnvVarMapping:
             "pyarrow_max_chunksize",
             "max_http_payload_size_mb",
             "request_verify",
+            "ssl_ca_cert",
+            "client_cert",
+            "client_key",
         }
         assert set(ENV_VAR_MAPPING.keys()) == expected_keys
+
+    def test_tls_env_vars_match_sdk(self) -> None:
+        """The CLI detects the same env var names the SDK reads."""
+        assert ENV_VAR_MAPPING["ssl_ca_cert"] == "ARIZE_SSL_CA_CERT"
+        assert ENV_VAR_MAPPING["client_cert"] == "ARIZE_CLIENT_CERT"
+        assert ENV_VAR_MAPPING["client_key"] == "ARIZE_CLIENT_KEY"
 
     def test_env_var_mapping_values(self) -> None:
         """Test that ENV_VAR_MAPPING values follow ARIZE_ prefix convention."""

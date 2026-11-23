@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from arize import ApiException, Problem
 from pydantic import ValidationError as PydanticValidationError
 
-from ax.core.exceptions import ConfigError
+from ax.core.exceptions import APIResponseError, ConfigError
 
 # Map gRPC codes to HTTP status
 grpc_to_http = {
@@ -169,11 +169,9 @@ def parse_pydantic_validation_error(exception: Exception) -> ParsedError | None:
     """
     current: BaseException | None = exception
     while current is not None:
-        if isinstance(current, ConfigError):
-            # ConfigError already carries its own actionable message (see
-            # ConfigManager.load); don't relabel a config-loading failure
-            # as SDK request validation just because it happens to wrap a
-            # ValidationError too.
+        if isinstance(current, (ConfigError, APIResponseError)):
+            # These errors carry their own message; a validation error in
+            # their cause is not a request-input failure.
             return None
         if isinstance(current, PydanticValidationError):
             return ParsedError(

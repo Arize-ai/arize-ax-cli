@@ -1,10 +1,11 @@
 """Tests for evaluator CLI commands."""
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from arize.evaluators.types import OptimizationDirection
+from arize.evaluators.types import EvaluatorType, OptimizationDirection
 from typer.testing import CliRunner
 
 from ax.commands.evaluators import app
@@ -21,6 +22,7 @@ class TestEvaluatorCommands:
         }
         for expected in (
             "list",
+            "list-templates",
             "get",
             "update",
             "delete",
@@ -30,6 +32,16 @@ class TestEvaluatorCommands:
             assert expected in names
         for expected_group in ("create-evaluator", "create-evaluator-version"):
             assert expected_group in group_names
+
+    def test_decision_judge_subcommands_registered(self) -> None:
+        """Check that decision-judge is a subcommand of both create groups."""
+        groups = {
+            g.typer_instance.info.name: g.typer_instance
+            for g in app.registered_groups
+        }
+        for group_name in ("create-evaluator", "create-evaluator-version"):
+            names = [c.name for c in groups[group_name].registered_commands]
+            assert "decision-judge" in names
 
 
 class TestListEvaluators:
@@ -52,6 +64,7 @@ class TestListEvaluators:
         mock_client.evaluators.list.assert_called_once_with(
             name=None,
             space=None,
+            evaluator_type=None,
             limit=15,
             cursor=None,
         )
@@ -73,6 +86,7 @@ class TestListEvaluators:
         mock_client.evaluators.list.assert_called_once_with(
             name=None,
             space="space-1",
+            evaluator_type=None,
             limit=15,
             cursor=None,
         )
@@ -94,9 +108,72 @@ class TestListEvaluators:
         mock_client.evaluators.list.assert_called_once_with(
             name="correctness",
             space=None,
+            evaluator_type=None,
             limit=15,
             cursor=None,
         )
+
+    @pytest.mark.unit
+    def test_list_type_decision_judge_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--type DECISION_JUDGE is passed to the SDK as evaluator_type."""
+        mock_client.evaluators.list.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"evaluators": []})
+        )
+
+        result = cli_runner.invoke(app, ["list", "--type", "DECISION_JUDGE"])
+        assert result.exit_code == 0, result.output
+        _, kwargs = mock_client.evaluators.list.call_args
+        assert kwargs["evaluator_type"] == EvaluatorType.DECISION_JUDGE
+
+    @pytest.mark.unit
+    def test_list_rejects_invalid_type(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """An unknown --type value is a usage error."""
+        result = cli_runner.invoke(app, ["list", "--type", "NOPE"])
+        assert result.exit_code != 0
+        mock_client.evaluators.list.assert_not_called()
+
+
+class TestListTemplates:
+    """Tests for the 'ax evaluators list-templates' command."""
+
+    @pytest.mark.unit
+    def test_calls_client_list_templates(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Invoke 'list-templates' and verify the SDK call."""
+        mock_client.evaluators.list_templates.return_value = MagicMock(
+            model_dump=MagicMock(return_value={"evaluator_templates": []})
+        )
+
+        result = cli_runner.invoke(app, ["list-templates"])
+        assert result.exit_code == 0
+        mock_client.evaluators.list_templates.assert_called_once_with()
+
+    @pytest.mark.unit
+    def test_api_failure_exits_with_api_error(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """A failing SDK call should surface as a non-zero exit."""
+        mock_client.evaluators.list_templates.side_effect = RuntimeError("boom")
+
+        result = cli_runner.invoke(app, ["list-templates"])
+        assert result.exit_code != 0
 
 
 class TestGetEvaluator:
@@ -1348,3 +1425,275 @@ class TestRemoteCreateVersion:
             integration_id="integ-2",
             commit_message="switch endpoint",
         )
+
+
+_DJ_QUESTIONS = [
+    {
+        "name": "is_helpful",
+        "type": "BOOLEAN",
+        "instructions": "Did the answer address the request?",
+        "criteria": {"true_means": "Addressed", "false_means": "Ignored"},
+    },
+    {
+        "name": "tone",
+        "type": "CHOICE",
+        "instructions": "Pick the tone of the answer.",
+        "criteria": {
+            "options": {
+                "formal": "Professional wording",
+                "casual": "Conversational wording",
+            }
+        },
+    },
+    {
+        "name": "quality",
+        "type": "SCORE",
+        "instructions": "Rate the overall quality.",
+        "criteria": {"levels": ["Poor", "Fair", "Good"]},
+        "direction": "MAXIMIZE",
+    },
+]
+
+
+def _dj_create_args(*extra: str) -> list[str]:
+    return [
+        "create-evaluator",
+        "decision-judge",
+        "--name",
+        "my-dj",
+        "--space-id",
+        "space-1",
+        "--ai-integration-id",
+        "integ-1",
+        "--model-name",
+        "gpt-6-luna",
+        *extra,
+    ]
+
+
+class TestDecisionJudgeCreateEvaluator:
+    """Tests for 'ax evaluators create-evaluator decision-judge'."""
+
+    @pytest.mark.unit
+    def test_inline_inputs_forwarded(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Inline questions and state template reach the SDK as a config dict."""
+        mock_client.evaluators.create_decision_judge_evaluator.return_value = (
+            MagicMock(model_dump=MagicMock(return_value={"id": "ev-dj"}))
+        )
+
+        result = cli_runner.invoke(
+            app,
+            _dj_create_args(
+                "--state-template",
+                "Input: {input}",
+                "--questions",
+                json.dumps(_DJ_QUESTIONS),
+                "--description",
+                "d",
+            ),
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.evaluators.create_decision_judge_evaluator.assert_called_once_with(
+            name="my-dj",
+            space="space-1",
+            commit_message="Initial version",
+            decision_judge_config={
+                "ai_integration_id": "integ-1",
+                "model_name": "gpt-6-luna",
+                "state_template": "Input: {input}",
+                "questions": _DJ_QUESTIONS,
+            },
+            description="d",
+        )
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("prefix", ["", "@"], ids=["path", "at-path"])
+    def test_file_inputs_forwarded(
+        self,
+        prefix: str,
+        tmp_path: Path,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """--questions path or @path and --state-template @file load from disk."""
+        questions_file = tmp_path / "questions.json"
+        questions_file.write_text(json.dumps(_DJ_QUESTIONS))
+        template_file = tmp_path / "state.txt"
+        template_file.write_text("Output: {output}\n")
+        mock_client.evaluators.create_decision_judge_evaluator.return_value = (
+            MagicMock(model_dump=MagicMock(return_value={"id": "ev-dj"}))
+        )
+
+        result = cli_runner.invoke(
+            app,
+            _dj_create_args(
+                "--state-template",
+                f"@{template_file}",
+                "--questions",
+                f"{prefix}{questions_file}",
+                "--commit-message",
+                "v1",
+            ),
+        )
+
+        assert result.exit_code == 0, result.output
+        _, kwargs = (
+            mock_client.evaluators.create_decision_judge_evaluator.call_args
+        )
+        config = kwargs["decision_judge_config"]
+        assert config["state_template"] == "Output: {output}\n"
+        assert config["questions"] == _DJ_QUESTIONS
+        assert kwargs["commit_message"] == "v1"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "questions",
+        ["[not json", "[]", "{}", '[1, "a"]'],
+        ids=["bad-json", "empty-list", "object", "non-object-items"],
+    )
+    def test_invalid_questions_is_usage_error(
+        self,
+        questions: str,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Malformed or empty --questions fails before the SDK is called."""
+        result = cli_runner.invoke(
+            app,
+            _dj_create_args("--state-template", "x", "--questions", questions),
+        )
+
+        assert result.exit_code == 2
+        mock_client.evaluators.create_decision_judge_evaluator.assert_not_called()
+
+    @pytest.mark.unit
+    def test_missing_state_template_file_is_usage_error(
+        self,
+        tmp_path: Path,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """A missing @file for --state-template fails before the SDK call."""
+        result = cli_runner.invoke(
+            app,
+            _dj_create_args(
+                "--state-template",
+                f"@{tmp_path / 'missing.txt'}",
+                "--questions",
+                json.dumps(_DJ_QUESTIONS),
+            ),
+        )
+
+        assert result.exit_code != 0
+        mock_client.evaluators.create_decision_judge_evaluator.assert_not_called()
+
+    @pytest.mark.unit
+    def test_sdk_error_exits_nonzero(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """An SDK failure surfaces as a non-zero exit."""
+        mock_client.evaluators.create_decision_judge_evaluator.side_effect = (
+            RuntimeError("boom")
+        )
+
+        result = cli_runner.invoke(
+            app,
+            _dj_create_args(
+                "--state-template",
+                "x",
+                "--questions",
+                json.dumps(_DJ_QUESTIONS),
+            ),
+        )
+
+        assert result.exit_code != 0
+
+
+class TestDecisionJudgeCreateVersion:
+    """Tests for 'ax evaluators create-evaluator-version decision-judge'."""
+
+    @pytest.mark.unit
+    def test_forwards_config_and_space(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """The evaluator, space and config reach the SDK."""
+        mock_client.evaluators.create_decision_judge_version.return_value = (
+            MagicMock(model_dump=MagicMock(return_value={"id": "ver-2"}))
+        )
+
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluator-version",
+                "decision-judge",
+                "ev-1",
+                "--ai-integration-id",
+                "integ-1",
+                "--model-name",
+                "gpt-6-luna",
+                "--state-template",
+                "Input: {input}",
+                "--questions",
+                json.dumps(_DJ_QUESTIONS),
+                "--space",
+                "space-1",
+                "--commit-message",
+                "tighten questions",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.evaluators.create_decision_judge_version.assert_called_once_with(
+            evaluator="ev-1",
+            space="space-1",
+            commit_message="tighten questions",
+            decision_judge_config={
+                "ai_integration_id": "integ-1",
+                "model_name": "gpt-6-luna",
+                "state_template": "Input: {input}",
+                "questions": _DJ_QUESTIONS,
+            },
+        )
+
+    @pytest.mark.unit
+    def test_empty_questions_is_usage_error(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """An empty --questions list fails before the SDK is called."""
+        result = cli_runner.invoke(
+            app,
+            [
+                "create-evaluator-version",
+                "decision-judge",
+                "ev-1",
+                "--ai-integration-id",
+                "integ-1",
+                "--model-name",
+                "gpt-6-luna",
+                "--state-template",
+                "x",
+                "--questions",
+                "[]",
+            ],
+        )
+
+        assert result.exit_code != 0
+        mock_client.evaluators.create_decision_judge_version.assert_not_called()

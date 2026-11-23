@@ -19,10 +19,18 @@ class AuthenticationError(AxError):
     exit_code = 3
 
 
+class MfaRequiredError(AuthenticationError):
+    """A new browser sign-in is required to verify MFA."""
+
+
 class APIError(AxError):
     """API request failed."""
 
     exit_code = 4
+
+
+class APIResponseError(APIError):
+    """API response could not be decoded."""
 
 
 class FileIOError(AxError):
@@ -35,6 +43,10 @@ class ConfigError(AxError):
     """Configuration error."""
 
     exit_code = 1
+
+
+class RoutingConfigError(ConfigError):
+    """OAuth routing is invalid or cannot be resolved."""
 
 
 class InvalidClientError(AxError):

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from arize.tasks.types import TaskType
 from typer.testing import CliRunner
 
 from ax.commands.tasks import (
@@ -828,6 +829,143 @@ class TestCreateEvaluationSubcmd:
 # ---------------------------------------------------------------------------
 # ax tasks create-run-experiment
 # ---------------------------------------------------------------------------
+
+
+class TestDecisionJudgeEvaluationTasks:
+    """Tests for DECISION_JUDGE_EVALUATION on create and create-evaluation."""
+
+    _EVALUATORS_JSON = '[{"evaluator_id": "ev-dj"}]'
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("command", ["create", "create-evaluation"])
+    def test_creates_decision_judge_task(
+        self,
+        command: str,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Decision Judge tasks go through the evaluation-task SDK method."""
+        mock_client.tasks.create_evaluation_task.return_value = _make_task()
+
+        result = cli_runner.invoke(
+            app,
+            [
+                command,
+                "--name",
+                "DJ Task",
+                "--task-type",
+                "DECISION_JUDGE_EVALUATION",
+                "--evaluators",
+                self._EVALUATORS_JSON,
+                "--project",
+                "proj-1",
+                "--space",
+                "space-1",
+                "--sampling-rate",
+                "0.5",
+                "--is-continuous",
+                "--query-filter",
+                "status_code = 'OK'",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        kwargs = mock_client.tasks.create_evaluation_task.call_args.kwargs
+        assert kwargs["task_type"] == TaskType.DECISION_JUDGE_EVALUATION
+        assert kwargs["dataset"] is None
+        assert kwargs["experiment_ids"] is None
+        assert kwargs["name"] == "DJ Task"
+        assert kwargs["project"] == "proj-1"
+        assert kwargs["space"] == "space-1"
+        assert kwargs["sampling_rate"] == 0.5
+        assert kwargs["is_continuous"] is True
+        assert kwargs["query_filter"] == "status_code = 'OK'"
+        assert kwargs["evaluators"][0].actual_instance.evaluator_id == "ev-dj"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("command", ["create", "create-evaluation"])
+    @pytest.mark.parametrize(
+        ("extra", "flag"),
+        [
+            (["--dataset", "ds-1"], "--dataset"),
+            (["--experiment-ids", "exp-1"], "--experiment-ids"),
+        ],
+    )
+    def test_rejects_dataset_flags(
+        self,
+        command: str,
+        extra: list[str],
+        flag: str,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Dataset and experiment flags are usage errors for Decision Judge."""
+        result = cli_runner.invoke(
+            app,
+            [
+                command,
+                "--name",
+                "DJ Task",
+                "--task-type",
+                "DECISION_JUDGE_EVALUATION",
+                "--evaluators",
+                self._EVALUATORS_JSON,
+                "--project",
+                "proj-1",
+                *extra,
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert flag in result.output
+        mock_client.tasks.create_evaluation_task.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("command", ["create", "create-evaluation"])
+    def test_requires_project(
+        self,
+        command: str,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """Decision Judge tasks need --project."""
+        result = cli_runner.invoke(
+            app,
+            [
+                command,
+                "--name",
+                "DJ Task",
+                "--task-type",
+                "DECISION_JUDGE_EVALUATION",
+                "--evaluators",
+                self._EVALUATORS_JSON,
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--project is required" in result.output
+        mock_client.tasks.create_evaluation_task.assert_not_called()
+
+    @pytest.mark.unit
+    def test_list_filters_by_decision_judge_type(
+        self,
+        cli_runner: CliRunner,
+        mock_client: MagicMock,
+        patch_config_and_client: tuple[MagicMock, MagicMock],
+    ) -> None:
+        """List --task-type DECISION_JUDGE_EVALUATION is forwarded."""
+        mock_client.tasks.list.return_value = _make_task_list_response()
+
+        result = cli_runner.invoke(
+            app, ["list", "--task-type", "DECISION_JUDGE_EVALUATION"]
+        )
+
+        assert result.exit_code == 0, result.output
+        _, kwargs = mock_client.tasks.list.call_args
+        assert str(kwargs["task_type"].value) == "DECISION_JUDGE_EVALUATION"
 
 
 class TestCreateRunExperimentSubcmd:

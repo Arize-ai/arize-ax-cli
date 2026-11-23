@@ -76,6 +76,36 @@ def _build_run_configuration(
     return result  # type: ignore[return-value]
 
 
+def _validate_decision_judge_task_flags(
+    *,
+    project: str | None,
+    dataset: str | None,
+    experiment_ids: str | None,
+    evaluators: str | None,
+    sampling_rate: float | None,
+) -> None:
+    """Reject flag combinations that DECISION_JUDGE_EVALUATION tasks do not support."""
+    unsupported = {
+        "--dataset": dataset,
+        "--experiment-ids": experiment_ids,
+    }
+    rejected = [k for k, v in unsupported.items() if v is not None]
+    if rejected:
+        raise UsageError(
+            f"{', '.join(rejected)} "
+            f"{'is' if len(rejected) == 1 else 'are'} not valid for "
+            "DECISION_JUDGE_EVALUATION tasks, which run on a project only"
+        )
+    if project is None:
+        raise UsageError(
+            "--project is required for DECISION_JUDGE_EVALUATION tasks"
+        )
+    if evaluators is None:
+        raise UsageError("--evaluators is required for evaluation tasks")
+    if sampling_rate is not None and not (0.0 <= sampling_rate <= 1.0):
+        raise UsageError("--sampling-rate must be between 0.0 and 1.0")
+
+
 def _parse_comma_separated_ids(value: str | None) -> list[str] | None:
     """Parse a comma-separated string of IDs into a list."""
     if not value:
@@ -117,7 +147,9 @@ def list_tasks(
             "--task-type",
             help=(
                 "Filter by task type: TEMPLATE_EVALUATION, CODE_EVALUATION, "
-                "or RUN_EXPERIMENT"
+                "RUN_EXPERIMENT, or DECISION_JUDGE_EVALUATION. "
+                "DECISION_JUDGE_EVALUATION tasks are listed only when "
+                "this is set"
             ),
         ),
     ] = None,
@@ -231,7 +263,8 @@ def create_task(
         typer.Option(
             "--task-type",
             help=(
-                "Task type: TEMPLATE_EVALUATION, CODE_EVALUATION, or RUN_EXPERIMENT"
+                "Task type: TEMPLATE_EVALUATION, CODE_EVALUATION, "
+                "DECISION_JUDGE_EVALUATION, or RUN_EXPERIMENT"
             ),
         ),
     ],
@@ -370,6 +403,18 @@ def create_task(
                     f"{'is' if len(rejected) == 1 else 'are'} not valid "
                     "for run_experiment tasks"
                 )
+        case TaskType.DECISION_JUDGE_EVALUATION:
+            _validate_decision_judge_task_flags(
+                project=project,
+                dataset=dataset,
+                experiment_ids=experiment_ids,
+                evaluators=evaluators,
+                sampling_rate=sampling_rate,
+            )
+            if run_configuration is not None:
+                raise UsageError(
+                    "--run-configuration is only valid for run_experiment tasks"
+                )
         case _:
             # Evaluation task validation
             if project is None and dataset is None:
@@ -450,7 +495,10 @@ def create_evaluation_task_cmd(
         TaskType,
         typer.Option(
             "--task-type",
-            help="Task type: TEMPLATE_EVALUATION or CODE_EVALUATION",
+            help=(
+                "Task type: TEMPLATE_EVALUATION, CODE_EVALUATION, or "
+                "DECISION_JUDGE_EVALUATION (project only)"
+            ),
         ),
     ],
     evaluators: Annotated[
@@ -530,9 +578,11 @@ def create_evaluation_task_cmd(
         typer.Option("--verbose", "-v", help="Enable verbose logs"),
     ] = False,
 ) -> None:
-    """Create a new evaluation task (TEMPLATE_EVALUATION or CODE_EVALUATION).
+    """Create a new evaluation task.
 
     Requires --name, --task-type, --evaluators, and one of --project / --dataset.
+    DECISION_JUDGE_EVALUATION tasks require --project and do not accept
+    --dataset or --experiment-ids.
     """
     setup_logging(verbose)
 
@@ -541,12 +591,21 @@ def create_evaluation_task_cmd(
             "--task-type RUN_EXPERIMENT is not valid for this command; "
             "use `ax tasks create-run-experiment` instead"
         )
-    if project is None and dataset is None:
-        raise UsageError("One of --project or --dataset must be provided")
-    if project is not None and dataset is not None:
-        raise UsageError("--project and --dataset are mutually exclusive")
-    if sampling_rate is not None and not (0.0 <= sampling_rate <= 1.0):
-        raise UsageError("--sampling-rate must be between 0.0 and 1.0")
+    if task_type == TaskType.DECISION_JUDGE_EVALUATION:
+        _validate_decision_judge_task_flags(
+            project=project,
+            dataset=dataset,
+            experiment_ids=experiment_ids,
+            evaluators=evaluators,
+            sampling_rate=sampling_rate,
+        )
+    else:
+        if project is None and dataset is None:
+            raise UsageError("One of --project or --dataset must be provided")
+        if project is not None and dataset is not None:
+            raise UsageError("--project and --dataset are mutually exclusive")
+        if sampling_rate is not None and not (0.0 <= sampling_rate <= 1.0):
+            raise UsageError("--sampling-rate must be between 0.0 and 1.0")
 
     client, config = make_client()
     output_format, output_file = parse_output_option(
@@ -1025,10 +1084,13 @@ def trigger_run(
         raise APIError(f"Failed to trigger task run: {e}") from e
 
     if wait:
+        run_id = run.id
+        if not run_id:
+            raise APIError("Task run response did not include a run ID")
         try:
             with spinner("Waiting for task run to complete"):
                 run = client.tasks.wait_for_run(
-                    run_id=run.id,
+                    run_id=run_id,
                     poll_interval=poll_interval,
                     timeout=timeout,
                 )

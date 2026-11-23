@@ -10,14 +10,18 @@ from arize.integrations.types import (
     CreateAnthropicConfig,
     CreateAwsBedrockAuth,
     CreateAwsBedrockConfig,
+    CreateCloudflareConfig,
     CreateCustomConfig,
+    CreateDeepSeekConfig,
     CreateFireworksConfig,
     CreateGeminiConfig,
     CreateLiteLlmConfig,
     CreateLlmConfig,
     CreateNvidiaNimConfig,
     CreateOpenAiConfig,
+    CreatePerplexityConfig,
     CreateTogetherAiConfig,
+    CreateTypeSafeAiConfig,
     CreateVertexAiConfig,
     IntegrationScoping,
     IntegrationType,
@@ -205,6 +209,18 @@ def list_integrations(
             help="Filter by integration type: LLM or AGENT",
         ),
     ] = None,
+    provider: Annotated[
+        LlmIntegrationProvider | None,
+        typer.Option(
+            "--provider",
+            help=(
+                "Filter LLM integrations by provider. TYPE_SAFE_AI, "
+                "PERPLEXITY, and CLOUDFLARE integrations (used by Decision "
+                "Judge) are listed only when this is set"
+            ),
+            case_sensitive=False,
+        ),
+    ] = None,
     name: Annotated[
         str | None,
         typer.Option(
@@ -249,6 +265,7 @@ def list_integrations(
         with spinner("Fetching integrations"):
             response = client.integrations.list(
                 integration_type=integration_type,
+                provider=provider,
                 name=name,
                 space=space,
                 limit=limit,
@@ -334,6 +351,7 @@ def _build_create_llm_config(
     project_id: str | None,
     location: str | None,
     project_access_label: str | None,
+    account_id: str | None,
 ) -> CreateLlmConfig:
     """Build the provider-specific create config from individual flags.
 
@@ -341,6 +359,11 @@ def _build_create_llm_config(
     clean usage error instead of a generated pydantic dump.
     """
     provider_value = provider.value
+    if (
+        account_id is not None
+        and provider is not LlmIntegrationProvider.CLOUDFLARE
+    ):
+        raise UsageError("--account-id is only valid for provider CLOUDFLARE")
     fc: dict[str, Any] = (
         {}
         if function_calling_enabled is None
@@ -363,6 +386,10 @@ def _build_create_llm_config(
         | CreateLiteLlmConfig
         | CreateFireworksConfig
         | CreateTogetherAiConfig
+        | CreateDeepSeekConfig
+        | CreateTypeSafeAiConfig
+        | CreatePerplexityConfig
+        | CreateCloudflareConfig
     )
 
     try:
@@ -454,6 +481,32 @@ def _build_create_llm_config(
                 **fc,
                 **dm,
             )
+        elif provider is LlmIntegrationProvider.DEEP_SEEK:
+            inner = CreateDeepSeekConfig(
+                provider=provider_value,
+                api_key=_require_provider_flag(api_key, "--api-key", provider),
+                model_names=model_names,
+                **fc,
+                **dm,
+            )
+        elif provider is LlmIntegrationProvider.TYPE_SAFE_AI:
+            inner = CreateTypeSafeAiConfig(
+                provider=provider_value,
+                api_key=_require_provider_flag(api_key, "--api-key", provider),
+            )
+        elif provider is LlmIntegrationProvider.PERPLEXITY:
+            inner = CreatePerplexityConfig(
+                provider=provider_value,
+                api_key=_require_provider_flag(api_key, "--api-key", provider),
+            )
+        elif provider is LlmIntegrationProvider.CLOUDFLARE:
+            inner = CreateCloudflareConfig(
+                provider=provider_value,
+                api_key=_require_provider_flag(api_key, "--api-key", provider),
+                account_id=_require_provider_flag(
+                    account_id, "--account-id", provider
+                ),
+            )
         else:
             # Fail loudly rather than silently misroute a provider variant
             # added to the SDK enum after this command was written.
@@ -490,8 +543,10 @@ def create_llm_integration(
             "--api-key",
             help=(
                 "API key (write-only). Required for OPEN_AI, ANTHROPIC, "
-                "GEMINI, LITELLM, FIREWORKS, TOGETHER_AI; optional for "
-                "CUSTOM and NVIDIA_NIM"
+                "GEMINI, LITELLM, FIREWORKS, TOGETHER_AI, DEEP_SEEK, "
+                "TYPE_SAFE_AI, PERPLEXITY, and CLOUDFLARE (a Cloudflare API "
+                "token); "
+                "optional for CUSTOM and NVIDIA_NIM"
             ),
         ),
     ] = None,
@@ -511,8 +566,8 @@ def create_llm_integration(
             "--model-name",
             help=(
                 "Custom model name (repeat for multiple). "
-                "AWS_BEDROCK, CUSTOM, NVIDIA_NIM, LITELLM, FIREWORKS, and "
-                "TOGETHER_AI only"
+                "AWS_BEDROCK, CUSTOM, NVIDIA_NIM, LITELLM, FIREWORKS, "
+                "TOGETHER_AI, and DEEP_SEEK only"
             ),
         ),
     ] = None,
@@ -522,8 +577,8 @@ def create_llm_integration(
             "--enable-default-models/--no-enable-default-models",
             help=(
                 "Enable Arize's default model catalog. "
-                "AWS_BEDROCK, CUSTOM, NVIDIA_NIM, FIREWORKS, and TOGETHER_AI "
-                "only"
+                "AWS_BEDROCK, CUSTOM, NVIDIA_NIM, FIREWORKS, TOGETHER_AI, "
+                "and DEEP_SEEK only"
             ),
         ),
     ] = None,
@@ -566,6 +621,13 @@ def create_llm_integration(
             help="Vertex AI project-access label (VERTEX_AI only)",
         ),
     ] = None,
+    account_id: Annotated[
+        str | None,
+        typer.Option(
+            "--account-id",
+            help="32-character Cloudflare account ID (CLOUDFLARE only)",
+        ),
+    ] = None,
     scopings: ScopingsOpt = None,
     output: OutputOpt = "",
     verbose: VerboseOpt = False,
@@ -581,7 +643,9 @@ def create_llm_integration(
     - NVIDIA_NIM: none (needs at least one model source: --model-name or
       --enable-default-models)
     - LITELLM: --base-url, --api-key
-    - FIREWORKS / TOGETHER_AI: --api-key
+    - FIREWORKS / TOGETHER_AI / DEEP_SEEK: --api-key
+    - TYPE_SAFE_AI / PERPLEXITY: --api-key (Decision Judge only)
+    - CLOUDFLARE: --api-key, --account-id (Decision Judge only)
     """
     parsed_headers = _parse_headers(headers) if headers is not None else None
     parsed_auth = _parse_bedrock_auth(auth) if auth is not None else None
@@ -597,6 +661,7 @@ def create_llm_integration(
         project_id=project_id,
         location=location,
         project_access_label=project_access_label,
+        account_id=account_id,
     )
     parsed_scopings = _parse_scopings(scopings)
 
@@ -835,6 +900,13 @@ def update_llm_integration(
             help="New Vertex AI project-access label (VERTEX_AI)",
         ),
     ] = None,
+    account_id: Annotated[
+        str | None,
+        typer.Option(
+            "--account-id",
+            help="New 32-character Cloudflare account ID (CLOUDFLARE only)",
+        ),
+    ] = None,
     scopings: ScopingsOpt = None,
     output: OutputOpt = "",
     verbose: VerboseOpt = False,
@@ -868,6 +940,8 @@ def update_llm_integration(
         kwargs["location"] = location
     if project_access_label is not None:
         kwargs["project_access_label"] = project_access_label
+    if account_id is not None:
+        kwargs["account_id"] = account_id
     if scopings is not None:
         kwargs["scopings"] = _parse_scopings(scopings)
 

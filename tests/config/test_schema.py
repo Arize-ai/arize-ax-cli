@@ -83,8 +83,8 @@ class TestRoutingConfig:
 
     def test_valid_region(self) -> None:
         """Test creating routing config with valid region."""
-        routing = RoutingConfig(region="us-east-1b")
-        assert routing.region == "us-east-1b"
+        routing = RoutingConfig(region="us-central-1a")
+        assert routing.region == "us-central-1a"
 
     def test_empty_region_allowed(self) -> None:
         """Test that empty region is allowed."""
@@ -97,9 +97,9 @@ class TestRoutingConfig:
             RoutingConfig(region="INVALID")
 
     def test_region_alias_us_resolves_to_zone_id(self) -> None:
-        """Test that the "US" alias resolves to the us-east-1b zone ID."""
+        """Test that the "US" alias resolves to the us-central-1a zone ID."""
         routing = RoutingConfig(region="US")
-        assert routing.region == "us-east-1b"
+        assert routing.region == "us-central-1a"
 
     def test_region_alias_eu_resolves_to_zone_id(self) -> None:
         """Test that the "EU" alias resolves to the eu-west-1a zone ID."""
@@ -109,7 +109,7 @@ class TestRoutingConfig:
     def test_region_alias_is_case_insensitive(self) -> None:
         """Test that region aliases are matched case-insensitively."""
         routing = RoutingConfig(region="us")
-        assert routing.region == "us-east-1b"
+        assert routing.region == "us-central-1a"
 
     def test_region_alias_lookalike_still_raises_error(self) -> None:
         """Test that a string merely resembling an alias still raises."""
@@ -127,7 +127,7 @@ class TestRoutingConfig:
             ValidationError,
             match="Only one routing option allowed",
         ):
-            RoutingConfig(region="us-east-1b", single_host="example.com")
+            RoutingConfig(region="us-central-1a", single_host="example.com")
 
     def test_mutual_exclusivity_region_and_base_domain(self) -> None:
         """Test that region and base_domain cannot both be set."""
@@ -135,7 +135,7 @@ class TestRoutingConfig:
             ValidationError,
             match="Only one routing option allowed",
         ):
-            RoutingConfig(region="us-east-1b", base_domain="example.com")
+            RoutingConfig(region="us-central-1a", base_domain="example.com")
 
     def test_mutual_exclusivity_single_host_and_base_domain(self) -> None:
         """Test that single_host and base_domain cannot both be set."""
@@ -221,6 +221,9 @@ class TestSecurityConfig:
         """Test default security config values."""
         security = SecurityConfig()
         assert security.request_verify is True
+        assert security.ssl_ca_cert == ""
+        assert security.client_cert == ""
+        assert security.client_key == ""
 
     def test_disable_verification(self) -> None:
         """Test disabling request verification."""
@@ -281,14 +284,14 @@ class TestConfig:
         config = Config(
             profile=ProfileConfig(name="production"),
             auth=AuthConfig(api_key="ak-prod123"),
-            routing=RoutingConfig(region="us-east-1b"),
+            routing=RoutingConfig(region="us-central-1a"),
             transport=TransportConfig(stream_max_workers=16),
             security=SecurityConfig(request_verify=False),
             output=OutputConfig(format="json"),
         )
         assert config.profile.name == "production"
         assert config.auth.api_key == "ak-prod123"
-        assert config.routing.region == "us-east-1b"
+        assert config.routing.region == "us-central-1a"
         assert config.transport.stream_max_workers == 16
         assert config.security.request_verify is False
         assert config.output.format == "json"
@@ -308,14 +311,14 @@ class TestConfig:
         config = Config(
             profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="ak-test123"),
-            routing=RoutingConfig(region="us-east-1b"),
+            routing=RoutingConfig(region="us-central-1a"),
             transport=TransportConfig(stream_max_workers=16),
         )
         sdk_config = config.to_sdk_config()
 
         assert isinstance(sdk_config, SDKConfiguration)
         assert sdk_config.api_key == "ak-test123"
-        assert sdk_config.region == Region("us-east-1b")
+        assert sdk_config.region == Region("us-central-1a")
         assert sdk_config.stream_max_workers == 16
 
     def test_to_sdk_config_with_single_endpoint(self) -> None:
@@ -372,6 +375,60 @@ class TestConfig:
 
         assert sdk_config.default_headers == cli_default_headers()
 
+    def test_to_sdk_config_passes_client_cert_and_ca(self, tmp_path) -> None:
+        cert = tmp_path / "client.crt"
+        key = tmp_path / "client.key"
+        ca = tmp_path / "ca.pem"
+        cert.write_text("cert")
+        key.write_text("key")
+        key.chmod(0o600)
+        ca.write_text("ca")
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="ak-test123"),
+            security=SecurityConfig(
+                client_cert=str(cert),
+                client_key=str(key),
+                ssl_ca_cert=str(ca),
+            ),
+        )
+        sdk_config = config.to_sdk_config()
+
+        assert sdk_config.client_cert == str(cert)
+        assert sdk_config.client_key == str(key)
+        assert sdk_config.ssl_ca_cert == str(ca)
+        assert sdk_config.requests_verify == str(ca)
+
+    def test_to_sdk_config_expands_tilde_in_ssl_ca_cert(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        (tmp_path / "ca.pem").write_text("ca")
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="ak-test123"),
+            security=SecurityConfig(ssl_ca_cert="~/ca.pem"),
+        )
+        sdk_config = config.to_sdk_config()
+
+        assert sdk_config.ssl_ca_cert == str(tmp_path / "ca.pem")
+        assert sdk_config.requests_verify == str(tmp_path / "ca.pem")
+
+    def test_to_sdk_config_leaves_sdk_env_fallback_when_unset(
+        self, tmp_path, monkeypatch
+    ) -> None:
+        ca = tmp_path / "ca.pem"
+        ca.write_text("ca")
+        monkeypatch.setenv("ARIZE_SSL_CA_CERT", str(ca))
+        config = Config(
+            profile=ProfileConfig(name="test"),
+            auth=AuthConfig(api_key="ak-test123"),
+        )
+        sdk_config = config.to_sdk_config()
+
+        assert sdk_config.ssl_ca_cert == str(ca)
+        assert sdk_config.client_cert == ""
+
 
 class TestUpdateConfig:
     """Tests for UpdateConfig model."""
@@ -395,3 +452,9 @@ class TestUpdateConfig:
         )
         assert config.update.check_interval_hours == 12.0
         assert config.update.enabled is False
+
+
+@pytest.mark.parametrize("region", ["us-east-1b", "us-east-1"])
+def test_unavailable_aws_region_rejected(region: str) -> None:
+    with pytest.raises(ValidationError, match="Invalid region"):
+        RoutingConfig(region=region)

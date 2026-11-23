@@ -55,23 +55,39 @@ def _style_for_kind(kind: str) -> str:
     return _KIND_STYLE.get(kind, _DEFAULT_KIND_STYLE)
 
 
+def _span_id(span: Span) -> str:
+    """Read a span ID or report an incomplete API response."""
+    if span.context is None or not span.context.span_id:
+        raise APIError("Trace response contains a span without an ID")
+    return span.context.span_id
+
+
+def _span_sort_key(span: Span) -> datetime:
+    """Keep spans without a start time first in the trace tree."""
+    return span.start_time or datetime.min.replace(tzinfo=timezone.utc)
+
+
 def _format_duration_milliseconds(span: Span) -> str:
     """Format a span duration as integer milliseconds."""
+    if span.end_time is None or span.start_time is None:
+        return "unknown duration"
     milliseconds = (span.end_time - span.start_time).total_seconds() * 1000
     return f"{milliseconds:.0f}ms"
 
 
 def _span_label(span: Span, *, full_span_id: bool) -> str:
     """Build the Rich-markup label for one span."""
-    span_id = span.context.span_id if full_span_id else span.context.span_id[:7]
+    span_id = _span_id(span)
+    if not full_span_id:
+        span_id = span_id[:7]
     span_id = escape(span_id)
-    kind = span.kind.value
+    kind = span.kind.value if span.kind is not None else "UNKNOWN"
     kind_style = _style_for_kind(kind)
     status = span.status_code.value if span.status_code else "OK"
     status_symbol = "[red]✗[/red]" if status == "ERROR" else "[green]✓[/green]"
     return (
         f"[dim]{span_id}[/dim] ([{kind_style}]{escape(kind)}[/{kind_style}]) "
-        f"{status_symbol} {escape(span.name)} - "
+        f"{status_symbol} {escape(span.name or 'Unnamed span')} - "
         f"{_format_duration_milliseconds(span)}"
     )
 
@@ -89,7 +105,7 @@ def _trace_cost(trace: Trace) -> float | None:
     """
     total = 0.0
     found = False
-    for span in trace.spans:
+    for span in trace.spans or []:
         cost = (span.attributes or {}).get(SpanAttributes.LLM_COST_TOTAL)
         if isinstance(cost, (int, float)) and not isinstance(cost, bool):
             total += float(cost)
@@ -115,7 +131,7 @@ def _append_span_tree_lines(
 ) -> None:
     """Append a span tree in depth-first order."""
     stack = [(root, "│  ", is_last_root)]
-    visited_span_ids = {root.context.span_id}
+    visited_span_ids = {_span_id(root)}
     while stack:
         span, prefix, is_last = stack.pop()
         connector = "└─" if is_last else "├─"
@@ -126,12 +142,12 @@ def _append_span_tree_lines(
 
         child_prefix = prefix + ("   " if is_last else "│  ")
         span_children = sorted(
-            children.get(span.context.span_id, []),
-            key=lambda child: child.start_time,
+            children.get(_span_id(span), []),
+            key=_span_sort_key,
         )
         unvisited_children = []
         for child in span_children:
-            child_span_id = child.context.span_id
+            child_span_id = _span_id(child)
             if child_span_id in visited_span_ids:
                 continue
             visited_span_ids.add(child_span_id)
@@ -156,21 +172,25 @@ def _trace_lines(trace: Trace, *, full_span_ids: bool = False) -> list[str]:
     hit. Any span whose parent was dropped the same way is treated as an
     additional top-level branch rather than causing a crash.
     """
-    lines = [f"┌─ Trace: [bold]{escape(trace.trace_id)}[/bold]", "│"]
+    lines = [
+        f"┌─ Trace: [bold]{escape(trace.trace_id or 'Unknown trace')}[/bold]",
+        "│",
+    ]
 
-    spans_by_id = {s.context.span_id: s for s in trace.spans}
+    spans = trace.spans or []
+    spans_by_id = {_span_id(span): span for span in spans}
     children: dict[str, list[Span]] = {}
-    for span in trace.spans:
+    for span in spans:
         if span.parent_id is not None:
             children.setdefault(span.parent_id, []).append(span)
 
     roots = sorted(
         (
             s
-            for s in trace.spans
+            for s in spans
             if s.parent_id is None or s.parent_id not in spans_by_id
         ),
-        key=lambda s: s.start_time,
+        key=_span_sort_key,
     )
 
     if not roots:
@@ -179,7 +199,7 @@ def _trace_lines(trace: Trace, *, full_span_ids: bool = False) -> list[str]:
         )
         return lines
 
-    display_root = spans_by_id.get(trace.root_span_id) or roots[0]
+    display_root = spans_by_id.get(trace.root_span_id or "") or roots[0]
     attributes = display_root.attributes or {}
     input_value = attributes.get(SpanAttributes.INPUT_VALUE)
     output_value = attributes.get(SpanAttributes.OUTPUT_VALUE)
@@ -243,7 +263,7 @@ def _render_traces_graph(
     single-line so the tree structure never reflows.
     """
     term_width = shutil.get_terminal_size(fallback=(200, 24)).columns
-    for index, trace in enumerate(response.traces):
+    for index, trace in enumerate(response.traces or []):
         if index:
             output_console.print()
             output_console.print(_TRACE_SEPARATOR)
@@ -257,7 +277,7 @@ def _render_traces_graph(
                 )
 
     pagination = response.pagination
-    if getattr(pagination, "has_more", False):
+    if pagination is not None and pagination.has_more:
         output_console.print(
             f"[dim]cursor:[/dim] {pagination.next_cursor}  "
             "[dim]· pass --cursor to fetch the next page[/dim]"
@@ -390,7 +410,7 @@ def list_traces(
                 output_file=output_file,
             )
         else:
-            text(f"Found {len(response.traces)} trace(s)")
+            text(f"Found {len(response.traces or [])} trace(s)")
             _render_traces_graph(response, full_span_ids=verbose)
 
 

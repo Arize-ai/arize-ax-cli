@@ -7,11 +7,12 @@ from typing import Any, TypeVar, overload
 
 import tomli_w
 import tomllib
+from arize import Region
 from pydantic import ValidationError
 
-from ax.config.schema import Config
+from ax.config.schema import AuthConfig, AuthMethod, Config, RoutingConfig
 from ax.core.error_formatter import format_validation_error
-from ax.core.exceptions import ConfigError
+from ax.core.exceptions import ConfigError, RoutingConfigError
 
 T = TypeVar("T")
 
@@ -163,7 +164,9 @@ class ConfigManager:
             raise ConfigError(
                 f"Profile '{profile}' has an invalid configuration:\n\n"
                 f"{format_validation_error(e)}\n\n"
-                "Run 'ax profiles create' to recreate it."
+                "Run 'ax profiles create' to recreate it.\n"
+                "To remove local credentials, switch to another profile "
+                "and run 'ax profiles delete <name>'."
             ) from e
         except ValueError as e:
             raise ConfigError(
@@ -200,6 +203,41 @@ class ConfigManager:
                 tomli_w.dump(data, f)
         except Exception as e:
             raise ConfigError(f"Failed to save config: {e}") from e
+
+    @classmethod
+    def clear_oauth_credentials(
+        cls, profile: str
+    ) -> tuple[AuthConfig, object, object]:
+        """Clear local OAuth tokens without requiring valid routing settings.
+
+        Args:
+            profile: Profile name whose local tokens must be removed.
+
+        Returns:
+            Previous authentication credentials and the raw routing and
+            security settings.
+
+        Raises:
+            ConfigError: If the profile cannot be read, parsed, or saved.
+        """
+        if not profile:
+            raise ConfigError("No active profile configured.")
+        path = cls._get_config_path(profile)
+        try:
+            with path.open("rb") as f:
+                data = tomllib.load(f)
+            auth = AuthConfig.model_validate(data.get("auth", {}))
+            if auth.uses_oauth and auth.oauth is not None:
+                data["auth"]["auth_method"] = AuthMethod.OAUTH.value
+                data["auth"].pop("oauth", None)
+                path.write_text(tomli_w.dumps(data), encoding="utf-8")
+            return auth, data.get("routing", {}), data.get("security", {})
+        except ValidationError as e:
+            raise ConfigError(format_validation_error(e)) from e
+        except (OSError, ValueError) as e:
+            raise ConfigError(
+                f"Cannot clear credentials for profile '{profile}': {e}"
+            ) from e
 
     @staticmethod
     def profile_path(name: str) -> Path:
@@ -367,3 +405,35 @@ def _expand_env_var(value: str) -> str:
         )
 
     return re.sub(pattern, replace_var, value)
+
+
+def resolve_oauth_app_url(routing: object) -> str:
+    """Expand and validate routing before selecting the OAuth server URL."""
+    data = (
+        routing.model_dump() if isinstance(routing, RoutingConfig) else routing
+    )
+    if not isinstance(data, dict):
+        raise RoutingConfigError("OAuth routing must be a configuration table.")
+    try:
+        resolved = RoutingConfig(**_expand_config_dict(data))
+    except ValidationError as e:
+        raise RoutingConfigError(
+            f"Invalid OAuth routing: {format_validation_error(e)}"
+        ) from e
+    except ValueError as e:
+        raise RoutingConfigError(f"Cannot resolve OAuth routing: {e}") from e
+    if resolved.single_host:
+        # single_port is part of the single-endpoint override: on-prem
+        # deployments serve the app (and thus OAuth) on this host:port.
+        # Dropping it here makes the browser flow fall back to the scheme
+        # default (80/443) even though the user configured e.g. :4040.
+        if resolved.single_port:
+            return f"{resolved.app_scheme}://{resolved.single_host}:{resolved.single_port}"
+        return f"{resolved.app_scheme}://{resolved.single_host}"
+    if resolved.base_domain:
+        return f"https://app.{resolved.base_domain}"
+    if resolved.region == Region.US.value:
+        return "https://app.arize.com"
+    if resolved.region:
+        return f"https://app.{resolved.region}.arize.com"
+    return f"{resolved.app_scheme}://{resolved.app_host}"

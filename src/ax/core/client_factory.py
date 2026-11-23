@@ -5,8 +5,9 @@ from dataclasses import asdict
 from arize import ArizeClient
 
 from ax.auth.bearer import get_active_bearer
-from ax.config.manager import ConfigManager
+from ax.config.manager import ConfigManager, resolve_oauth_app_url
 from ax.config.schema import Config
+from ax.config.tls import resolve_tls
 
 
 def make_client() -> tuple[ArizeClient, Config]:
@@ -20,7 +21,8 @@ def make_client() -> tuple[ArizeClient, Config]:
         calls and ``config`` for things like output format defaults.
 
     Raises:
-        ConfigError: if no active profile is set.
+        ConfigError: if no active profile is set or its TLS settings are
+            invalid.
     """
     # Resolve the profile name once so load() and profile_path() agree even
     # if the active-profile file changes underfoot. ConfigManager.load()
@@ -30,7 +32,8 @@ def make_client() -> tuple[ArizeClient, Config]:
     bearer = get_active_bearer(
         config.auth,
         profile_path=profile_path,
-        base_url=config.routing.resolve_app_url(),
+        base_url=resolve_oauth_app_url(config.routing),
+        tls=resolve_tls(config.security),
     )
     client = ArizeClient(**asdict(config.to_sdk_config(bearer=bearer)))
     return client, config

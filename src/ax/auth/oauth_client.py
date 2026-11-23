@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 import requests
 
-from ax.core.exceptions import AuthenticationError
+from ax.config.tls import TLSSettings
+from ax.core.exceptions import AuthenticationError, MfaRequiredError
 
 _log = logging.getLogger(__name__)
 
@@ -20,6 +21,24 @@ class TokenResponse:
     refresh_token: str
     expires_in: int  # seconds
     user_email: str | None = None
+
+
+def _raise_for_token_error(resp: requests.Response) -> None:
+    if resp.status_code == 400:
+        try:
+            body = resp.json()
+        except ValueError:
+            body = None
+        if (
+            isinstance(body, dict)
+            and body.get("error") == "invalid_grant"
+            and body.get("error_description") == "mfa_required"
+        ):
+            raise MfaRequiredError(
+                "Your account requires MFA verification. "
+                "Run 'ax auth login' to sign in again."
+            )
+    resp.raise_for_status()
 
 
 def _parse_token_response(resp: requests.Response) -> dict:
@@ -102,29 +121,42 @@ class OAuthClient:
     """HTTP client for the Arize app's /oauth2/{token,revoke} endpoints."""
 
     def __init__(
-        self, base_url: str, client_id: str, timeout: float = 10.0
+        self,
+        base_url: str,
+        client_id: str,
+        timeout: float = 10.0,
+        tls: TLSSettings | None = None,
     ) -> None:
-        """Pin the base URL and OAuth client_id used by every request."""
+        """Pin the base URL, OAuth client_id, and TLS settings of every request."""
         self._base = base_url.rstrip("/")
         self._client_id = client_id
         self._timeout = timeout
+        self._tls = tls or TLSSettings()
+
+    def _post(self, path: str, data: dict[str, str]) -> requests.Response:
+        return requests.post(
+            f"{self._base}{path}",
+            data=data,
+            timeout=self._timeout,
+            verify=self._tls.verify,
+            cert=self._tls.cert,
+        )
 
     def exchange_code(
         self, *, code: str, code_verifier: str, redirect_uri: str
     ) -> TokenResponse:
         """POST /oauth2/token with grant_type=authorization_code."""
-        resp = requests.post(
-            f"{self._base}/oauth2/token",
-            data={
+        resp = self._post(
+            "/oauth2/token",
+            {
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": redirect_uri,
                 "client_id": self._client_id,
                 "code_verifier": code_verifier,
             },
-            timeout=self._timeout,
         )
-        resp.raise_for_status()
+        _raise_for_token_error(resp)
         body = _parse_token_response(resp)
         email = (
             _decode_email_from_id_token(body["id_token"])
@@ -140,16 +172,15 @@ class OAuthClient:
 
     def refresh(self, *, refresh_token: str) -> TokenResponse:
         """POST /oauth2/token with grant_type=refresh_token."""
-        resp = requests.post(
-            f"{self._base}/oauth2/token",
-            data={
+        resp = self._post(
+            "/oauth2/token",
+            {
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
                 "client_id": self._client_id,
             },
-            timeout=self._timeout,
         )
-        resp.raise_for_status()
+        _raise_for_token_error(resp)
         body = _parse_token_response(resp)
         return TokenResponse(
             access_token=body["access_token"],
@@ -170,10 +201,9 @@ class OAuthClient:
         profile clear honors the user's intent regardless.
         """
         try:
-            resp = requests.post(
-                f"{self._base}/oauth2/revoke",
-                data={"token": token, "client_id": self._client_id},
-                timeout=self._timeout,
+            resp = self._post(
+                "/oauth2/revoke",
+                {"token": token, "client_id": self._client_id},
             )
             if resp.status_code != 200:
                 _log.warning(

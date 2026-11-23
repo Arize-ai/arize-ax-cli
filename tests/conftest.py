@@ -64,7 +64,7 @@ def sample_config_data() -> dict[str, object]:
     return {
         "profile": {"name": "test"},
         "auth": {"api_key": "ak-test123"},
-        "routing": {"region": "us-east-1b"},
+        "routing": {"region": "us-central-1a"},
         "transport": {
             "stream_max_workers": 8,
             "stream_max_queue_bound": 5000,

@@ -48,6 +48,9 @@ ENV_VAR_MAPPING = {
     "pyarrow_max_chunksize": "ARIZE_MAX_CHUNKSIZE",
     "max_http_payload_size_mb": "ARIZE_MAX_HTTP_PAYLOAD_SIZE_MB",
     "request_verify": "ARIZE_REQUEST_VERIFY",
+    "ssl_ca_cert": "ARIZE_SSL_CA_CERT",
+    "client_cert": "ARIZE_CLIENT_CERT",
+    "client_key": "ARIZE_CLIENT_KEY",
 }
 
 
@@ -66,7 +69,7 @@ def create_config_interactively(
 
     For ``auth_method="oauth"`` the returned Config has an empty (logged-out)
     OAuth AuthConfig — the caller is expected to run the browser flow against
-    ``config.routing.resolve_app_url()`` and populate ``config.auth.oauth``
+    ``resolve_oauth_app_url(config.routing)`` and populate ``config.auth.oauth``
     before persisting.
     """
     mode = SetupMode.SIMPLE
@@ -208,6 +211,12 @@ _TRANSPORT_KEYS = (
     "pyarrow_max_chunksize",
     "max_http_payload_size_mb",
 )
+_SECURITY_KEYS = (
+    "request_verify",
+    "ssl_ca_cert",
+    "client_cert",
+    "client_key",
+)
 
 
 def create_config_from_flags(
@@ -240,8 +249,9 @@ def create_config_from_flags(
     if transport:
         data["transport"] = transport
 
-    if "request_verify" in flat:
-        data["security"] = {"request_verify": flat["request_verify"]}
+    security = {k: flat[k] for k in _SECURITY_KEYS if k in flat}
+    if security:
+        data["security"] = security
 
     if "output_format" in flat:
         data["output"] = {"format": flat["output_format"]}
@@ -277,8 +287,7 @@ def merge_config_with_flags(existing: Config, flat: dict[str, Any]) -> Config:
     data["routing"].update({k: flat[k] for k in _ROUTING_KEYS if k in flat})
     data["transport"].update({k: flat[k] for k in _TRANSPORT_KEYS if k in flat})
 
-    if "request_verify" in flat:
-        data["security"]["request_verify"] = flat["request_verify"]
+    data["security"].update({k: flat[k] for k in _SECURITY_KEYS if k in flat})
 
     if "output_format" in flat:
         data["output"]["format"] = flat["output_format"]
@@ -296,21 +305,6 @@ _ENV_TRANSPORT_FIELDS = frozenset(_TRANSPORT_KEYS)
 def _env_ref(env_var_name: str) -> str:
     """Convert an env var name to a ``${NAME}`` reference string."""
     return f"${{{env_var_name}}}"
-
-
-def routing_from_env(env_vars: dict[str, str]) -> RoutingConfig:
-    """Build a RoutingConfig populated with current literal env values.
-
-    Use this when you need the *current* routing values (e.g. for an OAuth
-    browser flow's base_url). The returned config does NOT contain ``${VAR}``
-    references; it captures the values at this moment.
-    """
-    kwargs = {
-        field: os.environ[env_vars[field]]
-        for field in _ENV_ROUTING_FIELDS
-        if field in env_vars
-    }
-    return RoutingConfig(**kwargs)
 
 
 def create_config_from_env_vars(
@@ -346,9 +340,11 @@ def create_config_from_env_vars(
     transport_config = TransportConfig(**transport_kwargs)
 
     # Build SecurityConfig
-    security_kwargs = {}
-    if "request_verify" in env_vars:
-        security_kwargs["request_verify"] = _env_ref(env_vars["request_verify"])
+    security_kwargs = {
+        field: _env_ref(env_vars[field])
+        for field in _SECURITY_KEYS
+        if field in env_vars
+    }
     security_config = SecurityConfig(**security_kwargs)
 
     output_config = OutputConfig(

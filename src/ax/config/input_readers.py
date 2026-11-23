@@ -21,13 +21,13 @@ from ax.utils.console import console, prompt
 
 INSERT_VALUE = "Insert value"
 USE_ENV_VAR = "Use environment variable"
-UNSET_REGION_MSG = "(default - no region needed for US)"
+NO_VALUE = "None"
+US_REGION_LABEL = "US (United States, default)"
 
 REGION_LABELS: dict[str, str] = {
-    Region.US_EAST_1B.value: "us-east-1b  (US East)",
-    Region.US_CENTRAL_1A.value: "us-central-1a  (US Central)",
-    Region.EU_WEST_1A.value: "eu-west-1a  (EU West)",
-    Region.CA_CENTRAL_1A.value: "ca-central-1a  (Canada)",
+    Region.US.value: US_REGION_LABEL,
+    Region.EU.value: "EU (Europe)",
+    Region.CA.value: "CA (Canada)",
 }
 
 
@@ -118,14 +118,13 @@ def read_region() -> str:
     """Read the region from user selection or environment variable."""
     region_by_label = {label: region for region, label in REGION_LABELS.items()}
     choices = [
-        UNSET_REGION_MSG,
         *region_by_label,
         USE_ENV_VAR,
     ]
     region_choice = questionary.select(
         "Region:",
         choices=choices,
-        default=choices[0],
+        default=US_REGION_LABEL,
     ).ask()
     if region_choice is None:
         raise typer.Abort()
@@ -135,11 +134,7 @@ def read_region() -> str:
         )
         region = f"${{{region_choice}}}"
     else:
-        region = (
-            ""
-            if region_choice == UNSET_REGION_MSG
-            else region_by_label[region_choice]
-        )
+        region = region_by_label[region_choice]
 
     return region
 
@@ -276,10 +271,66 @@ def read_request_verify() -> bool | str:
     return value
 
 
+def _read_optional_path(msg: str, env_var: str, example: str) -> str:
+    """Read an optional file path from user input or an env var reference."""
+    choices = [NO_VALUE, INSERT_VALUE, USE_ENV_VAR]
+    choice = questionary.select(
+        f"{msg}:",
+        choices=choices,
+        default=choices[0],
+    ).ask()
+    if choice is None:
+        raise typer.Abort()
+    if choice == NO_VALUE:
+        return ""
+    if choice == USE_ENV_VAR:
+        name = prompt(f"Environment variable name for {msg}", default=env_var)
+        return f"${{{name}}}"
+    return prompt(f"{msg} path (e.g., {example})")
+
+
+def read_client_cert_pair() -> tuple[str, str]:
+    """Read the mutual TLS client certificate and key paths."""
+    msg = "Client certificate for mutual TLS"
+    choices = [NO_VALUE, INSERT_VALUE, USE_ENV_VAR]
+    choice = questionary.select(
+        f"{msg}:",
+        choices=choices,
+        default=choices[0],
+    ).ask()
+    if choice is None:
+        raise typer.Abort()
+    if choice == NO_VALUE:
+        return "", ""
+    if choice == USE_ENV_VAR:
+        cert = prompt(
+            "Environment variable name for the client certificate",
+            default="ARIZE_CLIENT_CERT",
+        )
+        key = prompt(
+            "Environment variable name for the client key",
+            default="ARIZE_CLIENT_KEY",
+        )
+        return f"${{{cert}}}", f"${{{key}}}"
+    cert = prompt("Client certificate path (e.g., ~/.arize/client.crt)")
+    key = prompt("Client key path, unencrypted (e.g., ~/.arize/client.key)")
+    return cert, key
+
+
 def read_security() -> SecurityConfig:
     """Read security configuration from user input."""
+    request_verify = read_request_verify()
+    ssl_ca_cert = _read_optional_path(
+        "Custom CA bundle",
+        env_var="ARIZE_SSL_CA_CERT",
+        example="/etc/ssl/certs/corp-ca.pem",
+    )
+    client_cert, client_key = read_client_cert_pair()
     return SecurityConfig(
-        request_verify=read_request_verify(),
+        request_verify=request_verify,
+        ssl_ca_cert=ssl_ca_cert,
+        client_cert=client_cert,
+        client_key=client_key,
     )
 
 

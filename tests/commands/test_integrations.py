@@ -8,16 +8,21 @@ from arize.integrations.types import (
     CreateAnthropicConfig,
     CreateAwsBedrockAuth,
     CreateAwsBedrockConfig,
+    CreateCloudflareConfig,
     CreateCustomConfig,
+    CreateDeepSeekConfig,
     CreateFireworksConfig,
     CreateLiteLlmConfig,
     CreateLlmConfig,
     CreateNvidiaNimConfig,
     CreateOpenAiConfig,
+    CreatePerplexityConfig,
     CreateTogetherAiConfig,
+    CreateTypeSafeAiConfig,
     CreateVertexAiConfig,
     IntegrationScoping,
     IntegrationType,
+    LlmIntegrationProvider,
     UpdateAgentRequestPresetInput,
 )
 from typer.testing import CliRunner, Result
@@ -31,6 +36,7 @@ runner = CliRunner()
 # ---------------------------------------------------------------------------
 
 _INTEGRATION_ID = "int_test_1"
+_CLOUDFLARE_ACCOUNT_ID = "0123456789abcdef0123456789abcdef"
 
 
 def _make_integration(
@@ -142,11 +148,35 @@ class TestListIntegrations:
 
         mock_client.integrations.list.assert_called_once_with(
             integration_type=IntegrationType.AGENT,
+            provider=None,
             name="openai",
             space="sp_abc",
             limit=5,
             cursor="tok",
         )
+
+    def test_list_provider_filter_forwarded(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --provider is passed to the SDK as a provider enum."""
+        mock_client.integrations.list.return_value = _make_list_response()
+
+        result = _invoke(
+            [
+                "integrations",
+                "list",
+                "--type",
+                "LLM",
+                "--provider",
+                "CLOUDFLARE",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        _, kwargs = mock_client.integrations.list.call_args
+        assert kwargs["provider"] == LlmIntegrationProvider.CLOUDFLARE
 
     def test_list_defaults_omit_type(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -158,6 +188,7 @@ class TestListIntegrations:
 
         mock_client.integrations.list.assert_called_once_with(
             integration_type=None,
+            provider=None,
             name=None,
             space=None,
             limit=15,
@@ -559,6 +590,64 @@ class TestCreateLlmIntegration:
             )
         )
 
+    def test_create_llm_deep_seek_requires_api_key(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that DEEP_SEEK builds the config from the API key."""
+        mock_client.integrations.create_llm.return_value = _make_integration()
+
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "my-deep-seek",
+                "--provider",
+                "DEEP_SEEK",
+                "--api-key",
+                "deepseek-key-x",
+                "--model-name",
+                "deepseek-flash",
+                "--enable-default-models",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        config = mock_client.integrations.create_llm.call_args.kwargs["config"]
+        assert config == CreateLlmConfig(
+            actual_instance=CreateDeepSeekConfig(
+                provider="DEEP_SEEK",
+                api_key="deepseek-key-x",
+                model_names=["deepseek-flash"],
+                is_default_models_enabled=True,
+            )
+        )
+
+    def test_create_llm_deep_seek_rejects_missing_api_key(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that DEEP_SEEK without --api-key exits with a usage error."""
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "my-deep-seek",
+                "--provider",
+                "DEEP_SEEK",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code != 0
+        assert "--api-key" in result.output
+        mock_client.integrations.create_llm.assert_not_called()
+
     def test_create_llm_bedrock_parses_auth(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
@@ -695,6 +784,157 @@ class TestCreateLlmIntegration:
 
         assert result.exit_code == 2
         assert "JSON array" in result.output
+        mock_client.integrations.create_llm.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("provider", "expected"),
+        [
+            (
+                "TYPE_SAFE_AI",
+                CreateTypeSafeAiConfig(provider="TYPE_SAFE_AI", api_key="k-1"),
+            ),
+            (
+                "PERPLEXITY",
+                CreatePerplexityConfig(provider="PERPLEXITY", api_key="k-1"),
+            ),
+        ],
+    )
+    def test_create_llm_decision_judge_api_key_providers(
+        self,
+        mock_config: MagicMock,
+        mock_client: MagicMock,
+        provider: str,
+        expected: object,
+    ) -> None:
+        """Test that TYPE_SAFE_AI and PERPLEXITY build an api-key-only config."""
+        mock_client.integrations.create_llm.return_value = _make_integration()
+
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "judge-provider",
+                "--provider",
+                provider,
+                "--api-key",
+                "k-1",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        config = mock_client.integrations.create_llm.call_args.kwargs["config"]
+        assert config == CreateLlmConfig(actual_instance=expected)
+
+    def test_create_llm_cloudflare_requires_account_id(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that CLOUDFLARE builds the config from the token and account."""
+        mock_client.integrations.create_llm.return_value = _make_integration()
+
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "my-cloudflare",
+                "--provider",
+                "CLOUDFLARE",
+                "--api-key",
+                "cf-token",
+                "--account-id",
+                _CLOUDFLARE_ACCOUNT_ID,
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        config = mock_client.integrations.create_llm.call_args.kwargs["config"]
+        assert config == CreateLlmConfig(
+            actual_instance=CreateCloudflareConfig(
+                provider="CLOUDFLARE",
+                api_key="cf-token",
+                account_id=_CLOUDFLARE_ACCOUNT_ID,
+            )
+        )
+
+    def test_create_llm_cloudflare_missing_account_id_is_usage_error(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "my-cloudflare",
+                "--provider",
+                "CLOUDFLARE",
+                "--api-key",
+                "cf-token",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 2
+        assert "--account-id" in result.output
+        mock_client.integrations.create_llm.assert_not_called()
+
+    def test_create_llm_cloudflare_invalid_account_id_is_usage_error(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "my-cloudflare",
+                "--provider",
+                "CLOUDFLARE",
+                "--api-key",
+                "cf-token",
+                "--account-id",
+                "too-short",
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 2
+        mock_client.integrations.create_llm.assert_not_called()
+
+    @pytest.mark.parametrize("provider", ["OPEN_AI", "PERPLEXITY"])
+    def test_create_llm_account_id_rejected_for_other_providers(
+        self, mock_config: MagicMock, mock_client: MagicMock, provider: str
+    ) -> None:
+        result = _invoke(
+            [
+                "integrations",
+                "create",
+                "llm",
+                "--name",
+                "x",
+                "--provider",
+                provider,
+                "--api-key",
+                "k-1",
+                "--account-id",
+                _CLOUDFLARE_ACCOUNT_ID,
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 2
+        assert "--account-id" in result.output
+        assert "CLOUDFLARE" in result.output
         mock_client.integrations.create_llm.assert_not_called()
 
     def test_create_llm_sdk_error_exits_nonzero(
@@ -883,6 +1123,31 @@ class TestUpdateLlmIntegration:
             integration=_INTEGRATION_ID,
             space=None,
             api_key="sk-new",
+        )
+
+    def test_update_llm_forwards_account_id(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        mock_client.integrations.update_llm.return_value = _make_integration()
+
+        result = _invoke(
+            [
+                "integrations",
+                "update",
+                "llm",
+                _INTEGRATION_ID,
+                "--account-id",
+                _CLOUDFLARE_ACCOUNT_ID,
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        mock_client.integrations.update_llm.assert_called_once_with(
+            integration=_INTEGRATION_ID,
+            space=None,
+            account_id=_CLOUDFLARE_ACCOUNT_ID,
         )
 
     def test_update_llm_maps_name_and_function_calling(

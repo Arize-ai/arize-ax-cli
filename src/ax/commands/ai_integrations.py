@@ -9,12 +9,16 @@ from arize.ai_integrations.types import (
     AiIntegrationScoping,
     AwsProviderMetadataKind,
     AwsProviderMetadataRequest,
+    CloudflareProviderMetadataKind,
+    CloudflareProviderMetadataRequest,
     GcpProviderMetadataKind,
     GcpProviderMetadataRequest,
 )
+from pydantic import ValidationError as PydanticValidationError
 
 from ax.core.client_factory import make_client
 from ax.core.decorators import handle_errors
+from ax.core.error_formatter import format_validation_error
 from ax.core.exceptions import APIError, UsageError
 from ax.core.output import output_data
 from ax.utils.console import (
@@ -64,7 +68,12 @@ def _parse_provider_metadata(
     *,
     provider: AiIntegrationProvider,
     provider_metadata: dict[str, Any] | None,
-) -> AwsProviderMetadataRequest | GcpProviderMetadataRequest | None:
+) -> (
+    AwsProviderMetadataRequest
+    | GcpProviderMetadataRequest
+    | CloudflareProviderMetadataRequest
+    | None
+):
     if provider_metadata is None:
         return None
 
@@ -97,8 +106,32 @@ def _parse_provider_metadata(
             )
         return parsed_gcp
 
+    if provider == AiIntegrationProvider.CLOUDFLARE:
+        cloudflare_kind = CloudflareProviderMetadataKind.CLOUDFLARE.value
+        normalized.setdefault("kind", cloudflare_kind)
+        if normalized.get("kind") != cloudflare_kind:
+            raise UsageError(
+                f"--provider-metadata.kind must be {cloudflare_kind!r} "
+                "for CLOUDFLARE"
+            )
+        try:
+            parsed_cloudflare = CloudflareProviderMetadataRequest.from_dict(
+                normalized
+            )
+        except PydanticValidationError as exc:
+            raise UsageError(
+                "--provider-metadata is invalid for CLOUDFLARE: "
+                f"{format_validation_error(exc)}"
+            ) from exc
+        if parsed_cloudflare is None:
+            raise UsageError(
+                "--provider-metadata is missing or invalid for CLOUDFLARE"
+            )
+        return parsed_cloudflare
+
     raise UsageError(
-        "--provider-metadata is only supported for AWS_BEDROCK and VERTEX_AI"
+        "--provider-metadata is only supported for AWS_BEDROCK, VERTEX_AI, "
+        "and CLOUDFLARE"
     )
 
 
@@ -119,6 +152,17 @@ def list_ai_integrations(
             "--space",
             "-s",
             help="Space name or ID to filter integrations",
+        ),
+    ] = None,
+    provider: Annotated[
+        AiIntegrationProvider | None,
+        typer.Option(
+            "--provider",
+            help=(
+                "Filter by provider. TYPE_SAFE_AI, PERPLEXITY and CLOUDFLARE "
+                "integrations are listed only when this names them"
+            ),
+            case_sensitive=False,
         ),
     ] = None,
     limit: Annotated[
@@ -167,6 +211,7 @@ def list_ai_integrations(
             response = client.ai_integrations.list(
                 name=name,
                 space=space,
+                provider=provider,
                 limit=limit,
                 cursor=cursor,
             )
@@ -317,8 +362,9 @@ def create_ai_integration(
             "--provider-metadata",
             help=(
                 "Provider-specific metadata as a JSON object or path to a JSON file. "
-                "Required for AWS_BEDROCK (role_arn) and VERTEX_AI "
-                "(project_id, location, project_access_label)."
+                "Required for AWS_BEDROCK (role_arn), VERTEX_AI "
+                "(project_id, location, project_access_label), and "
+                "CLOUDFLARE (account_id)."
             ),
         ),
     ] = None,
@@ -347,6 +393,7 @@ def create_ai_integration(
     - AWS_BEDROCK: --provider-metadata '{"role_arn": "..."}'
     - VERTEX_AI:   --provider-metadata '{"project_id": "...",
                        "location": "...", "project_access_label": "..."}'
+    - CLOUDFLARE:  --provider-metadata '{"account_id": "<32 characters>"}'
     """
     parsed_headers = (
         _parse_json_option(headers, "--headers", dict) if headers else None
@@ -553,11 +600,20 @@ def update_ai_integration(
     parsed_headers = (
         _parse_json_option(headers, "--headers", dict) if headers else None
     )
-    parsed_provider_metadata = (
-        _parse_json_option(provider_metadata, "--provider-metadata", dict)
-        if provider_metadata
-        else None
-    )
+    parsed_provider_metadata = None
+    if provider_metadata is not None:
+        if provider is None:
+            raise UsageError(
+                "--provider-metadata requires --provider so the metadata "
+                "kind is known"
+            )
+        if provider_metadata:
+            parsed_provider_metadata = _parse_provider_metadata(
+                provider=provider,
+                provider_metadata=_parse_json_option(
+                    provider_metadata, "--provider-metadata", dict
+                ),
+            )
     parsed_scopings: list[AiIntegrationScoping] | None = (
         [
             AiIntegrationScoping(**item)

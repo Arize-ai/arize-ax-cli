@@ -13,9 +13,10 @@ from ax.config.manager import (
     _to_bool,
     _to_float,
     _to_int,
+    resolve_oauth_app_url,
 )
 from ax.config.schema import AuthConfig, Config, ProfileConfig, RoutingConfig
-from ax.core.exceptions import ConfigError
+from ax.core.exceptions import ConfigError, RoutingConfigError
 
 
 class TestConfigManager:
@@ -116,14 +117,14 @@ class TestConfigManager:
         config = Config(
             profile=ProfileConfig(name="test"),
             auth=AuthConfig(api_key="ak-test123"),
-            routing=RoutingConfig(region="us-east-1b"),
+            routing=RoutingConfig(region="us-central-1a"),
         )
 
         ConfigManager.save(config, profile="test")
         loaded_config = ConfigManager.load(profile="test")
 
         assert loaded_config.auth.api_key == "ak-test123"
-        assert loaded_config.routing.region == "us-east-1b"
+        assert loaded_config.routing.region == "us-central-1a"
 
     def test_save_updates_profile_name(self, mock_config_dir: Path) -> None:
         """Test that save updates the profile name in config."""
@@ -467,3 +468,51 @@ class TestHelperFunctions:
 
         result = _expand_config_dict(data)
         assert result == data
+
+
+@pytest.mark.parametrize("region", [None, "us-east-1b", "us-east-1"])
+def test_resolve_oauth_app_url_rejects_invalid_environment(
+    monkeypatch: pytest.MonkeyPatch, region: str | None
+) -> None:
+    routing = RoutingConfig(region="${AX_TEST_REGION}")
+    if region is None:
+        monkeypatch.delenv("AX_TEST_REGION", raising=False)
+    else:
+        monkeypatch.setenv("AX_TEST_REGION", region)
+    with pytest.raises(RoutingConfigError, match="OAuth routing"):
+        resolve_oauth_app_url(routing)
+    assert routing.region == "${AX_TEST_REGION}"
+
+
+@pytest.mark.parametrize(
+    ("region", "expected"),
+    [
+        ("US", "https://app.arize.com"),
+        ("EU", "https://app.eu-west-1a.arize.com"),
+        ("CA", "https://app.ca-central-1a.arize.com"),
+    ],
+)
+def test_resolve_oauth_app_url_preserves_environment_reference(
+    monkeypatch: pytest.MonkeyPatch, region: str, expected: str
+) -> None:
+    monkeypatch.setenv("AX_TEST_REGION", region)
+    routing = RoutingConfig(region="${AX_TEST_REGION}")
+    assert resolve_oauth_app_url(routing) == expected
+    assert routing.region == "${AX_TEST_REGION}"
+
+
+def test_invalid_profile_can_be_deleted_without_loading(
+    mock_config_dir: Path,
+) -> None:
+    profile = ConfigManager.profile_path("legacy")
+    profile.parent.mkdir(parents=True, exist_ok=True)
+    profile.write_text(
+        '[profile]\nname = "legacy"\n'
+        '[auth]\nauth_method = "oauth"\n'
+        '[routing]\nregion = "us-east-1b"\n'
+    )
+    with pytest.raises(ConfigError, match="ax profiles delete"):
+        ConfigManager.load("legacy")
+    assert profile.exists()
+    ConfigManager.delete_profile("legacy")
+    assert not profile.exists()

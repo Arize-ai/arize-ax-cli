@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.40.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.39.0...arize-ax-cli/v0.40.0) (2026-11-23)
+
+
+### 🎁 New Features
+
+* **Auth:** Present client certificates for mTLS ingress. ([#95672](https://github.com/Arize-ai/arize/issues/95672)) ([3dab947](https://github.com/Arize-ai/arize/commit/3dab947be2ecba1deed28c21007cae73a2b6600a))
+* **Evaluators:** List available evaluator templates. ([#95845](https://github.com/Arize-ai/arize/issues/95845)) ([c04afa5](https://github.com/Arize-ai/arize/commit/c04afa5834a85b59c45e8fdd99ba47b795ca479d))
+
+
+### 🐛 Bug Fixes
+
+* **Region:** Limit public regions to US, EU, and CA. ([#95572](https://github.com/Arize-ai/arize/issues/95572)) ([6fcfe88](https://github.com/Arize-ai/arize/commit/6fcfe88c313b4fc9ae6e18d5fe9d30e6a1b1e913))
+
 ## [0.39.0](https://github.com/Arize-ai/arize/compare/arize-ax-cli/v0.38.0...arize-ax-cli/v0.39.0) (2026-10-07)
 
 

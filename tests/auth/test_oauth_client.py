@@ -2,10 +2,15 @@ import base64
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+import requests
+
 from ax.auth.oauth_client import (
     OAuthClient,
     _decode_email_from_id_token,
 )
+from ax.config.tls import TLSSettings
+from ax.core.exceptions import MfaRequiredError
 
 
 def _fake_id_token(email: str) -> str:
@@ -153,6 +158,41 @@ class TestRefresh:
         assert body["client_id"] == "arize-cli"
         assert resp.access_token == "arz_at_new"
         assert resp.refresh_token == "arz_rt_new"
+
+
+class TestMfaRequired:
+    @pytest.mark.parametrize("grant", ["exchange", "refresh"])
+    def test_requires_new_browser_login(self, grant):
+        client = OAuthClient(
+            base_url="https://app.arize.com", client_id="arize-cli"
+        )
+        with patch("ax.auth.oauth_client.requests.post") as post:
+            post.return_value = _mock_response(
+                400,
+                {"error": "invalid_grant", "error_description": "mfa_required"},
+            )
+            with pytest.raises(MfaRequiredError, match="ax auth login"):
+                if grant == "refresh":
+                    client.refresh(refresh_token="saved-refresh")
+                else:
+                    client.exchange_code(
+                        code="code",
+                        code_verifier="verifier",
+                        redirect_uri="http://127.0.0.1/callback",
+                    )
+
+    @pytest.mark.parametrize(
+        "status,body",
+        [(400, {"error": "invalid_grant"}), (503, {"error": "server_error"})],
+    )
+    def test_preserves_other_http_errors(self, status, body):
+        client = OAuthClient(
+            base_url="https://app.arize.com", client_id="arize-cli"
+        )
+        with patch("ax.auth.oauth_client.requests.post") as post:
+            post.return_value = _mock_response(status, body)
+            with pytest.raises(requests.HTTPError):
+                client.refresh(refresh_token="saved-refresh")
 
 
 class TestRevoke:
@@ -318,3 +358,47 @@ class TestParseTokenResponseValidation:
             )
             resp = client.refresh(refresh_token="rt")
         assert resp.expires_in == 3600
+
+
+class TestClientCertificate:
+    _TLS = TLSSettings(
+        verify="/etc/arize/ca.pem",
+        cert=("/etc/arize/client.crt", "/etc/arize/client.key"),
+    )
+
+    def _client(self, tls: TLSSettings) -> OAuthClient:
+        return OAuthClient(
+            base_url="https://app.arize.com", client_id="arize-cli", tls=tls
+        )
+
+    def _token_response(self) -> MagicMock:
+        return _mock_response(
+            200,
+            {"access_token": "a", "refresh_token": "r", "expires_in": 60},
+        )
+
+    @pytest.mark.parametrize("call", ["exchange", "refresh", "revoke"])
+    def test_every_request_presents_cert_and_ca(self, call):
+        client = self._client(self._TLS)
+        with patch("ax.auth.oauth_client.requests.post") as post:
+            post.return_value = self._token_response()
+            if call == "exchange":
+                client.exchange_code(
+                    code="c", code_verifier="v", redirect_uri="u"
+                )
+            elif call == "refresh":
+                client.refresh(refresh_token="rt")
+            else:
+                client.revoke(token="t")
+        assert post.call_args.kwargs["cert"] == self._TLS.cert
+        assert post.call_args.kwargs["verify"] == "/etc/arize/ca.pem"
+
+    def test_defaults_keep_system_trust_and_no_cert(self):
+        client = OAuthClient(
+            base_url="https://app.arize.com", client_id="arize-cli"
+        )
+        with patch("ax.auth.oauth_client.requests.post") as post:
+            post.return_value = self._token_response()
+            client.refresh(refresh_token="rt")
+        assert post.call_args.kwargs["verify"] is True
+        assert post.call_args.kwargs["cert"] is None

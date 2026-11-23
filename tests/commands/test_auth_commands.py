@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+import tomllib
 from typer.testing import CliRunner
 
 from ax.commands.auth import app
@@ -14,6 +15,7 @@ from ax.config.schema import (
     OAuthCredentials,
     ProfileConfig,
     RoutingConfig,
+    SecurityConfig,
 )
 
 runner = CliRunner()
@@ -306,3 +308,174 @@ class TestLogout:
         assert result.exit_code == 0
         assert "already logged out" in result.stdout
         client_cls.return_value.revoke.assert_not_called()
+
+
+def _tls_files(tmp_path: Path) -> dict[str, str]:
+    cert = tmp_path / "client.crt"
+    key = tmp_path / "client.key"
+    ca = tmp_path / "ca.pem"
+    cert.write_text("cert")
+    key.write_text("key")
+    key.chmod(0o600)
+    ca.write_text("ca")
+    return {
+        "client_cert": str(cert),
+        "client_key": str(key),
+        "ssl_ca_cert": str(ca),
+    }
+
+
+class TestClientCertificate:
+    def test_login_presents_profile_cert(self, tmp_path: Path):
+        files = _tls_files(tmp_path)
+        cfg = _logged_out_oauth_config().model_copy(
+            update={"security": SecurityConfig(**files)}
+        )
+        ConfigManager.save(cfg, "p1")
+        ConfigManager.set_active_profile("p1")
+        with (
+            patch("ax.commands.auth.webbrowser.open"),
+            patch("ax.commands.auth.LoopbackServer") as srv_cls,
+            patch("ax.commands.auth.OAuthClient") as client_cls,
+        ):
+            srv_cls.return_value.port = 1234
+            srv_cls.return_value.wait.return_value = MagicMock(
+                code="c", state="s"
+            )
+            client_cls.return_value.exchange_code.return_value = MagicMock(
+                access_token="new",
+                refresh_token="new",
+                expires_in=3600,
+                user_email="user@example.com",
+            )
+            result = runner.invoke(app, ["login"])
+        assert result.exit_code == 0, result.stdout
+        tls = client_cls.call_args.kwargs["tls"]
+        assert tls.cert == (files["client_cert"], files["client_key"])
+        assert tls.verify == files["ssl_ca_cert"]
+
+    def test_login_with_half_a_pair_fails_before_browser(self, tmp_path: Path):
+        files = _tls_files(tmp_path)
+        cfg = _logged_out_oauth_config().model_copy(
+            update={
+                "security": SecurityConfig(client_cert=files["client_cert"])
+            }
+        )
+        ConfigManager.save(cfg, "p1")
+        ConfigManager.set_active_profile("p1")
+        with patch("ax.commands.auth.webbrowser.open") as wb:
+            result = runner.invoke(app, ["login"])
+        assert result.exit_code == 1
+        assert "must be set together" in result.output
+        assert "Unexpected error" not in result.output
+        wb.assert_not_called()
+
+    def test_logout_with_broken_cert_config_still_clears_profile(
+        self, tmp_path: Path
+    ):
+        files = _tls_files(tmp_path)
+        cfg = _oauth_config().model_copy(
+            update={
+                "security": SecurityConfig(client_cert=files["client_cert"])
+            }
+        )
+        ConfigManager.save(cfg, "p1")
+        ConfigManager.set_active_profile("p1")
+        with patch("ax.commands.auth.OAuthClient") as client_cls:
+            result = runner.invoke(app, ["logout"])
+        assert result.exit_code == 0, result.output
+        output = " ".join(result.output.split())
+        assert "client certificate settings are invalid" in output
+        assert "Local credentials are cleared." in output
+        client_cls.assert_not_called()
+        assert ConfigManager.load("p1").auth.oauth is None
+
+    def test_logout_revokes_with_profile_cert(self, tmp_path: Path):
+        files = _tls_files(tmp_path)
+        cfg = _oauth_config().model_copy(
+            update={"security": SecurityConfig(**files)}
+        )
+        ConfigManager.save(cfg, "p1")
+        ConfigManager.set_active_profile("p1")
+        with patch("ax.commands.auth.OAuthClient") as client_cls:
+            result = runner.invoke(app, ["logout"])
+        assert result.exit_code == 0, result.stdout
+        tls = client_cls.call_args.kwargs["tls"]
+        assert tls.cert == (files["client_cert"], files["client_key"])
+
+
+@pytest.mark.parametrize("region", ["us-east-1b", "us-east-1"])
+def test_login_rejects_aws_environment_before_browser(
+    monkeypatch: pytest.MonkeyPatch, region: str
+) -> None:
+    config = _logged_out_oauth_config()
+    config.routing = RoutingConfig(region="${ARIZE_REGION}")
+    ConfigManager.save(config, "p1")
+    ConfigManager.set_active_profile("p1")
+    monkeypatch.setenv("ARIZE_REGION", region)
+    with patch("ax.commands.auth.perform_oauth_login") as login:
+        result = runner.invoke(app, ["login"])
+    assert result.exit_code == 1, result.output
+    assert "Unexpected error" not in result.output
+    login.assert_not_called()
+
+
+def test_login_resolves_us_environment_and_preserves_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _logged_out_oauth_config()
+    config.routing = RoutingConfig(region="${ARIZE_REGION}")
+    ConfigManager.save(config, "p1")
+    ConfigManager.set_active_profile("p1")
+    monkeypatch.setenv("ARIZE_REGION", "US")
+    with patch("ax.commands.auth.perform_oauth_login") as login:
+        login.return_value = _oauth_config().auth.oauth
+        result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0, result.output
+    assert login.call_args.kwargs["base_url"] == "https://app.arize.com"
+    saved = ConfigManager.load("p1", expand_env_vars=False)
+    assert saved.routing.region == "${ARIZE_REGION}"
+
+
+@pytest.mark.parametrize("region", [None, "us-east-1b", "us-east-1"])
+def test_logout_clears_tokens_when_environment_routing_is_invalid(
+    monkeypatch: pytest.MonkeyPatch, region: str | None
+) -> None:
+    config = _oauth_config()
+    config.routing = RoutingConfig(region="${ARIZE_REGION}")
+    ConfigManager.save(config, "p1")
+    ConfigManager.set_active_profile("p1")
+    if region is None:
+        monkeypatch.delenv("ARIZE_REGION", raising=False)
+    else:
+        monkeypatch.setenv("ARIZE_REGION", region)
+    with patch("ax.commands.auth.OAuthClient") as client:
+        result = runner.invoke(app, ["logout"])
+    assert result.exit_code == 0, result.output
+    assert "Remote tokens were not revoked" in result.output
+    client.assert_not_called()
+    saved = ConfigManager.load("p1", expand_env_vars=False)
+    assert saved.auth.oauth is None
+    assert saved.routing.region == "${ARIZE_REGION}"
+
+
+@pytest.mark.parametrize("region", ["us-east-1b", "us-east-1"])
+def test_logout_clears_literal_invalid_region_profile(
+    region: str,
+) -> None:
+    config = _oauth_config()
+    config.routing = RoutingConfig(region="US")
+    ConfigManager.save(config, "p1")
+    ConfigManager.set_active_profile("p1")
+    path = ConfigManager.profile_path("p1")
+    path.write_text(path.read_text().replace("us-central-1a", region))
+    original = tomllib.loads(path.read_text())
+    with patch("ax.commands.auth.OAuthClient") as client:
+        result = runner.invoke(app, ["logout"])
+    assert result.exit_code == 0, result.output
+    assert "Remote tokens were not revoked" in result.output
+    client.assert_not_called()
+    expected = original
+    del expected["auth"]["oauth"]
+    assert tomllib.loads(path.read_text()) == expected
+    assert ConfigManager.get_active_profile() == "p1"

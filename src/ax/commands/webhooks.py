@@ -4,11 +4,7 @@ from collections.abc import Iterable
 from typing import Annotated, Any
 
 import typer
-from arize import make_to_df
 from arize.webhooks.types import (
-    ListWebhookDeliveryAttemptsResponse,
-    ListWebhooksResponse,
-    ListWebhookSubscriptionsResponse,
     WebhookAuthType,
     WebhookEventType,
     WebhookSourceType,
@@ -34,17 +30,6 @@ app = typer.Typer(
     help="Manage webhooks and their prompt and evaluator subscriptions",
     no_args_is_help=True,
     context_settings={"help_option_names": ["--help", "-h"]},
-)
-
-# output_data renders a list response as item rows (table, csv, parquet) only
-# when the model has a to_df method; the pinned SDK release does not define
-# one for the webhook list models.
-ListWebhooksResponse.to_df = make_to_df("webhooks")  # type: ignore[attr-defined]
-ListWebhookDeliveryAttemptsResponse.to_df = make_to_df(  # type: ignore[attr-defined]
-    "delivery_attempts"
-)
-ListWebhookSubscriptionsResponse.to_df = make_to_df(  # type: ignore[attr-defined]
-    "subscriptions"
 )
 
 _SHOWN_ONCE_WARNING = (
@@ -569,8 +554,12 @@ def test_webhook(
             format_type=output_format,
             output_file=output_file,
         )
-        if not 200 <= result.status_code < 300:
-            error(f"Endpoint answered with HTTP {result.status_code}")
+        if result.status_code is None or not 200 <= result.status_code < 300:
+            error(
+                f"Endpoint answered with HTTP {result.status_code}"
+                if result.status_code is not None
+                else "Endpoint returned no HTTP status code"
+            )
             raise typer.Exit(code=1)
 
 

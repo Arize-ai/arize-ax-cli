@@ -57,6 +57,7 @@
   - [Evaluators](#evaluators)
     - [Code evaluators](#code-evaluators)
     - [Remote evaluators](#remote-evaluators)
+    - [Decision Judge evaluators](#decision-judge-evaluators)
   - [Experiments](#experiments)
     - [`ax experiments run` — execute a task locally](#ax-experiments-run--execute-a-task-locally)
     - [`ax experiments create` — publish pre-computed runs](#ax-experiments-create--publish-pre-computed-runs)
@@ -65,6 +66,7 @@
   - [Projects](#projects)
   - [Prompts](#prompts)
   - [Roles](#roles)
+  - [SAML Identity Providers](#saml-identity-providers)
   - [Spaces](#spaces)
   - [Skills](#skills)
   - [Spans](#spans)
@@ -283,11 +285,9 @@ API Key: Insert value
 API Key (e.g., ak-123...): [hidden input]
 
 Region:
-> (default - no region needed for US)
-  us-east-1b  (US East, alias: US)
-  us-central-1a  (US Central)
-  eu-west-1a  (EU West, alias: EU)
-  ca-central-1a  (Canada, alias: CA)
+> US (United States, default)
+  EU (Europe)
+  CA (Canada)
   Use environment variable
 
 Default output format:
@@ -307,11 +307,15 @@ name = "default"
 api_key = "ak_your_api_key_here"
 
 [routing]
-region = "US"
+region = "us-central-1a"
 
 [output]
 format = "table"
 ```
+
+Choose the region where your account is hosted. `US` uses the normal US GCP deployment. Region aliases are case-insensitive. The GCP identifiers `us-central-1a`, `eu-west-1a`, and `ca-central-1a` are also accepted. The unfinished AWS US East deployment is not a supported public region.
+
+Profiles that contain an unsupported region must be recreated with the correct public region. Selecting a region does not move an account between deployments.
 
 #### Advanced Configuration
 
@@ -409,7 +413,7 @@ ax profiles update staging --from-file ./staging.toml --api-key ak_override
 | ------------------- | ----------------------------------------------------------- |
 | `--from-file`, `-f` | TOML file to load; completely replaces the existing profile |
 | `--api-key`         | Arize API key                                               |
-| `--region`          | Routing region (e.g. `us-east-1b`, `US`, `EU`)              |
+| `--region`          | Account region: `US` (default), `EU`, or `CA`              |
 | `--output-format`   | Default output format (`table`, `json`, `csv`, `parquet`)   |
 | `--verbose`, `-v`   | Enable verbose logs                                         |
 
@@ -467,7 +471,21 @@ max_http_payload_size_mb = 8
 ```toml
 [security]
 request_verify = true  # Set to false to disable SSL verification (not recommended)
+ssl_ca_cert = "/etc/ssl/certs/corp-ca.pem"  # CA bundle for a private gateway or TLS proxy
+client_cert = "~/.arize/client.crt"         # Client certificate for mutual TLS
+client_key = "~/.arize/client.key"          # Unencrypted private key for client_cert
 ```
+
+`ssl_ca_cert`, `client_cert`, and `client_key` are file paths, not PEM content. Set
+`client_cert` and `client_key` together. They apply to every connection the CLI makes to
+Arize: REST, file upload, Arrow Flight, and the `ax auth` OAuth calls. The key must be
+unencrypted, and the CLI warns when other users can read it (fix with `chmod 600`).
+
+When a field is not set in the profile, the CLI reads the same environment variables as the
+Python SDK: `ARIZE_SSL_CA_CERT` (then `REQUESTS_CA_BUNDLE`, then `SSL_CERT_FILE`),
+`ARIZE_CLIENT_CERT`, and `ARIZE_CLIENT_KEY`. A `ssl_ca_cert` bundle replaces the default
+trust roots for Arize connections, so it must include every CA your endpoints need.
+`request_verify = false` turns off server verification and ignores `ssl_ca_cert`.
 
 **Output** (optional)
 
@@ -653,6 +671,11 @@ ax ai-integrations create --name "Bedrock" --provider AWS_BEDROCK \
   --provider-metadata '{"role_arn": "arn:aws:iam::123456789:role/MyRole"}' \
   --enable-default-models
 
+# Create a Cloudflare integration (used only by Decision Judge evaluators)
+ax ai-integrations create --name "Cloudflare" --provider CLOUDFLARE \
+  --api-key <cloudflare-api-token> \
+  --provider-metadata '{"account_id": "<32-character-account-id>"}'
+
 # Update an integration
 ax ai-integrations update <integration> --name "Renamed" --api-key <new-key>
 
@@ -662,7 +685,7 @@ ax ai-integrations delete <integration> [--force]
 
 **Supported providers:**
 
-Every provider except LiteLLM, Fireworks AI and Together AI needs a model source: `--enable-default-models` and/or one or more `--model-name` flags. Without one, the server rejects the create.
+Every provider except LiteLLM, Fireworks AI, Together AI and DeepSeek needs a model source: `--enable-default-models` and/or one or more `--model-name` flags. Without one, the server rejects the create.
 
 | Provider      | Value           | Notes                                                        |
 | ------------- | --------------- | ------------------------------------------------------------ |
@@ -677,6 +700,7 @@ Every provider except LiteLLM, Fireworks AI and Together AI needs a model source
 | LiteLLM       | `LITELLM`       | Requires `--base-url` and `--api-key`                        |
 | Fireworks AI  | `FIREWORKS`     | API key only; no `--base-url`                                |
 | Together AI   | `TOGETHER_AI`   | API key only; no `--base-url`                                |
+| DeepSeek      | `DEEP_SEEK`     | API key only; no `--base-url`                                |
 
 ### Annotation Configs
 
@@ -943,7 +967,7 @@ Manage LLM-as-judge evaluators and their versions:
 
 ```bash
 # List evaluators (optionally filtered by space)
-ax evaluators list [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
+ax evaluators list [--name <substring>] [--space <space>] [--type TEMPLATE|CODE|HARNESS|REMOTE|DECISION_JUDGE] [--limit 15] [--cursor <cursor>]
 
 # Get an evaluator with its latest version
 ax evaluators get <evaluator>
@@ -980,6 +1004,9 @@ ax evaluators update <evaluator> --description "Updated description"
 
 # Delete an evaluator (and all its versions)
 ax evaluators delete <evaluator> [--force]
+
+# List the built-in LLM-as-a-judge templates (hallucination, relevance, ...)
+ax evaluators list-templates [--output json]
 
 # List all versions of an evaluator
 ax evaluators list-versions <evaluator-id> [--limit 15] [--cursor <cursor>]
@@ -1079,7 +1106,7 @@ ax evaluators create-evaluator-version code <evaluator-id> \
 
 Remote evaluators call a customer-hosted HTTP endpoint on each evaluation run.
 First create an `EVALUATOR` integration (see [Integrations](#integrations)), then
-reference it when creating the evaluator. Requires the `enableRemoteEvalTasks` feature flag.
+reference it when creating the evaluator. Requires an Enterprise account.
 
 ```bash
 # Create a remote evaluator backed by an existing EVALUATOR integration
@@ -1102,6 +1129,112 @@ ax evaluators create-evaluator-version remote <evaluator-id> \
 | `--integration-id` | Global ID (base64) of an existing `EVALUATOR` integration |
 | `--commit-message` | Commit message for the version (default: `"Initial version"` / `"Update remote config"`) |
 | `--description` | Optional evaluator description (`create-evaluator remote` only) |
+
+#### Decision Judge evaluators
+
+A Decision Judge evaluator asks a set of typed questions about each span and writes one result per question. It runs on spans only, and must be enabled for your account. Questions come from a JSON array (inline, a file path, or `@file`), and the state template is the text sent to the model, with `{variable}` placeholders filled from span attributes.
+
+Find an AI integration whose provider supports Decision Judge:
+
+```bash
+ax integrations list --type LLM --provider OPEN_AI
+# Other Decision Judge providers: TYPE_SAFE_AI, PERPLEXITY, CLOUDFLARE
+```
+
+Each question has a `name` (unique within the evaluator), `instructions`, and a `type` that selects the shape of `criteria`:
+
+| Type | `criteria` |
+| --- | --- |
+| `BOOLEAN` | optional `true_means` and `false_means` |
+| `CHOICE` | `options`: a map of 2 to 255 labels to when each applies |
+| `SCORE` | `levels`: 2 to 10 descriptions from lowest to highest; optional `direction` (`MAXIMIZE` or `MINIMIZE`, default `MAXIMIZE`) |
+
+`questions.json`:
+
+```json
+[
+  {
+    "name": "is_helpful",
+    "type": "BOOLEAN",
+    "instructions": "Did the answer address the user's request?",
+    "criteria": {
+      "true_means": "The answer addresses the request",
+      "false_means": "The answer ignores or misses the request"
+    }
+  },
+  {
+    "name": "tone",
+    "type": "CHOICE",
+    "instructions": "Pick the tone of the answer.",
+    "criteria": {
+      "options": {
+        "formal": "Professional, impersonal wording",
+        "friendly": "Warm, conversational wording",
+        "curt": "Short and dismissive wording"
+      }
+    }
+  },
+  {
+    "name": "quality",
+    "type": "SCORE",
+    "instructions": "Rate the overall quality of the answer.",
+    "criteria": {
+      "levels": [
+        "Wrong or unusable",
+        "Partly correct, missing key details",
+        "Correct and complete"
+      ]
+    },
+    "direction": "MAXIMIZE"
+  }
+]
+```
+
+```bash
+# Create a Decision Judge evaluator
+ax evaluators create-evaluator decision-judge \
+  --name "Support Answer Review" \
+  --space <space> \
+  --ai-integration-id <integration-global-id> \
+  --model-name gpt-6-luna \
+  --state-template "User asked: {input}
+Assistant answered: {output}" \
+  --questions @questions.json \
+  --commit-message "Initial version"
+
+# The state template can also come from a file
+ax evaluators create-evaluator decision-judge ... --state-template @state.txt --questions questions.json
+
+# Create a new version (replaces the whole config, including every question)
+ax evaluators create-evaluator-version decision-judge <evaluator-id> \
+  --ai-integration-id <integration-global-id> \
+  --model-name gpt-6-luna \
+  --state-template @state.txt \
+  --questions @questions.json \
+  --commit-message "Add tone question"
+
+# Decision Judge evaluators are hidden from the default list; ask for them
+ax evaluators list --type DECISION_JUDGE
+
+# Run the evaluator on a project's spans
+ax tasks create-evaluation \
+  --name "Support Quality" \
+  --task-type DECISION_JUDGE_EVALUATION \
+  --evaluators '[{"evaluator_id": "<evaluator-id>"}]' \
+  --project <project> --space <space>
+```
+
+**Decision Judge options:**
+
+| Option | Description |
+| --- | --- |
+| `--ai-integration-id` | Global ID of an AI integration whose provider supports Decision Judge |
+| `--model-name` | Decision Judge model of that provider (for example `gpt-6-luna` for OpenAI) |
+| `--state-template` | State template text, or `@path/to/file` |
+| `--questions` | JSON array of 1 to 64 questions, inline or a file path / `@path` |
+| `--commit-message` | Commit message for the version (default: `"Initial version"` / `"Update decision judge config"`) |
+| `--description` | Optional evaluator description (`create-evaluator decision-judge` only) |
+| `--space`, `-s` (alias `--space-id`) | Space name or ID; for `create-evaluator-version`, required only when the evaluator is given by name |
 
 ### Experiments
 
@@ -1224,7 +1357,7 @@ unchanged.
 
 ```bash
 # List integrations of every type (or filter with --type LLM|AGENT)
-ax integrations list [--type AGENT] [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
+ax integrations list [--type AGENT] [--provider <provider>] [--name <substring>] [--space <space>] [--limit 15] [--cursor <cursor>]
 
 # Get an integration by ID, or by name (names are unique per type, so pass --type)
 ax integrations get <integration> [--type LLM|AGENT]
@@ -1239,6 +1372,10 @@ ax integrations create llm --name "Custom LLM" --provider CUSTOM \
 # Create an AWS Bedrock LLM integration
 ax integrations create llm --name "Bedrock" --provider AWS_BEDROCK \
   --auth '{"auth_type": "DEFAULT", "role_arn": "arn:aws:iam::123456789:role/MyRole"}'
+
+# Create a Cloudflare LLM integration (used only by Decision Judge evaluators)
+ax integrations create llm --name "Cloudflare" --provider CLOUDFLARE \
+  --api-key <cloudflare-api-token> --account-id <32-character-account-id>
 
 # Create an agent integration
 ax integrations create agent --name "My Agent" \
@@ -1266,6 +1403,11 @@ ax integrations delete <integration> [--type LLM|AGENT] [--force]
 | Custom | `CUSTOM` | `--base-url` |
 | Vertex AI | `VERTEX_AI` | `--gcp-project-id`, `--gcp-location`, `--project-access-label` |
 | NVIDIA NIM | `NVIDIA_NIM` | at least one model source (`--model-name` or `--enable-default-models`) |
+| TypeSafe AI | `TYPE_SAFE_AI` | `--api-key` (Decision Judge only) |
+| Perplexity | `PERPLEXITY` | `--api-key` (Decision Judge only) |
+| Cloudflare | `CLOUDFLARE` | `--api-key`, `--account-id` (Decision Judge only) |
+
+`--account-id` is valid only for `CLOUDFLARE`. Pass it to `update llm` to change the account ID.
 
 ### Organizations
 
@@ -1457,6 +1599,28 @@ ax roles delete <role-name-or-id> [--force]
 
 > **Note:** Permission values are uppercase identifiers such as `PROJECT_READ`, `DATASET_CREATE`, `ANNOTATION_CONFIG_READ`, etc. Predefined (system-managed) roles cannot be created, updated, or deleted.
 
+### SAML Identity Providers
+
+Requires Enterprise account-admin access and Python SDK 8.64.0 or later.
+
+Use an existing test profile. These commands use its account credentials:
+
+```bash
+ax saml-identity-providers list --output json
+ax saml-identity-providers create --input-file saml-idp.json --output json
+ax saml-identity-providers get "$IDP_ID" --output json
+ax saml-identity-providers update "$IDP_ID" --input-file saml-patch.json
+ax saml-identity-providers role-mappings list "$IDP_ID" --output json
+ax saml-identity-providers role-mappings add "$IDP_ID" --input-file saml-mapping.json --output json
+ax saml-identity-providers role-mappings update "$IDP_ID" "$MAPPING_ID" --input-file mapping-patch.json
+ax saml-identity-providers role-mappings remove "$IDP_ID" "$MAPPING_ID"
+ax saml-identity-providers delete "$IDP_ID"
+```
+
+Supply one metadata source. Create defaults-disabled configurations with initial mappings. Keep the last required login/admin mapping. Updates preserve omitted fields and send explicit false, null and empty lists. File-managed configurations are read-only. Disable enforcement before configuration deletion. Deletion preserves users and grants. Use `--force` to skip removal confirmation in automation. Create and update validate metadata and return an error for invalid input.
+
+SAML mapping output uses `project_roles: null` for unmanaged mappings and `[]` for managed mappings with no assignments. JSON output keeps these states distinct. With role sync enabled, any managed mapping makes SAML replace project bindings for all users at login, including manual grants. Manual project roles are preserved only when every mapping is unmanaged. The SAML API is alpha.
+
 ### Spaces
 
 Manage spaces:
@@ -1608,7 +1772,7 @@ Manage evaluation tasks and run-experiment tasks, and trigger on-demand runs:
 # List tasks (filtered by space, project, dataset, or type)
 ax tasks list [--name <substring>] [--space <space>] [--project-id <project-name-or-id>] \
   [--dataset-id <dataset-id>] \
-  [--task-type TEMPLATE_EVALUATION|CODE_EVALUATION|RUN_EXPERIMENT] \
+  [--task-type TEMPLATE_EVALUATION|CODE_EVALUATION|DECISION_JUDGE_EVALUATION|RUN_EXPERIMENT] \
   [--limit 15] [--cursor <cursor>]
 
 # Get a specific task
@@ -1638,6 +1802,14 @@ ax tasks create-evaluation \
   --task-type TEMPLATE_EVALUATION \
   --evaluators '[{"evaluator_id": "<id>"}]' \
   --project <project>
+
+# Run Decision Judge evaluators on a project's spans (project only; see Decision Judge evaluators)
+ax tasks create-evaluation \
+  --name "Support Quality" \
+  --task-type DECISION_JUDGE_EVALUATION \
+  --evaluators '[{"evaluator_id": "<decision-judge-evaluator-id>"}]' \
+  --project <project> \
+  --space <space>
 
 # ── Run-experiment tasks ──────────────────────────────────────────────────────
 
@@ -1728,13 +1900,13 @@ ax tasks wait-for-run <run-id> [--poll-interval 5] [--timeout 600]
 | Option | Description |
 | --- | --- |
 | `--name`, `-n` | Task name (must be unique within the space) |
-| `--task-type` | `template_evaluation`, `code_evaluation`, or `run_experiment` |
+| `--task-type` | `template_evaluation`, `code_evaluation`, `decision_judge_evaluation`, or `run_experiment` |
 | `--evaluators` | JSON array of evaluator configs (evaluation tasks only). Get IDs via `ax evaluators list`. Example: `[{"evaluator_id": "<id>", "query_filter": null, "column_mappings": null}]` |
 | `--run-configuration` | JSON object or `@file.json` with the run configuration (`run_experiment` tasks only) |
-| `--project` | Project name or ID; mutually exclusive with `--dataset` (evaluation tasks only) |
+| `--project` | Project name or ID; mutually exclusive with `--dataset` (evaluation tasks only). Required for `decision_judge_evaluation` |
 | `--space` | Space name or ID (helps resolve project/dataset names) |
 | `--dataset` | Dataset name or ID; required for `run_experiment` tasks, mutually exclusive with `--project` for evaluation tasks |
-| `--experiment-ids` | Comma-separated experiment IDs (evaluation tasks, dataset-based only) |
+| `--experiment-ids` | Comma-separated experiment IDs (evaluation tasks, dataset-based only; not valid for `decision_judge_evaluation`) |
 | `--sampling-rate` | Fraction of data to evaluate (0–1); project evaluation tasks only |
 | `--is-continuous` / `--no-continuous` | Run continuously on incoming data (evaluation tasks only) |
 | `--query-filter` | Task-level filter applied to all evaluators (evaluation tasks only) |
@@ -2228,6 +2400,8 @@ ax datasets list --space sp_abc123 --verbose
 2. Verify network connectivity
 3. For on-premise installations, ensure `single_host` is configured correctly
 4. For SSL issues, check `security.request_verify` setting (use with caution)
+5. If a gateway asks for a client certificate, or uses a private CA, set `client_cert`,
+   `client_key`, and `ssl_ca_cert` in the `[security]` section
 
 ---
 

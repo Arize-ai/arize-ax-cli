@@ -6,12 +6,13 @@ from typing import Annotated, Literal, cast
 
 import questionary
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 
 from ax.ascii_art import WELCOME_BANNER
 from ax.commands.auth import perform_oauth_login
-from ax.config.manager import ConfigManager
+from ax.config.manager import ConfigManager, resolve_oauth_app_url
 from ax.config.schema import (
     AuthConfig,
     AuthMethod,
@@ -19,6 +20,7 @@ from ax.config.schema import (
     OutputConfig,
     ProfileConfig,
     RoutingConfig,
+    SecurityConfig,
 )
 from ax.config.setup import (
     create_config_from_env_vars,
@@ -27,9 +29,10 @@ from ax.config.setup import (
     create_config_interactively,
     detect_env_vars,
     merge_config_with_flags,
-    routing_from_env,
 )
+from ax.config.tls import redact_pem, resolve_tls
 from ax.core.decorators import handle_errors
+from ax.core.error_formatter import format_validation_error
 from ax.core.exceptions import ConfigError
 from ax.utils.console import (
     confirm,
@@ -87,7 +90,7 @@ def create(
     region: Annotated[
         str | None,
         typer.Option(
-            "--region", help="Routing region (e.g. us-east-1b, or alias US/EU)."
+            "--region", help="Account region: US (default), EU, or CA."
         ),
     ] = None,
     single_host: Annotated[
@@ -227,11 +230,16 @@ def create(
             }.items()
             if v is not None
         }
-        routing_cfg = RoutingConfig(**routing_flags)
-        base_url = routing_cfg.resolve_app_url()
+        try:
+            routing_cfg = RoutingConfig(**routing_flags)
+        except ValidationError as e:
+            raise ConfigError(format_validation_error(e)) from e
+        base_url = resolve_oauth_app_url(routing_cfg)
 
         oauth_creds = perform_oauth_login(
-            base_url=base_url, utm_params=utm_params
+            base_url=base_url,
+            utm_params=utm_params,
+            tls=resolve_tls(SecurityConfig()),
         )
         auth_cfg = AuthConfig(auth_method=AuthMethod.OAUTH, oauth=oauth_creds)
 
@@ -283,9 +291,9 @@ def create(
         if detected_env_vars:
             emphasis("Environment Variable Detection\n")
             for field, env_var in detected_env_vars.items():
-                value = os.environ.get(env_var, "")
-                if field == "api_key":
-                    value = mask(value)
+                value = _display_detected_env_value(
+                    field, os.environ.get(env_var, "")
+                )
                 console.print(
                     f"  [green]✓[/green] Detected {env_var} = {value}"
                 )
@@ -319,13 +327,11 @@ def create(
         # login does not leave a half-configured profile on disk. Resolve
         # routing now in case it contains ${VAR} refs.
         if auth_method == AuthMethod.OAUTH:
-            base_url = (
-                routing_from_env(detected_env_vars).resolve_app_url()
-                if use_env_vars
-                else config.routing.resolve_app_url()
-            )
+            base_url = resolve_oauth_app_url(config.routing)
             oauth_creds = perform_oauth_login(
-                base_url=base_url, utm_params=utm_params
+                base_url=base_url,
+                utm_params=utm_params,
+                tls=resolve_tls(config.security),
             )
             config = config.model_copy(
                 update={
@@ -374,7 +380,7 @@ def update(
     region: Annotated[
         str | None,
         typer.Option(
-            "--region", help="Routing region (e.g. us-east-1b, or alias US/EU)."
+            "--region", help="Account region: US (default), EU, or CA."
         ),
     ] = None,
     single_host: Annotated[
@@ -664,6 +670,13 @@ def show_profile(
         if isinstance(val, str) and _is_bool(val):
             val = val.lower() == "true"
         lines.append(kv("  Request Verify", val))
+        for label, value in (
+            ("  SSL CA Cert", config.security.ssl_ca_cert),
+            ("  Client Cert", config.security.client_cert),
+            ("  Client Key", config.security.client_key),
+        ):
+            if value:
+                lines.append(kv(label, redact_pem(value)))
 
     console.print(
         Panel(
@@ -774,6 +787,13 @@ def delete_profile(
 
     ConfigManager.delete_profile(profile)
     success(f"Deleted profile '{profile}'")
+
+
+def _display_detected_env_value(field: str, value: str) -> str:
+    """Return a detected env var value that is safe to print."""
+    if field == "api_key":
+        return mask(value)
+    return redact_pem(value)
 
 
 def _is_bool(val: str) -> bool:

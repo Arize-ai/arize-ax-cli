@@ -49,6 +49,13 @@ app = typer.Typer(
 _SAVE_KEY_WARNING = "Save this API key now — it will not be shown again."
 
 
+def _require_key_secret(api_key: str | None) -> str:
+    """Reject an incomplete key response before writing a dotenv file."""
+    if not api_key:
+        raise APIError("API key creation response did not include a secret")
+    return api_key
+
+
 def _write_key_to_dotenv_or_revoke(
     client: ArizeClient,
     env_file: str,
@@ -67,23 +74,38 @@ def _write_key_to_dotenv_or_revoke(
         key_created: The created key response (provides ``key`` and ``id``).
 
     Raises:
+        APIError: If the creation response lacks the key's id or secret. A
+            key with an id is revoked first, as for a failed write.
         FileIOError: If the write fails. The message states whether the key
             was revoked automatically or must be revoked manually.
     """
-    api_key = key_created.key
+    api_key_id = key_created.id
+    if not api_key_id:
+        raise APIError(
+            "API key creation returned an incomplete response; "
+            "inspect your API keys before retrying"
+        )
     try:
-        write_api_key_to_dotenv(env_file, api_key)
-    except (FileIOError, KeyboardInterrupt) as write_error:
+        write_api_key_to_dotenv(env_file, _require_key_secret(key_created.key))
+    except (APIError, FileIOError, KeyboardInterrupt) as write_error:
+        error_type = (
+            APIError if isinstance(write_error, APIError) else FileIOError
+        )
         try:
-            client.api_keys.revoke(api_key_id=key_created.id)
+            client.api_keys.revoke(api_key_id=api_key_id)
         except Exception as revoke_error:
-            raise FileIOError(
+            raise error_type(
                 f"{write_error} The newly created key could not be revoked "
                 f"automatically ({revoke_error}); revoke it manually with "
-                f"'ax api-keys revoke {key_created.id}'."
+                f"'ax api-keys revoke {api_key_id}'."
             ) from revoke_error
         if isinstance(write_error, KeyboardInterrupt):
             raise
+        if isinstance(write_error, APIError):
+            raise APIError(
+                f"{write_error} The newly created key was revoked; re-run "
+                f"to create a new key."
+            ) from write_error
         raise FileIOError(
             f"{write_error} The newly created key was revoked; resolve the "
             f"file issue and re-run."

@@ -461,7 +461,6 @@ def create_experiment(
                     output="output",
                     example_id="example_id" if dataset is not None else None,
                 ),
-                force_http=True,
             )
     except Exception as e:
         raise APIError(f"Failed to create experiment: {e}") from e

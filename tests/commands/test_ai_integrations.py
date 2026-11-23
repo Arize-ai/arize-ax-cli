@@ -10,6 +10,8 @@ from arize.ai_integrations.types import (
     AiIntegrationScoping,
     AwsProviderMetadataKind,
     AwsProviderMetadataRequest,
+    CloudflareProviderMetadataKind,
+    CloudflareProviderMetadataRequest,
 )
 from typer.testing import CliRunner, Result
 
@@ -131,6 +133,7 @@ class TestListAiIntegrations:
         mock_client.ai_integrations.list.assert_called_once_with(
             name=None,
             space="sp_abc",
+            provider=None,
             limit=5,
             cursor="tok",
         )
@@ -150,8 +153,27 @@ class TestListAiIntegrations:
         mock_client.ai_integrations.list.assert_called_once_with(
             name="openai",
             space=None,
+            provider=None,
             limit=15,
             cursor=None,
+        )
+
+    def test_list_provider_filter_forwarded(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --provider is forwarded, case-insensitively."""
+        mock_client.ai_integrations.list.return_value = _make_list_response()
+
+        result = _invoke(
+            ["ai-integrations", "list", "--provider", "perplexity"],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        assert (
+            mock_client.ai_integrations.list.call_args.kwargs["provider"]
+            == AiIntegrationProvider.PERPLEXITY
         )
 
     def test_list_sdk_error_exits_nonzero(
@@ -359,6 +381,69 @@ class TestCreateAiIntegration:
             kind=AwsProviderMetadataKind.AWS,
             role_arn="arn:aws:iam::123:role/MyRole",
         )
+
+    def test_create_parses_cloudflare_provider_metadata(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        mock_client.ai_integrations.create.return_value = _make_integration()
+
+        result = _invoke(
+            [
+                "ai-integrations",
+                "create",
+                "--name",
+                "Cloudflare",
+                "--provider",
+                "CLOUDFLARE",
+                "--api-key",
+                "cf-token",
+                "--provider-metadata",
+                '{"account_id": "0123456789abcdef0123456789abcdef"}',
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        call_kwargs = mock_client.ai_integrations.create.call_args.kwargs
+        assert call_kwargs[
+            "provider_metadata"
+        ] == CloudflareProviderMetadataRequest(
+            kind=CloudflareProviderMetadataKind.CLOUDFLARE,
+            account_id="0123456789abcdef0123456789abcdef",
+        )
+
+    @pytest.mark.parametrize(
+        "metadata",
+        [
+            '{"account_id": "too-short"}',
+            "{}",
+            '{"kind": "AWS", "account_id": "0123456789abcdef0123456789abcdef"}',
+        ],
+    )
+    def test_create_invalid_cloudflare_provider_metadata_is_usage_error(
+        self, mock_config: MagicMock, mock_client: MagicMock, metadata: str
+    ) -> None:
+        result = _invoke(
+            [
+                "ai-integrations",
+                "create",
+                "--name",
+                "Cloudflare",
+                "--provider",
+                "CLOUDFLARE",
+                "--api-key",
+                "cf-token",
+                "--provider-metadata",
+                metadata,
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 2, result.output
+        assert "kind" in result.output or "account_id" in result.output
+        mock_client.ai_integrations.create.assert_not_called()
 
     def test_create_invalid_provider_metadata_json_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock
@@ -692,9 +777,63 @@ class TestUpdateAiIntegration:
     def test_update_provider_metadata_forwarded(
         self, mock_config: MagicMock, mock_client: MagicMock
     ) -> None:
-        """Test that --provider-metadata is parsed and forwarded to the SDK."""
+        """Test that --provider-metadata is parsed into the typed request."""
         mock_client.ai_integrations.update.return_value = _make_integration()
 
+        result = _invoke(
+            [
+                "ai-integrations",
+                "update",
+                _INTEGRATION_ID,
+                "--provider",
+                "AWS_BEDROCK",
+                "--provider-metadata",
+                '{"role_arn": "arn:aws:iam::123:role/MyRole"}',
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        metadata = mock_client.ai_integrations.update.call_args.kwargs[
+            "provider_metadata"
+        ]
+        assert isinstance(metadata, AwsProviderMetadataRequest)
+        assert metadata.role_arn == "arn:aws:iam::123:role/MyRole"
+
+    def test_update_cloudflare_provider_metadata(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that Cloudflare metadata on update becomes the typed request."""
+        mock_client.ai_integrations.update.return_value = _make_integration()
+        account_id = "0123456789abcdef0123456789abcdef"
+
+        result = _invoke(
+            [
+                "ai-integrations",
+                "update",
+                _INTEGRATION_ID,
+                "--provider",
+                "CLOUDFLARE",
+                "--provider-metadata",
+                f'{{"account_id": "{account_id}"}}',
+            ],
+            mock_config,
+            mock_client,
+        )
+
+        assert result.exit_code == 0, result.output
+        metadata = mock_client.ai_integrations.update.call_args.kwargs[
+            "provider_metadata"
+        ]
+        assert isinstance(metadata, CloudflareProviderMetadataRequest)
+        assert metadata.account_id == account_id
+        assert metadata.kind == CloudflareProviderMetadataKind.CLOUDFLARE
+
+    def test_update_provider_metadata_requires_provider(
+        self, mock_config: MagicMock, mock_client: MagicMock
+    ) -> None:
+        """Test that --provider-metadata without --provider is a usage error."""
         result = _invoke(
             [
                 "ai-integrations",
@@ -707,11 +846,9 @@ class TestUpdateAiIntegration:
             mock_client,
         )
 
-        assert result.exit_code == 0, result.output
-        call_kwargs = mock_client.ai_integrations.update.call_args.kwargs
-        assert call_kwargs["provider_metadata"] == {
-            "role_arn": "arn:aws:iam::123:role/MyRole"
-        }
+        assert result.exit_code == 2
+        assert "--provider" in result.output
+        mock_client.ai_integrations.update.assert_not_called()
 
     def test_update_invalid_provider_metadata_json_exits_nonzero(
         self, mock_config: MagicMock, mock_client: MagicMock

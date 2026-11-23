@@ -85,7 +85,7 @@ class TestFromFile:
         """--from-file uses the region value from the TOML file."""
         toml_file = tmp_path / "profile.toml"
         toml_file.write_bytes(
-            b'[auth]\napi_key = "toml-key"\n\n[routing]\nregion = "us-east-1b"\n'
+            b'[auth]\napi_key = "toml-key"\n\n[routing]\nregion = "us-central-1a"\n'
         )
 
         saved_configs: list[Config] = []
@@ -109,7 +109,7 @@ class TestFromFile:
             )
 
         assert result.exit_code == 0, result.output
-        assert saved_configs[0].routing.region == "us-east-1b"
+        assert saved_configs[0].routing.region == "us-central-1a"
         assert saved_configs[0].auth.api_key == "toml-key"
 
     def test_from_file_cli_flags_override_file(
@@ -118,7 +118,7 @@ class TestFromFile:
         """CLI flags are applied after TOML (flags override file)."""
         toml_file = tmp_path / "profile.toml"
         toml_file.write_bytes(
-            b'[auth]\napi_key = "from-toml"\n\n[routing]\nregion = "us-east-1b"\n'
+            b'[auth]\napi_key = "from-toml"\n\n[routing]\nregion = "us-central-1a"\n'
         )
 
         saved_configs: list[Config] = []
@@ -152,7 +152,7 @@ class TestFromFile:
     def test_region_flag_alias_resolves_to_zone_id(
         self, runner: CliRunner, tmp_path: Path
     ) -> None:
-        """--region US resolves to the canonical us-east-1b zone ID."""
+        """--region US resolves to the canonical us-central-1a zone ID."""
         saved_configs: list[Config] = []
 
         def capture_save(config: Config, _profile: str) -> None:
@@ -176,7 +176,7 @@ class TestFromFile:
             )
 
         assert result.exit_code == 0, result.output
-        assert saved_configs[0].routing.region == "us-east-1b"
+        assert saved_configs[0].routing.region == "us-central-1a"
 
 
 # ---------------------------------------------------------------------------
@@ -824,3 +824,57 @@ class TestProfilesCreateOAuth:
 
         assert result.exit_code == 0, result.output
         assert "--utm-params" not in result.stdout
+
+
+@pytest.mark.parametrize("region", ["us-east-1b", "us-east-1"])
+def test_oauth_creation_rejects_unavailable_region(
+    runner: CliRunner, region: str
+) -> None:
+    with (
+        patch("ax.commands.profiles.ConfigManager") as manager,
+        patch("ax.commands.profiles.perform_oauth_login") as login,
+    ):
+        manager.list_profiles.return_value = []
+        manager.exists.return_value = False
+        result = runner.invoke(
+            app,
+            [
+                "create",
+                "test-region",
+                "--auth-method",
+                "oauth",
+                "--region",
+                region,
+            ],
+        )
+    assert result.exit_code == 1, result.output
+    assert "Unexpected error" not in result.output
+    login.assert_not_called()
+    manager.save.assert_not_called()
+
+
+@pytest.mark.parametrize("region", ["us-east-1b", "us-east-1", "invalid"])
+def test_oauth_creation_rejects_unavailable_env_region(
+    runner: CliRunner, monkeypatch: pytest.MonkeyPatch, region: str
+) -> None:
+    monkeypatch.setenv("ARIZE_REGION", region)
+    with (
+        patch("ax.commands.profiles.ConfigManager") as manager,
+        patch("ax.commands.profiles.perform_oauth_login") as login,
+        patch(
+            "ax.commands.profiles.detect_env_vars",
+            return_value={"region": "ARIZE_REGION"},
+        ),
+        patch("ax.commands.profiles.questionary.select") as select,
+        patch("ax.commands.profiles.confirm", return_value=True),
+        patch("ax.config.setup.read_output_format", return_value="table"),
+    ):
+        select.return_value.ask.return_value = "oauth"
+        manager.list_profiles.return_value = []
+        manager.exists.return_value = False
+        result = runner.invoke(app, ["create", "env-region"])
+    assert result.exit_code == 1, result.output
+    assert "Invalid region" in result.output
+    assert "Unexpected error" not in result.output
+    login.assert_not_called()
+    manager.save.assert_not_called()

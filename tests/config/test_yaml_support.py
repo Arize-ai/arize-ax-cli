@@ -38,7 +38,7 @@ class TestCreateConfigFromToml:
             b"[auth]\n"
             b'api_key = "full-key"\n'
             b"\n[routing]\n"
-            b'region = "us-east-1b"\n'
+            b'region = "us-central-1a"\n'
             b"\n[transport]\n"
             b"stream_max_workers = 16\n"
             b"\n[security]\n"
@@ -50,7 +50,7 @@ class TestCreateConfigFromToml:
         result = create_config_from_toml(str(toml_file), profile="test")
 
         assert result.auth.api_key == "full-key"
-        assert result.routing.region == "us-east-1b"
+        assert result.routing.region == "us-central-1a"
         assert result.transport.stream_max_workers == 16
         assert result.security.request_verify is True
         assert result.output.format == "json"
@@ -127,10 +127,10 @@ class TestCreateConfigFromFlags:
     def test_routing_fields_nested_correctly(self) -> None:
         """Routing flat keys are grouped into config.routing."""
         config = create_config_from_flags(
-            profile="test", flat={"api_key": "k", "region": "us-east-1b"}
+            profile="test", flat={"api_key": "k", "region": "us-central-1a"}
         )
 
-        assert config.routing.region == "us-east-1b"
+        assert config.routing.region == "us-central-1a"
 
     def test_transport_fields_nested_correctly(self) -> None:
         """Transport flat keys are grouped into config.transport."""
